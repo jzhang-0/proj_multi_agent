@@ -52,6 +52,8 @@ tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-sessio
 
 选中成员后可用 F5 打断、F6 终止、F7 重启、F8 全屏接管；终止和重启必须在默认焦点为“取消”的弹窗中二次确认。接管会暂时挂起 Textual，再进入 `tmux attach-session`，退出 attach 后恢复总控台；所有实际控制尝试都以 `control` 事件写入 `bus/log.jsonl`。
 
+总控台每 0.5 秒探测 tmux server、各成员会话和 `bus/queue/` 可写性；故障与恢复只在状态变化时写入时间线。tmux server 不在时不重复报每个成员缺失，bus 恢复可写后会自动重启已退出的投递线程；人类输入的入队失败也会显式告警并保留内容供恢复后重试。
+
 成员名册是 `roster.toml`(由 `src/roster` 加载校验)。成员启动开场白由 `AGENTS.md` 的「群聊协议」章节动态生成,roster 不保存协议副本；`check_single_source()` 与回归测试负责防漂移。`./start.sh` 是读名册的薄入口。生命周期直接用 `roster` 命令,单个成员或全体都行,而且幂等(已经在跑的不会被顶掉):
 
 ```bash

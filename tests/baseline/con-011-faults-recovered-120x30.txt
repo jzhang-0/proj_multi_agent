@@ -1,0 +1,30 @@
+ ⭘                                         总控台 — 本机 AI 群聊与指挥中心
+ ○ IDLE  claude  │ [告警] tmux-server tmux: no server running
+ 排队0 · 未活动  │ [告警] member-session codex: 成员 tmux 会话消失
+ ○ IDLE  codex   │ [告警] bus-unwritable bus/queue: PermissionError: read-only
+ 排队0 · 未活动  │ [恢复] tmux-server tmux 已恢复
+ ○ IDLE  cursor  │ [恢复] member-session codex 已恢复
+ 排队0 · 未活动  │ [恢复] bus-unwritable bus/queue 已恢复
+ ○ IDLE  agy     │ [总控台] 总线目录 /private/var/folders/70/_1qzff897ys_s2jbph2h00j40000gn/T/qa-visual-cqtlryyr
+ 排队0 · 未活动  │ [总控台] ↑↓ 选成员,PgUp/PgDn 翻时间线,Esc 收起详情;q 或 Ctrl-C 退出
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │▊▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▎
+                 │▊  @名字 说点什么,回车发送                                                                           ▎
+                 │▊▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▎
+ q 退出  esc 收起详情  f5 打断  f6 终止  f7 重启  f8 接管                                                   ▏^p palette

@@ -49,6 +49,7 @@ class BusPump:
         self.hub = Hub(paths, deliver=deliver, on_result=on_result, policy=policy)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.last_error: Exception | None = None
 
     @property
     def mode(self) -> str | None:
@@ -56,15 +57,23 @@ class BusPump:
         return self.hub.mode
 
     def start(self) -> None:
-        if self._thread is not None:
+        if self._thread is not None and self._thread.is_alive():
             return
+        self._thread = None
+        self._stop.clear()
+        self.last_error = None
         self._thread = threading.Thread(
-            target=self.hub.run,
-            kwargs={"stop": self._stop.is_set},
+            target=self._run,
             name="bus-pump",
             daemon=True,
         )
         self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            self.hub.run(stop=self._stop.is_set)
+        except Exception as exc:
+            self.last_error = exc
 
     def stop(self, timeout: float = 2.0) -> None:
         """停循环并等线程收尾;幂等。"""

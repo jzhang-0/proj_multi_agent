@@ -36,6 +36,7 @@ from console.buspump import BusPump, MutePolicy
 from console.commands import CommandRunner, is_command
 from console.compose import ComposeInput, split_address
 from console.control import ConfirmControlScreen, ControlFeedback, MemberController
+from console.health import ConsoleHealthMonitor, FaultEvent, FaultKind
 from console.members import MemberStatusService, member_names, pending_counts
 from console.mirror import Mirror
 from console.timeline import TimelineEntry, history
@@ -130,6 +131,7 @@ class ConsoleApp(App[None]):
         member_status: MemberStatusService | None = None,
         pump_enabled: bool = True,
         controller: MemberController | None = None,
+        health_monitor: ConsoleHealthMonitor | None = None,
     ) -> None:
         super().__init__()
         self.paths = (paths or BusPaths.resolve()).ensure()
@@ -161,6 +163,13 @@ class ConsoleApp(App[None]):
             except (OSError, RosterError, TmuxError):
                 controller = None
         self.controller = controller
+        if health_monitor is None and deliver is tmux_deliver:
+            health_monitor = ConsoleHealthMonitor(
+                self.paths,
+                self.members,
+                member_status.tmux,
+            )
+        self.health_monitor = health_monitor
         self.selected_member: str | None = None
         #: 上一个对话对象:不写 @ 前缀时默认发给它
         self.last_target: str | None = None
@@ -215,11 +224,19 @@ class ConsoleApp(App[None]):
             self.run_worker(self.member_status.run(), group="member-status", exclusive=True)
         if self.pump_enabled:
             self.pump.start()
+        if self.health_monitor is not None:
+            self.run_worker(
+                self.health_monitor.run(self._on_fault_event),
+                group="console-health",
+                exclusive=True,
+            )
         self._start_mirror()
         self._connect_roster()
 
     def on_unmount(self) -> None:
         self.member_status.stop()
+        if self.health_monitor is not None:
+            self.health_monitor.stop()
         if self.pump_enabled:
             self.pump.stop()
         if self._mirror_timer is not None:
@@ -265,6 +282,8 @@ class ConsoleApp(App[None]):
             return
         self.members = tuple(adopter.member_names())
         self.member_status.track(self.members)
+        if self.health_monitor is not None:
+            self.health_monitor.track(self.members)
         listing = self.query_one("#members", ListView)
         await listing.clear()
         for name in self.members:
@@ -419,7 +438,11 @@ class ConsoleApp(App[None]):
         if target is None:
             timeline.note("[总控台] 还没有对话对象,先用 @名字 指定收件人")
             return
-        deposit(Message.create(target, text, sender="human"), self.paths)
+        try:
+            deposit(Message.create(target, text, sender="human"), self.paths)
+        except OSError as exc:
+            timeline.note(f"[告警] bus 目录不可写:{type(exc).__name__}: {exc}")
+            return
         compose.remember(raw)
         compose.value = ""
         compose.candidates = ()
@@ -481,6 +504,21 @@ class ConsoleApp(App[None]):
             )
             return
         self._show_control_feedback(feedback)
+
+    # --- 错误与恢复 ------------------------------------------------------
+
+    def _on_fault_event(self, event: FaultEvent) -> None:
+        fault = event.fault
+        if event.recovered:
+            self.query_one("#timeline", Timeline).note(
+                f"[恢复] {fault.kind} {fault.target} 已恢复"
+            )
+            if fault.kind is FaultKind.BUS_UNWRITABLE and self.pump_enabled:
+                self.pump.start()
+            return
+        self.query_one("#timeline", Timeline).note(
+            f"[告警] {fault.kind} {fault.target}: {fault.detail}"
+        )
 
     def action_interrupt_selected(self) -> None:
         target = self._control_target()

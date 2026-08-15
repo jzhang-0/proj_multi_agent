@@ -3,6 +3,7 @@
 `src/tmuxctl/`:总控台与成员终端之间的全部 tmux 交互都收口在这一个模块,其他模块不允许直接拼 tmux 命令。已验证的能力边界见仓库探针记录:send-keys 全键盘、pipe-pane 实时流、pane_pid 可取可杀、capture-pane 可截画面。
 
 - [ ] **TMX-001** — 版本探测与命令封装:启动时探测 tmux ≥ 3.2,不满足给出明确报错;`has-session/new-session/kill-session/send-keys/capture-pane/list-panes` 的类型化封装,统一超时与错误处理。
+  - 处理登记:cursor,2026-08-16 06:06 +0800,`tmx-001-cursor`。
   - 前置:无。
 - [ ] **TMX-002** — 按键注入 API:文本(`-l` 字面模式)+ `Enter`/`Escape`/`C-c`;注入长文本前检测目标输入框是否有未提交内容(capture-pane 末行启发式),有则等待或换行隔离,解决 v0 的"半行字拼接污染"问题。
   - 前置:TMX-001。

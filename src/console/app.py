@@ -20,23 +20,25 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
+from textual.widgets import Footer, Header, ListItem, ListView, Static
 
-from bus import BusPaths, DeliveryResult, Message, deposit
+from bus import BusPaths, DeliveryOutcome, DeliveryResult, Message, deposit
 from bus.audit import AuditLog
 from bus.hub import tmux_deliver
 from console.buspump import BusPump
 from console.compose import ComposeInput, split_address
-from console.members import member_names
+from console.members import MemberStatusService, member_names, pending_counts
 from console.mirror import Mirror
 from console.timeline import TimelineEntry, history
-from console.widgets import Timeline
+from console.widgets import MemberCard, Timeline
+from tmuxctl import Tmux, TmuxError
 
 #: 低于这个列数就不再显示详情栏:80 列时成员栏 + 时间线已经占满,
 #: 再挤一栏会把时间线压到没法读
@@ -65,7 +67,11 @@ class ConsoleApp(App[None]):
         background: $surface;
     }
     #members > ListItem {
+        height: 2;
         padding: 0 1;
+    }
+    .member-card {
+        height: 2;
     }
     #center {
         width: 1fr;
@@ -111,11 +117,24 @@ class ConsoleApp(App[None]):
         deliver: Callable[[Message], bool] = tmux_deliver,
         members: tuple[str, ...] | None = None,
         snapshotter: object | None = None,
+        member_status: MemberStatusService | None = None,
+        pump_enabled: bool = True,
     ) -> None:
         super().__init__()
         self.paths = (paths or BusPaths.resolve()).ensure()
         self.pump = BusPump(self.paths, self._on_result, deliver=deliver)
+        self.pump_enabled = pump_enabled
         self.members: tuple[str, ...] = members if members is not None else member_names()
+        if member_status is None:
+            tmux = None
+            if deliver is tmux_deliver:
+                with contextlib.suppress(TmuxError):
+                    tmux = Tmux()
+            member_status = MemberStatusService(self.members, tmux)
+            if deliver is tmux_deliver and tmux is None:
+                for name in self.members:
+                    member_status.set_alive(name, False)
+        self.member_status = member_status
         self.selected_member: str | None = None
         #: 上一个对话对象:不写 @ 前缀时默认发给它
         self.last_target: str | None = None
@@ -131,7 +150,17 @@ class ConsoleApp(App[None]):
             # initial_index=None:一起来不要自动高亮第一个成员,
             # 否则"详情栏默认折叠"就被 ListView 自己破坏了
             yield ListView(
-                *(ListItem(Label(name), id=f"member-{name}") for name in self.members),
+                *(
+                    ListItem(
+                        MemberCard(
+                            self.member_status.snapshot(name),
+                            id=f"card-{name}",
+                            classes="member-card",
+                        ),
+                        id=f"member-{name}",
+                    )
+                    for name in self.members
+                ),
                 id="members",
                 initial_index=None,
             )
@@ -153,14 +182,28 @@ class ConsoleApp(App[None]):
         timeline.note("[总控台] ↑↓ 选成员,PgUp/PgDn 翻时间线,Esc 收起详情;q 或 Ctrl-C 退出")
         # 焦点先给成员栏:CON-002 的交互就是选成员。输入框的焦点规则在 CON-004/012。
         self.query_one("#members", ListView).focus()
-        self.pump.start()
+        self.refresh_member_cards()
+        self.set_interval(0.5, self.refresh_member_cards)
+        if self.member_status.can_monitor:
+            self.run_worker(self.member_status.run(), group="member-status", exclusive=True)
+        if self.pump_enabled:
+            self.pump.start()
         self._start_mirror()
 
     def on_unmount(self) -> None:
-        self.pump.stop()
+        self.member_status.stop()
+        if self.pump_enabled:
+            self.pump.stop()
         if self._mirror_timer is not None:
             self._mirror_timer.stop()
             self._mirror_timer = None
+
+    def refresh_member_cards(self) -> None:
+        """每 0.5 秒刷新，保证状态变化 1 秒内出现在界面。"""
+        counts = pending_counts(self.paths)
+        for name in self.members:
+            card = self.query_one(f"#card-{name}", MemberCard)
+            card.apply(self.member_status.snapshot(name, queued=counts[name]))
 
     # --- 成员详情:终端画面镜像 -------------------------------------------
 
@@ -296,6 +339,12 @@ class ConsoleApp(App[None]):
 
     def show_result(self, result: DeliveryResult) -> None:
         """把一条投递结果追加到时间线。"""
+        if (
+            result.outcome is DeliveryOutcome.DELIVERED
+            and result.message is not None
+            and result.message.to in self.members
+        ):
+            self.member_status.mark_working(result.message.to)
         self.query_one("#timeline", Timeline).add(TimelineEntry.from_result(result))
 
     # --- 滚动回看 --------------------------------------------------------

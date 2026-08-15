@@ -5,9 +5,32 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from rich.text import Text
-from textual.widgets import RichLog
+from textual.widgets import RichLog, Static
 
+from console.members import STATUS_PRESENTATION, MemberCardSnapshot
 from console.timeline import TimelineEntry, divider, group_header, render_entry
+
+
+def render_member_card(snapshot: MemberCardSnapshot) -> Text:
+    """两行成员卡片：图形+文字状态、队列数、最后活动。"""
+    glyph, label, color = STATUS_PRESENTATION[snapshot.state]
+    rendered = Text()
+    rendered.append(f"{glyph} {label:<5} ", style=f"bold {color}")
+    rendered.append(snapshot.name, style="bold")
+    rendered.append(f"\n排队{snapshot.queued} · {snapshot.last_activity}", style="#9e9e9e")
+    return rendered
+
+
+class MemberCard(Static):
+    """成员栏里固定两行、可原地刷新的卡片。"""
+
+    def __init__(self, snapshot: MemberCardSnapshot, **kwargs: object) -> None:
+        self.snapshot = snapshot
+        super().__init__(render_member_card(snapshot), **kwargs)  # type: ignore[arg-type]
+
+    def apply(self, snapshot: MemberCardSnapshot) -> None:
+        self.snapshot = snapshot
+        self.update(render_member_card(snapshot))
 
 
 class Timeline(RichLog):

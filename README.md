@@ -46,6 +46,8 @@ tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-sessio
 
 `SessionAdopter.discover()` 可发现静态名册外的现有 tmux 会话，`adopt(name)` 一步收编为可寻址的临时成员；`member_names()` 是收件人补全、成员栏和时间线着色的统一名称集合。收编记录只在当前进程内存中，重启不会写入或改动 `roster.toml`，`forget(name)` 也不会关闭用户原有会话。
 
+总控台成员栏由 `MemberStatusService` 驱动：它把每个 pane 的 `PaneOutputStream` 交给 TMX-007 `ActivityTracker`，每 0.5 秒刷新 `idle/working/stuck/dead/failed` 图形徽标、未投递队列数和最后输出相对时间；成功投递会标记成员正在工作，ROS-004 的熔断状态可通过 `mark_failed()` 覆盖为 `failed`。
+
 成员名册是 `roster.toml`(由 `src/roster` 加载校验)。成员启动开场白由 `AGENTS.md` 的「群聊协议」章节动态生成,roster 不保存协议副本；`check_single_source()` 与回归测试负责防漂移。`./start.sh` 是读名册的薄入口。生命周期直接用 `roster` 命令,单个成员或全体都行,而且幂等(已经在跑的不会被顶掉):
 
 ```bash

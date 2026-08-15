@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import shutil
 import subprocess
 import sys
@@ -82,6 +83,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--say", default="", help="截图前往总线发一条消息(发件人 human)")
     parser.add_argument("--to", default="human", help="--say 的收件人,默认 human(只上屏)")
     parser.add_argument("--keep", action="store_true", help="截完不关会话,方便继续手动看")
+    parser.add_argument(
+        "--fixture",
+        choices=("console", "member-cards"),
+        default="console",
+        help="取证入口;member-cards 同屏展示 CON-005 五态",
+    )
     args = parser.parse_args(argv)
 
     if shutil.which("tmux") is None:
@@ -95,6 +102,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     before = sessions()
 
     try:
+        command = ["uv", "run", "console", "--bus-root", str(bus_root)]
+        if args.fixture == "member-cards":
+            command = [
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "qa.member_cards",
+                "--bus-root",
+                str(bus_root),
+            ]
         tmux(
             "new-session",
             "-d",
@@ -106,7 +124,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             str(height),
             "-c",
             str(repo_root()),
-            f"uv run console --bus-root {bus_root}",
+            shlex.join(command),
         )
         if not wait_until_drawn(session, "总控台"):
             print("[visual] 等不到界面画出来,截图作废")

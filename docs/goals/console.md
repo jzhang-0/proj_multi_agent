@@ -26,9 +26,11 @@
   - 证据:`src/console/compose.py`(`ComposeInput`:`split_address` 拆 `@名字 正文`;`completion_prefix` 只在光标前的 `@token` 上触发,中文名字也认;Tab / ↑↓ 选候选,Tab 或回车落定,Esc 关候选;`sent_history` + `recall` 翻自己发过的话,翻到最新回到空行;补全开着时 ↑↓ 选候选、关着时才翻历史)、`src/console/app.py`(`#suggestions` 候选行按需占一行、`last_target` 决定不写 @ 时发给谁、占位符实时写明这次发给谁、发件人固定 `human`);`tests/test_console_compose.py` 10 passed(含 4 组地址解析、补全触发边界、Tab 落定、默认收件人、没有对话对象时提示而不是乱猜、上下翻历史),全量回归 229 passed。
   - 视觉自验证:`tests/baseline/con-004-compose-120x24.txt`/`.ansi`(120×24:候选行 `Tab/↑↓ 选择:claude [codex] cursor` 当前项加方括号、Tab 落定成 `@codex `、回车后时间线出现 `✓ human → codex: 看一下 CON-004 输入框`、占位符变成「回车发给 codex(@名字 可改收件人)」;焦点在输入框时底栏不再显示 `q 退出`,说明按键没被全局绑定抢走)。
   - 顺带:自验证时在真界面里发给真实成员会**真的**注入对方终端(临时 bus 根不隔离 tmux),已给 codex 澄清一句,并把这条注意写进 [视觉自验证](../quality/visual-check.md)。
-- [ ] **CON-005** — 成员卡片:状态徽标(`idle/working/stuck/dead/failed` 各有颜色与图形区分,不只靠颜色)、未投递排队数、最后活动相对时间;状态来自 TMX-007,变化 1 秒内反映到界面。
-  - 处理登记:codex,2026-08-16 07:01 +0800,`con-005-codex`。
+- [x] **CON-005** — 成员卡片:状态徽标(`idle/working/stuck/dead/failed` 各有颜色与图形区分,不只靠颜色)、未投递排队数、最后活动相对时间;状态来自 TMX-007,变化 1 秒内反映到界面。
   - 前置:CON-002、TMX-007。
+  - 验证:`uv run pytest tests/test_console_members.py tests/test_console_compose.py tests/test_console_mirror.py tests/test_console_layout.py tests/test_console_app.py tests/test_console_timeline.py tests/test_tmuxctl_activity.py tests/test_tmuxctl_snapshot.py tests/test_visual_evidence.py -q && uv run ruff check .`;看画面:`uv run python -m qa.visual --goal CON-005 --scene member-states --size 120x30 --fixture member-cards && uv run python -m qa.visual --goal CON-005 --scene member-states-min --size 80x24 --fixture member-cards`。
+  - 证据:`src/console/members.py` 的 `MemberStatusService` 为每个成员持有 TMX-007 `ActivityTracker` 并消费 `PaneOutputStream`,总线成功投递设置工作标记,ROS-004 熔断可覆盖 `failed`;`src/console/widgets.py` 两行卡片以 `○ IDLE`/`▶ WORK`/`◐ STUCK`/`✕ DEAD`/`‼ FAIL` 五种不同图形、文字、颜色呈现状态,第二行显示按收件人统计的未投递数和最后输出相对时间;App 每 0.5 秒刷新;`tests/test_console_members.py` 覆盖五态样式、相对时间、队列、TMX 状态、投递→stuck、UI <1 秒刷新及隔离真实 tmux 输出→状态 <1 秒,与 CON-004/006 及 TMX 前置联合回归共 66 passed。
+  - 视觉自验证:`tests/baseline/con-005-member-states-120x30.txt`/`.ansi` 与 `tests/baseline/con-005-member-states-min-80x24.txt`/`.ansi`。画面确认五态同屏且 ANSI 前景分别为蓝/青/黄/红/洋红,徽标不只靠颜色;`排队0～4 · 1秒前` 两行定宽对齐,中文无半字、边框无错位;截取物显示宽高恰为 120×30/80×24,最小尺寸详情栏正确让位,取证结束未丢失原有 tmux 会话。
 - [x] **CON-006** — 成员详情实时镜像:选中成员时右栏显示其终端画面(TMX-004 快照,带颜色),活跃窗格刷新间隔 ≤ 100ms,不可见时停止拉取;支持在详情内向上滚动历史。
   - 前置:CON-002、TMX-004。
   - 验证:`uv run ruff check . && uv run pytest tests/test_console_mirror.py -q`;看画面:tmux 里起 console(140×32)后 `send-keys Down` 选中成员

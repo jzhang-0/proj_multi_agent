@@ -10,6 +10,7 @@
   (投递与上屏两个入口各一次)。
 """
 
+from bus.ask import AskError, load_ask, load_reply, store_ask, store_reply, wait_for_reply
 from bus.hub import DeliveryOutcome, DeliveryResult, Hub
 from bus.message import MalformedMessage, Message
 from bus.paths import BusPaths
@@ -27,6 +28,7 @@ from bus.sanitize import format_for_injection, format_for_screen, sanitize
 
 __all__ = [
     "BACKLOG_CAP",
+    "AskError",
     "BusPaths",
     "DeliveryOutcome",
     "DeliveryResult",
@@ -42,9 +44,14 @@ __all__ = [
     "deposit",
     "format_for_injection",
     "format_for_screen",
+    "load_ask",
+    "load_reply",
     "pending",
     "quarantine",
     "read_message",
     "receipt_for",
     "sanitize",
+    "store_ask",
+    "store_reply",
+    "wait_for_reply",
 ]

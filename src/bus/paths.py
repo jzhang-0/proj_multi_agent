@@ -56,12 +56,22 @@ class BusPaths:
         return self.root / "dead"
 
     @property
+    def asks(self) -> Path:
+        """等待回复的提问索引,文件名是 ask id。"""
+        return self.root / "asks"
+
+    @property
+    def replies(self) -> Path:
+        """ask 收到的首个关联回复,文件名是 ask id。"""
+        return self.root / "replies"
+
+    @property
     def log(self) -> Path:
         """审计日志(schema 由 BUS-008 统一)。"""
         return self.root / "log.jsonl"
 
     def ensure(self) -> BusPaths:
         """创建全部子目录,幂等。"""
-        for directory in (self.queue, self.processed, self.dead):
+        for directory in (self.queue, self.processed, self.dead, self.asks, self.replies):
             directory.mkdir(parents=True, exist_ok=True)
         return self

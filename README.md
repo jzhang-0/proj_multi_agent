@@ -7,12 +7,15 @@
 ```bash
 ./start.sh          # 拉起全部成员,本窗口变成群聊记录(hub)
 ./msg claude 写一个fizzbuzz 写完让cursor review 通过后向我汇报
+./msg --ask claude 这个改动是否已经通过测试
+./msg --reply <ask-id> 已通过,验证命令见日志
 tmux attach -t codex   # 围观某个成员(Ctrl-b d 退出)
 ./start.sh stop     # 收工
 ```
 
 - 收件人名字 = tmux 会话名;`human` 保留给人,消息只显示在 hub 窗口。
 - 消息单行注入;成员正忙时排进其输入队列。全部流量留档 `bus/log.jsonl`。
+- `--ask` 默认阻塞等待关联回复 10 分钟;收件人按投递消息里的 `--reply <ask-id>` 指引答复。可用 `--timeout <秒>` 缩短等待。
 - 各成员的免权限弹窗配置见 `start.sh` 与 [roster Goal 卷](docs/goals/roster.md)。
 
 ## 开发中:总控台

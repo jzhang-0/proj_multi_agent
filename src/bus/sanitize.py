@@ -55,6 +55,15 @@ def format_for_injection(message: Message) -> str:
     """投递入口:清洗后拼成注入成员终端的那一行(单行)。"""
     text = sanitize(message.text)
     sender = sanitize(message.sender)
+    if message.kind == "ask" and message.id is not None:
+        ask_id = sanitize(message.id)
+        return (
+            f"[群提问 ask {ask_id}] 来自 {sender}: {text}"
+            f' —— 回复此提问,运行: ./msg --reply {ask_id} "你的答复"'
+        )
+    if message.kind == "reply" and message.reply_to is not None:
+        ask_id = sanitize(message.reply_to)
+        return f"[群回复 ask {ask_id}] 来自 {sender}: {text}"
     return f'[群消息] 来自 {sender}: {text} —— 如需回复,运行: ./msg {sender} "你的回复"'
 
 

@@ -29,9 +29,11 @@
 - [ ] **CON-005** — 成员卡片:状态徽标(`idle/working/stuck/dead/failed` 各有颜色与图形区分,不只靠颜色)、未投递排队数、最后活动相对时间;状态来自 TMX-007,变化 1 秒内反映到界面。
   - 处理登记:codex,2026-08-16 07:01 +0800,`con-005-codex`。
   - 前置:CON-002、TMX-007。
-- [ ] **CON-006** — 成员详情实时镜像:选中成员时右栏显示其终端画面(TMX-004 快照,带颜色),活跃窗格刷新间隔 ≤ 100ms,不可见时停止拉取;支持在详情内向上滚动历史。
-  - 处理登记:claude,2026-08-16 10:15 +0800,`con-006-claude`。
+- [x] **CON-006** — 成员详情实时镜像:选中成员时右栏显示其终端画面(TMX-004 快照,带颜色),活跃窗格刷新间隔 ≤ 100ms,不可见时停止拉取;支持在详情内向上滚动历史。
   - 前置:CON-002、TMX-004。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_console_mirror.py -q`;看画面:tmux 里起 console(140×32)后 `send-keys Down` 选中成员
+  - 证据:`src/console/mirror.py`(`Mirror` 组件:`show_screen` 用 `Text.from_ansi` 把 `capture-pane -p -e` 的颜色照搬进来;`history_offset` 映射成 `capture-pane -S`,PgUp/PgDn/Home/End 翻的是**成员终端自己的回滚区**;换成员回到当前画面)、`src/console/app.py`(`MIRROR_INTERVAL = 0.1` 定时器复用 TMX-004 的 `PaneSnapshotter`(自带 10Hz 合并),`_sync_detail` 里详情栏不可见就 `timer.pause()`、可见才 `resume()`,退出时 `stop()`);`tests/test_console_mirror.py` 6 passed(刷新间隔达标、带色抓取且 ANSI 不作为可见字符残留、未选中/窄屏让位时一次 capture 都不发、PgUp 真的把 `-S` 传下去并显示回滚区内容、Home/End、换成员归位、Tab 能走到详情栏);全量回归 236 passed。
+  - 视觉自验证:`tests/baseline/con-006-mirror-140x32.txt`/`.ansi`(140×32,选中 claude:右栏实时镜像出该成员终端里正在显示的群消息与 `⏺` 输出行,连它自己的灰色 `❯` 提示符背景色都照搬;三栏分隔线仍对齐,中文按双宽换行没有把边框顶歪)。
 - [ ] **CON-007** — 控制操作:对选中成员提供打断 / 终止 / 重启 / 全屏接管(挂起 console 进 `tmux attach`,退出后恢复);终止与重启需二次确认;全部操作有键位并记入审计日志。
   - 前置:CON-005、TMX-005、ROS-003。
 - [ ] **CON-008** — `/` 命令面板:`/up <名字>`、`/down <名字>`、`/restart <名字>`、`/adopt <会话>`(ROS-005)、`/mute <名字>`(临时拒收其消息)、`/help`;命令有补全和错误提示。

@@ -91,7 +91,9 @@ def run_bench(count: int, interval: float, target: str, deliver=tmux_deliver) ->
             deposit(message, paths)
             time.sleep(interval)
 
-        deadline = time.monotonic() + 10
+        # 等结果的上限随样本数放大:机器上并发跑着几个 AI CLI 时,固定 10 秒
+        # 会在还没测完的时候误判超时
+        deadline = time.monotonic() + 10 + count * interval * 4
         while len(latencies) + len(failures) < count and time.monotonic() < deadline:
             time.sleep(0.01)
         stop.set()

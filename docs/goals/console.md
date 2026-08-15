@@ -66,4 +66,5 @@
   - 证据:`src/console/health.py` 每 0.5 秒异步探测 tmux server、名册成员会话和 bus 可写性，只在故障/恢复边沿上屏，server 不在时折叠成员级噪声；`src/console/buspump.py` 收敛后台异常并支持 bus 恢复后重启，`src/console/app.py` 对人类入队失败显式告警且保留输入。`tests/test_console_health.py` 注入三类故障，覆盖一次性告警、自动恢复、重试与投递线程重启。
   - 视觉自验证:`tests/baseline/con-011-faults-recovered-120x30.txt`/`.ansi`(120×30)同屏可见三条`[告警]`与对应三条`[恢复]`，中英文故障详情未截断，时间线、成员卡和输入框分隔线对齐；fixture 不读取也不向真实成员终端发送内容。
 - [ ] **CON-012** — 键盘完备与帮助:全部功能可纯键盘完成;`?` 弹出快捷键帮助面板;焦点顺序合理(输入框 ↔ 时间线 ↔ 成员栏 ↔ 详情)。
+  - 处理登记:codex,2026-08-16 07:30 +0800,`con-012-codex`。
   - 前置:CON-007、CON-008。

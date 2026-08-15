@@ -23,6 +23,7 @@
   - 前置:ROS-003。
   - 验证:`uv run pytest tests/test_roster_adopt.py tests/test_roster_health.py tests/test_roster_lifecycle.py tests/test_roster_load.py tests/test_roster_profiles.py tests/test_tmuxctl.py -q && uv run ruff check .`
   - 证据:`src/roster/adopt.py` 的 `SessionAdopter` 以 TMX 类型化 `list_panes(all_sessions=True)` 归并并发现静态 roster 外的合法会话,`adopt(name)` 幂等地收编为内存态 `TemporaryMember`,`member_names()` 统一供收件人补全、成员栏与时间线身份使用,`can_receive()` 校验同名会话仍在,`forget()` 只移除记录不关会话;收编不写文件,新建实例即恢复为空;`tests/test_roster_adopt.py` 覆盖筛选、多窗格、幂等、寻址、重启不保留、遗忘、无 tmux server 降级及隔离真实 tmux 的收编后消息注入,同 ROS/TMX 前置回归共 48 passed;README 已同步。
-- [ ] **ROS-006** — 群规单一事实来源:成员运行时协议只维护在 `AGENTS.md`「群聊协议」一节,开场白由它生成;写一个一致性检查(测试或脚本)防止两处漂移。
-  - 处理登记:codex,2026-08-16 06:57 +0800,`ros-006-codex`。
+- [x] **ROS-006** — 群规单一事实来源:成员运行时协议只维护在 `AGENTS.md`「群聊协议」一节,开场白由它生成;写一个一致性检查(测试或脚本)防止两处漂移。
   - 前置:ROS-001。
+  - 验证:`uv run pytest tests/test_roster_protocol.py tests/test_roster_load.py tests/test_roster_profiles.py tests/test_roster_lifecycle.py tests/test_roster_health.py tests/test_roster_adopt.py -q && uv run ruff check .`
+  - 证据:`src/roster/protocol.py` 精确抽取 `AGENTS.md` 唯一的二级「群聊协议」章节并由 `render_member_greeting()` 注入成员身份后生成启动开场白;`roster.toml` 已删除默认开场白副本,成员模板仅作为可选前言且不能替代权威协议;`check_single_source()` 拒绝静态 roster 再出现默认或成员级副本;`tests/test_roster_protocol.py` 覆盖章节边界、缺失/空/重复、仓库一致性、全部真实成员启动命令、AGENTS 改动即时生效与前言不可替代协议,同全套 roster 回归共 45 passed;真实 tmux 生命周期测试以滚动区确认长开场白和 `AGENT_NAME` 均已注入;README 已同步。

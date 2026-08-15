@@ -30,6 +30,7 @@
 - [ ] **BUS-007** — ask/reply 语义:`./msg --ask <收件人> <问题>` 阻塞等待回复(默认 10 分钟超时),投递给收件人的消息里带 ask id 和回复指引;`./msg --reply <id> <答复>` 关联回去。普通用法完全不受影响。
   - 前置:BUS-001。
 - [ ] **BUS-008** — 审计日志统一 schema:每条消息记 `deposit/deliver/deliver-failed/rejected` 事件到 `bus/log.jsonl`(拒收含原因),正文只存 80 字符预览 + 全文另存;日志按 10MB 轮转。
+  - 处理登记:claude,2026-08-16 07:05 +0800,`bus-008-claude`。
   - 前置:BUS-001。
 - [ ] **BUS-009** — 契约回归测试:v0 的 `./msg a b c` 用法、四字段 JSON、`human` 保留名语义,各写成契约测试钉死;`hub.py` 与 `start.sh` 成为新实现的薄入口且原用法不变。
   - 前置:BUS-001、BUS-006。

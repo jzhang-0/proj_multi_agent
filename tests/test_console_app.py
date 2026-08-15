@@ -32,10 +32,11 @@ def app_with(paths, sink):
 
 
 def events_text(app):
-    from textual.widgets import RichLog
+    """把时间线上已渲染的文本抠出来(去掉样式,只留字)。"""
+    from console.widgets import Timeline
 
-    log = app.query_one("#timeline", RichLog)
-    return "\n".join(str(line) for line in log.lines)
+    log = app.query_one("#timeline", Timeline)
+    return "\n".join("".join(segment.text for segment in line) for line in log.lines)
 
 
 def test_app_starts_pumps_the_bus_and_shows_the_traffic(paths):
@@ -53,7 +54,7 @@ def test_app_starts_pumps_the_bus_and_shows_the_traffic(paths):
             await pilot.pause(0.05)
             assert delivered == ["内嵌循环收到没"]
             assert pending(paths) == []
-            assert "claude -> codex: 内嵌循环收到没" in events_text(app)
+            assert "claude → codex: 内嵌循环收到没" in events_text(app)
 
     run_async(scenario)
 

@@ -26,22 +26,15 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, RichLog, Static
+from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
 
 from bus import BusPaths, DeliveryResult, Message
+from bus.audit import AuditLog
 from bus.hub import tmux_deliver
-from bus.sanitize import format_for_screen
 from console.buspump import BusPump
 from console.members import member_names
-
-#: 每种投递结果在界面上的标记(与 headless hub 的 ★/✓/✗ 保持一致)
-MARKS = {
-    "shown": "★",
-    "delivered": "✓",
-    "deliver-failed": "✗",
-    "rejected": "⊘",
-    "malformed": "☠",
-}
+from console.timeline import TimelineEntry, history
+from console.widgets import Timeline
 
 #: 低于这个列数就不再显示详情栏:80 列时成员栏 + 时间线已经占满,
 #: 再挤一栏会把时间线压到没法读
@@ -92,6 +85,10 @@ class ConsoleApp(App[None]):
         Binding("q", "quit", "退出"),
         Binding("ctrl+c", "quit", "退出", priority=True, show=False),
         Binding("escape", "clear_selection", "收起详情"),
+        Binding("pageup", "timeline_scroll('page_up')", "上翻", show=False),
+        Binding("pagedown", "timeline_scroll('page_down')", "下翻", show=False),
+        Binding("home", "timeline_scroll('home')", "回到最早", show=False),
+        Binding("end", "timeline_scroll('end')", "回到最新", show=False),
     ]
 
     def __init__(
@@ -120,15 +117,16 @@ class ConsoleApp(App[None]):
                 initial_index=None,
             )
             with Vertical(id="center"):
-                yield RichLog(id="timeline", markup=False, wrap=True, auto_scroll=True)
+                yield Timeline(id="timeline")
                 yield Input(placeholder="@名字 说点什么,回车发送", id="compose")
             yield Static("", id="detail", markup=False)
         yield Footer()
 
     def on_mount(self) -> None:
-        timeline = self.query_one("#timeline", RichLog)
-        timeline.write(f"[总控台] 总线目录 {self.paths.root}")
-        timeline.write("[总控台] ↑↓ 选成员看详情,Esc 收起,Tab 去输入框;q 或 Ctrl-C 退出")
+        timeline = self.query_one("#timeline", Timeline)
+        timeline.note(f"[总控台] 总线目录 {self.paths.root}")
+        timeline.backfill(history(AuditLog(self.paths)))
+        timeline.note("[总控台] ↑↓ 选成员,PgUp/PgDn 翻时间线,Esc 收起详情;q 或 Ctrl-C 退出")
         # 焦点先给成员栏:CON-002 的交互就是选成员。输入框的焦点规则在 CON-004/012。
         self.query_one("#members", ListView).focus()
         self.pump.start()
@@ -180,11 +178,16 @@ class ConsoleApp(App[None]):
         self.call_from_thread(self.show_result, result)
 
     def show_result(self, result: DeliveryResult) -> None:
-        """把一条投递结果显示出来(CON-003 会换成真正的时间线)。"""
-        mark = MARKS.get(str(result.outcome), "?")
-        if result.message is None:
-            line = f"{mark} {result.path.name} — {result.detail}"
-        else:
-            detail = f"({result.detail})" if result.detail else ""
-            line = f"{format_for_screen(result.message)}  {mark}{detail}"
-        self.query_one("#timeline", RichLog).write(line)
+        """把一条投递结果追加到时间线。"""
+        self.query_one("#timeline", Timeline).add(TimelineEntry.from_result(result))
+
+    # --- 滚动回看 --------------------------------------------------------
+
+    def action_timeline_scroll(self, direction: str) -> None:
+        timeline = self.query_one("#timeline", Timeline)
+        {
+            "page_up": timeline.scroll_page_up,
+            "page_down": timeline.scroll_page_down,
+            "home": timeline.scroll_home,
+            "end": timeline.scroll_end,
+        }[direction]()

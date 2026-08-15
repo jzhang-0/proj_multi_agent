@@ -37,7 +37,7 @@ uv run ruff check .
 | `AGENTS.md` / `CLAUDE.md` | AI 入口:群聊协议 + 工作规则 |
 | `docs/` | 产品定义、架构决策、Goal 清单 |
 | `pyproject.toml` / `uv.lock` | Python、依赖、pytest、ruff 与命令入口配置 |
-| `src/` / `tests/` | 应用源码与自动化测试 |
+| `src/` / `tests/` | 应用源码与自动化测试(`src/console`、`src/tmuxctl`) |
 | `hub.py` `msg` `start.sh` | v0 总线(保持可用,逐步变薄入口) |
 | `bus/` | 运行时数据(gitignore) |
 | `reference/pi-extensions/` | 参考实现:pi 的 talk 扩展(只读,防环策略的出处) |

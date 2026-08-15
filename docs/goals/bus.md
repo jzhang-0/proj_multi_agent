@@ -36,4 +36,5 @@
   - 证据:`src/bus/audit.py`(`AuditLog.record` 写固定字段 `ts/event/from/to/id/preview` + 可选 `body/kind/replyTo/reason`;`deposit` 在 `queue.deposit` 里记,`deliver`/`deliver-failed`/`rejected` 在 `Hub.drain_once` 里记,拒收带 reason;正文 80 字符预览、全文另存 `bus/bodies/<id>.txt`;`_rotate_if_needed` 到 10MB 改名成 `log-<时间戳>.jsonl`;`entries()` 供 CON-003 回填并跳过坏行);`tests/test_bus_audit.py` 7 passed,全量回归 103 passed。
   - 顺带:多记一个 `malformed` 事件(死信也要可审计),预览过清洗、全文原样留作取证。
 - [ ] **BUS-009** — 契约回归测试:v0 的 `./msg a b c` 用法、四字段 JSON、`human` 保留名语义,各写成契约测试钉死;`hub.py` 与 `start.sh` 成为新实现的薄入口且原用法不变。
+  - 处理登记:claude,2026-08-16 07:20 +0800,`bus-009-claude`。
   - 前置:BUS-001、BUS-006。

@@ -3,6 +3,7 @@
 约束回顾:一台机器上大量并发开发,**测试要轻、要少跑全量**;测试一律用临时目录,不碰仓库根 `bus/`。
 
 - [ ] **QA-001** — 工程骨架:`pyproject.toml`(uv 管理,Python ≥ 3.11)、`src/` 布局、pytest + ruff 配置、`uv run console` / `uv run pytest -q` 可用;ruff 违规视为错误。
+  - 处理登记:codex,2026-08-16 06:02 +0800,`qa-001-codex`。
   - 前置:无。
 - [ ] **QA-002** — 端到端冒烟:一条命令(`uv run python -m qa.smoke`)完成「起假成员窗格(cat)→ msg 入队 → 投递 → 窗格收到 → 清理」,输出投递延迟;这是批 1 的收口命令。
   - 前置:BUS-006、TMX-002。

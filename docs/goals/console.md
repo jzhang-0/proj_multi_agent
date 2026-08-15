@@ -37,6 +37,7 @@
   - 证据:`src/console/mirror.py`(`Mirror` 组件:`show_screen` 用 `Text.from_ansi` 把 `capture-pane -p -e` 的颜色照搬进来;`history_offset` 映射成 `capture-pane -S`,PgUp/PgDn/Home/End 翻的是**成员终端自己的回滚区**;换成员回到当前画面)、`src/console/app.py`(`MIRROR_INTERVAL = 0.1` 定时器复用 TMX-004 的 `PaneSnapshotter`(自带 10Hz 合并),`_sync_detail` 里详情栏不可见就 `timer.pause()`、可见才 `resume()`,退出时 `stop()`);`tests/test_console_mirror.py` 6 passed(刷新间隔达标、带色抓取且 ANSI 不作为可见字符残留、未选中/窄屏让位时一次 capture 都不发、PgUp 真的把 `-S` 传下去并显示回滚区内容、Home/End、换成员归位、Tab 能走到详情栏);全量回归 236 passed。
   - 视觉自验证:`tests/baseline/con-006-mirror-140x32.txt`/`.ansi`(140×32,选中 claude:右栏实时镜像出该成员终端里正在显示的群消息与 `⏺` 输出行,连它自己的灰色 `❯` 提示符背景色都照搬;三栏分隔线仍对齐,中文按双宽换行没有把边框顶歪)。
 - [ ] **CON-007** — 控制操作:对选中成员提供打断 / 终止 / 重启 / 全屏接管(挂起 console 进 `tmux attach`,退出后恢复);终止与重启需二次确认;全部操作有键位并记入审计日志。
+  - 处理登记:codex,2026-08-16 07:12 +0800,`con-007-codex`。
   - 前置:CON-005、TMX-005、ROS-003。
 - [ ] **CON-008** — `/` 命令面板:`/up <名字>`、`/down <名字>`、`/restart <名字>`、`/adopt <会话>`(ROS-005)、`/mute <名字>`(临时拒收其消息)、`/help`;命令有补全和错误提示。
   - 处理登记:claude,2026-08-16 10:40 +0800,`con-008-claude`。

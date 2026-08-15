@@ -18,7 +18,8 @@ from pathlib import Path
 
 from bus.message import MalformedMessage, Message
 from bus.paths import BusPaths
-from bus.queue import archive, pending, quarantine, read_message
+from bus.policy import OutboundPolicy, receipt_for
+from bus.queue import archive, deposit, pending, quarantine, read_message
 
 #: `human` 是保留名:不投递,只上屏(架构决策 §3)
 HUMAN = "human"
@@ -30,6 +31,7 @@ class DeliveryOutcome(StrEnum):
     DELIVERED = "delivered"
     SHOWN = "shown"  # 发给 human,只上屏不投递
     FAILED = "deliver-failed"
+    REJECTED = "rejected"  # 被防环策略挡下,发件人收到回执
     MALFORMED = "malformed"
 
 
@@ -70,11 +72,21 @@ class Hub:
         deliver: Callable[[Message], bool] = tmux_deliver,
         on_result: Callable[[DeliveryResult], None] | None = None,
         poll_interval: float = 0.5,
+        policy: OutboundPolicy | None = None,
     ) -> None:
         self.paths = paths.ensure()
         self.deliver = deliver
         self.on_result = on_result
         self.poll_interval = poll_interval
+        self.policy = policy if policy is not None else OutboundPolicy()
+
+    def _reject(self, path: Path, message: Message, reason: str) -> DeliveryResult:
+        """拒收:消息不投递直接归档,给发件人回执一条说明。"""
+        archive(path, self.paths)
+        receipt = receipt_for(message, reason)
+        if receipt is not None:
+            deposit(receipt, self.paths)
+        return DeliveryResult(path, DeliveryOutcome.REJECTED, message, reason)
 
     def _handle(self, path: Path) -> DeliveryResult:
         try:
@@ -86,6 +98,11 @@ class Hub:
         if message.to == HUMAN:
             archive(path, self.paths)
             return DeliveryResult(path, DeliveryOutcome.SHOWN, message)
+
+        verdict = self.policy.check(message)
+        if not verdict.ok:
+            return self._reject(path, message, verdict.reason)
+        self.policy.record(message)
 
         try:
             ok = self.deliver(message)

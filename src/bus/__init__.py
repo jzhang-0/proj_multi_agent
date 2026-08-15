@@ -11,6 +11,7 @@
 from bus.hub import DeliveryOutcome, DeliveryResult, Hub
 from bus.message import MalformedMessage, Message
 from bus.paths import BusPaths
+from bus.policy import OutboundPolicy, Verdict, receipt_for
 from bus.queue import archive, deposit, pending, quarantine, read_message
 
 __all__ = [
@@ -20,9 +21,12 @@ __all__ = [
     "Hub",
     "MalformedMessage",
     "Message",
+    "OutboundPolicy",
+    "Verdict",
     "archive",
     "deposit",
     "pending",
     "quarantine",
     "read_message",
+    "receipt_for",
 ]

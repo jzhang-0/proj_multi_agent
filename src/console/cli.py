@@ -31,6 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--bus-root", default=None, help="bus 运行时根目录(默认仓库根 bus/)")
     parser.add_argument(
+        "--theme",
+        choices=("console-dark", "console-light"),
+        default="console-dark",
+        help="启动主题(界面里按 t 随时切换)",
+    )
+    parser.add_argument(
         "--once",
         action="store_true",
         help="仅 --headless:清一次队列就退出",
@@ -57,6 +63,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     from console.app import ConsoleApp
+    from console.theme import use as use_theme
 
+    use_theme(args.theme)
     ConsoleApp(BusPaths.resolve(args.bus_root)).run()
     return 0

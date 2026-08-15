@@ -1,0 +1,30 @@
+ ⭘                                         总控台 — 本机 AI 群聊与指挥中心
+ ○ IDLE  claude  │ [总控台] 总线目录                                                  │
+ 排队0 · 未活动  │ /private/tmp/claude-501/-Users-jzhang-Downloads-proj-multi-agent   │
+ ○ IDLE  codex   │ f5d/scratchpad/con9bus                                             │ ⏺ Fixed and committed. Now
+ 排队0 · 未活动  │ ── 2026-08-16 07:31 ────                                           │ reporting back to human.
+ ○ IDLE  cursor  │ ★ claude → human: 主题 console-dark 的样子: @codex 中英文混排 mi   │
+ 排队0 · 未活动  │ ── 以上 1 条来自 bus/log.jsonl ────                                │   Ran 1 shell command
+ ○ IDLE  agy     │ [总控台] ↑↓ 选成员,PgUp/PgDn 翻时间线,Esc 收起详情;q 或 Ctrl-C     │
+ 排队0 · 未活动  │ ── 2026-08-16 07:31 ────                                           │ ⏺ CON-010
+                 │ ★ claude → human: 主题 console-light 的样子: @codex 中英文混排 m   │ 的视觉证据问题已解决:采用"纯性
+                 │                                                                    │ 能 Goal
+                 │                                                                    │ 可声明视觉例外"的方案,而不是硬
+                 │                                                                    │ 造一张无意义的截图。具体做了:
+                 │                                                                    │
+                 │                                                                    │   -
+                 │                                                                    │ tests/test_visual_evidence.py
+                 │                                                                    │ 新增 VISUAL_EXEMPTION
+                 │                                                                    │ 正则,识别形如「视觉例外(类别):
+                 │                                                                    │ 原因」的显式声明,只有带原因才放
+                 │                                                                    │ 行,不能空口白话跳过。
+                 │                                                                    │   - docs/goals/console.md 给
+                 │                                                                    │ CON-010 补了这行例外声明,说明该
+                 │                                                                    │ Goal
+                 │                                                                    │ 全部产出是延迟数字和退出码,没有
+                 │                                                                    │ 可截取的画面。
+                 │                                          ▉                         │   -
+                 │▊▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▎│ docs/quality/visual-check.md
+                 │▊  @名字 说点什么,回车发送                                         ▎│ 记录了这个例外的书写约定,供后续
+                 │▊▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▎│ Goal 参考。
+ q 退出  esc 收起详情  t 深浅主题  f5 打断  f6 终止  f7 重启  f8 接管                                       ▏^p palette

@@ -37,6 +37,7 @@ from console.commands import CommandRunner, is_command
 from console.compose import ComposeInput, split_address
 from console.control import ConfirmControlScreen, ControlFeedback, MemberController
 from console.health import ConsoleHealthMonitor, FaultEvent, FaultKind
+from console.help import ShortcutHelpScreen
 from console.members import MemberStatusService, member_names, pending_counts
 from console.mirror import Mirror
 from console.theme import THEMES, Tokens
@@ -89,6 +90,9 @@ class ConsoleApp(App[None]):
         height: 1fr;
         padding: 0 1;
     }
+    #timeline:focus {
+        background-tint: $accent 8%;
+    }
     #compose {
         height: 3;
         border: tall $primary-darken-2;
@@ -107,11 +111,22 @@ class ConsoleApp(App[None]):
         display: none;
         overflow-x: hidden;
     }
+    #members:focus {
+        border-right: heavy $accent;
+    }
+    #compose:focus {
+        border: tall $accent;
+    }
+    #detail:focus {
+        border-left: heavy $accent;
+    }
     """
 
     BINDINGS = [
         Binding("q", "quit", "退出"),
         Binding("ctrl+c", "quit", "退出", priority=True, show=False),
+        Binding("question_mark", "show_shortcuts", "帮助"),
+        Binding("f1", "show_shortcuts", "帮助", show=False),
         Binding("escape", "clear_selection", "收起详情"),
         Binding("t", "toggle_theme", "深浅主题"),
         Binding("pageup", "timeline_scroll('page_up')", "上翻", show=False),
@@ -405,6 +420,9 @@ class ConsoleApp(App[None]):
 
     def action_clear_selection(self) -> None:
         self.select_member(None)
+
+    def action_show_shortcuts(self) -> None:
+        self.push_screen(ShortcutHelpScreen())
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         item = event.item

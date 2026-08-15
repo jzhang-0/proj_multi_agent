@@ -32,6 +32,8 @@ uv run ruff check .
 
 投递延迟实测:`uv run python -m bus.bench`(起临时 tmux 会话跑 `cat` 当收件人,打印 min/P50/P95/max 并按 P95 < 200ms 判定;`--fake` 只量总线自身调度)。
 
+批 1 收口冒烟:`uv run python -m qa.smoke`(假成员 `cat` 窗格 → 入队 → 投递 → 窗格收到,打印入队到上屏延迟;用临时目录,不碰仓库根 `bus/`)。
+
 消息总线模块是 `src/bus/`:消息 schema v1(`to/from/text/ts` 必备,`id/kind/replyTo` 可选,未知字段原样保留)、文件队列、死信目录、投递循环。bus 运行时根目录默认是仓库根 `bus/`,可用环境变量 `BUS_ROOT` 或 `BusPaths.resolve(root)` 重定向(测试一律指向临时目录)。
 
 tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-session` / `new-session` / `kill-session` / `send-keys` / `capture-pane` / `list-panes` 收口为类型化 API;其他模块不要直接拼 tmux 命令。
@@ -43,7 +45,7 @@ tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-sessio
 | `AGENTS.md` / `CLAUDE.md` | AI 入口:群聊协议 + 工作规则 |
 | `docs/` | 产品定义、架构决策、Goal 清单 |
 | `pyproject.toml` / `uv.lock` | Python、依赖、pytest、ruff 与命令入口配置 |
-| `src/` / `tests/` | 应用源码与自动化测试(`src/bus`、`src/console`、`src/tmuxctl`) |
+| `src/` / `tests/` | 应用源码与自动化测试(`src/bus`、`src/console`、`src/tmuxctl`、`src/qa`) |
 | `hub.py` `msg` `start.sh` | v0 总线(保持可用,逐步变薄入口) |
 | `bus/` | 运行时数据(gitignore) |
 | `reference/pi-extensions/` | 参考实现:pi 的 talk 扩展(只读,防环策略的出处) |

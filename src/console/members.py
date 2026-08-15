@@ -88,17 +88,26 @@ class MemberStatusService:
         self.clock = clock
         self.reconnect_interval = reconnect_interval
         self._stream_factory = stream_factory
-        self._trackers = {
-            name: ActivityTracker(
-                working_window=working_window,
-                stuck_after=stuck_after,
-                clock=clock,
-            )
-            for name in names
-        }
+        self._working_window = working_window
+        self._stuck_after = stuck_after
+        self._trackers = {name: self._new_tracker() for name in names}
         self._overrides: dict[str, str] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._stopped = False
+
+    def _new_tracker(self) -> ActivityTracker:
+        return ActivityTracker(
+            working_window=self._working_window,
+            stuck_after=self._stuck_after,
+            clock=self.clock,
+        )
+
+    def track(self, names: tuple[str, ...]) -> None:
+        """名册变了(比如 `/adopt` 收编了临时成员)之后补上缺的追踪器。"""
+        self.names = names
+        for name in names:
+            if name not in self._trackers:
+                self._trackers[name] = self._new_tracker()
 
     @property
     def can_monitor(self) -> bool:

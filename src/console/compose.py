@@ -19,6 +19,8 @@ from textual import events
 from textual.message import Message
 from textual.widgets import Input
 
+from console.commands import COMMAND_NAMES
+
 #: 光标前正在输入的 `@前缀`(允许中文名字)
 AT_PREFIX = re.compile(r"@([\w一-鿿-]*)$")
 
@@ -62,13 +64,30 @@ class ComposeInput(Input):
         self._history_cursor: int | None = None
         self.candidates: tuple[str, ...] = ()
         self.candidate_index = 0
+        #: 当前补的是成员名还是命令名,决定候选行怎么显示
+        self.candidate_kind = "member"
 
     # --- 补全 -----------------------------------------------------------
 
-    def refresh_candidates(self) -> None:
-        """按光标位置重算候选。"""
+    def _completion_source(self) -> tuple[str, tuple[str, ...], str] | None:
+        """(已输入的前缀, 候选池, 类型);当前位置不该补全就返回 None。"""
+        head = self.value[: self.cursor_position]
+        if head.startswith("/") and " " not in head:
+            return head[1:], COMMAND_NAMES, "command"
         prefix = completion_prefix(self.value, self.cursor_position)
-        self.candidates = () if prefix is None else matching_members(prefix, self.members)
+        if prefix is None:
+            return None
+        return prefix, self.members, "member"
+
+    def refresh_candidates(self) -> None:
+        """按光标位置重算候选:`/` 开头补命令,`@` 开头补成员名。"""
+        source = self._completion_source()
+        if source is None:
+            self.candidates, self.candidate_kind = (), "member"
+        else:
+            prefix, pool, kind = source
+            self.candidates = matching_members(prefix, pool)
+            self.candidate_kind = kind
         self.candidate_index = 0
         self.post_message(self.CandidatesChanged(self))
 
@@ -84,11 +103,12 @@ class ComposeInput(Input):
             self.post_message(self.CandidatesChanged(self))
 
     def accept_candidate(self) -> bool:
-        """把光标前的 `@前缀` 补成完整成员名,后面补一个空格。"""
+        """把光标前的前缀补成完整的成员名 / 命令名,后面补一个空格。"""
         name = self.current_candidate
-        if name is None:
+        source = self._completion_source()
+        if name is None or source is None:
             return False
-        prefix = completion_prefix(self.value, self.cursor_position) or ""
+        prefix = source[0]
         start = self.cursor_position - len(prefix)
         self.value = f"{self.value[:start]}{name} {self.value[self.cursor_position:]}"
         self.cursor_position = start + len(name) + 1
@@ -133,7 +153,8 @@ class ComposeInput(Input):
             event.stop()
             return
         if event.key == "enter" and self.candidates:
-            prefix = completion_prefix(self.value, self.cursor_position) or ""
+            source = self._completion_source()
+            prefix = source[0] if source else ""
             if self.current_candidate != prefix:
                 # 名字还没打全,这一下回车先补全;再按一次才发出去
                 self.accept_candidate()

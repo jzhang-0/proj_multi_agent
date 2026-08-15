@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import time
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from bus.audit import AuditEvent, AuditLog
 from bus.message import MalformedMessage, Message
 from bus.paths import BusPaths
 from bus.policy import OutboundPolicy, receipt_for
@@ -60,6 +62,15 @@ class DeliveryResult:
     outcome: DeliveryOutcome
     message: Message | None = None
     detail: str = ""
+
+
+#: 处理结果 → 审计事件。发给 human 的消息算送达(送到人的屏幕上)
+_OUTCOME_EVENTS = {
+    DeliveryOutcome.DELIVERED: AuditEvent.DELIVER,
+    DeliveryOutcome.SHOWN: AuditEvent.DELIVER,
+    DeliveryOutcome.FAILED: AuditEvent.DELIVER_FAILED,
+    DeliveryOutcome.REJECTED: AuditEvent.REJECTED,
+}
 
 
 #: 敲回车前最多等目标终端回显多久(秒);等到就立刻回车,不再盲等
@@ -126,8 +137,10 @@ class Hub:
         on_result: Callable[[DeliveryResult], None] | None = None,
         poll_interval: float = FALLBACK_POLL_SECONDS,
         policy: OutboundPolicy | None = None,
+        audit: AuditLog | None = None,
     ) -> None:
         self.paths = paths.ensure()
+        self.audit = audit if audit is not None else AuditLog(self.paths)
         self.deliver = deliver
         self.on_result = on_result
         self.poll_interval = poll_interval
@@ -152,6 +165,7 @@ class Hub:
             message = read_message(path)
         except MalformedMessage as exc:
             quarantine(path, self.paths, str(exc))
+            self.audit.record_malformed(path, str(exc))
             return DeliveryResult(path, DeliveryOutcome.MALFORMED, detail=str(exc))
 
         unread_backlog = 0
@@ -177,6 +191,16 @@ class Hub:
         outcome = DeliveryOutcome.DELIVERED if ok else DeliveryOutcome.FAILED
         return DeliveryResult(path, outcome, message, detail)
 
+    def _audit(self, result: DeliveryResult) -> None:
+        """把处理结果记进审计日志;记日志失败不许影响投递。"""
+        if result.message is None:
+            return
+        event = _OUTCOME_EVENTS.get(result.outcome)
+        if event is None:
+            return
+        with contextlib.suppress(OSError):
+            self.audit.record(event, result.message, result.detail)
+
     def drain_once(self) -> list[DeliveryResult]:
         """处理当前队列里的全部消息,返回逐条结果。"""
         results = []
@@ -184,6 +208,7 @@ class Hub:
         for path in pending(self.paths):
             result = self._handle(path, queued_before)
             results.append(result)
+            self._audit(result)
             if self.on_result is not None:
                 self.on_result(result)
         return results

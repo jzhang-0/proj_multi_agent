@@ -191,6 +191,35 @@ def test_command_output_goes_to_the_timeline_not_the_bus(paths):
     run_async(scenario)
 
 
+def test_adopt_rebuilds_the_member_column(paths):
+    """收编之后成员栏要多一张卡片,而且不能因为 clear/append 竞争把栏清空。"""
+    from textual.widgets import ListView
+
+    app = ConsoleApp(paths, deliver=lambda m: True, members=MEMBERS)
+
+    async def scenario():
+        async with app.run_test(size=(120, 30)) as pilot:
+            app.commands.adopter = FakeAdopter()
+            compose = app.query_one("#compose", ComposeInput)
+            compose.focus()
+            compose.value = "/adopt alice"
+            await pilot.press("enter")
+            for _ in range(50):
+                if "alice" in app.members:
+                    break
+                await pilot.pause(0.02)
+            await pilot.pause(0.05)
+
+            assert app.members == (*MEMBERS, "alice")
+            listing = app.query_one("#members", ListView)
+            assert [str(item.id) for item in listing.children] == [
+                f"member-{name}" for name in app.members
+            ]
+            assert compose.members == app.members  # 补全里也能 @ 到它
+
+    run_async(scenario)
+
+
 def test_muted_member_messages_are_rejected(paths):
     delivered = []
     app = ConsoleApp(paths, deliver=lambda m: delivered.append(m) is None, members=MEMBERS)

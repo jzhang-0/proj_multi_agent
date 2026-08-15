@@ -146,7 +146,7 @@ class ConsoleApp(App[None]):
         #: 详情栏画面来源(TMX-004);None 表示还没接上 tmux
         self.snapshotter = snapshotter
         self._mirror_timer = None
-        self.commands = CommandRunner(muted=self.muted, on_members_changed=self._reload_members)
+        self.commands = CommandRunner(muted=self.muted, on_members_changed=self._schedule_reload)
 
     # --- 布局 -----------------------------------------------------------
 
@@ -231,17 +231,25 @@ class ConsoleApp(App[None]):
         except Exception as exc:
             self.query_one("#timeline", Timeline).note(f"[总控台] 控制命令不可用:{exc}")
 
-    def _reload_members(self) -> None:
-        """名册变了(`/adopt`)之后重建成员栏和补全候选。"""
+    def _schedule_reload(self) -> None:
+        """命令处理是同步的,重建成员栏要等组件真的移除,所以排到下一轮。"""
+        self.call_later(self._reload_members)
+
+    async def _reload_members(self) -> None:
+        """名册变了(`/adopt`)之后重建成员栏和补全候选。
+
+        `clear()` 是异步的:不等它做完就 append,会撞上"同 ID 已存在"并把
+        成员栏清空(实测踩过)。
+        """
         adopter = self.commands.adopter
         if adopter is None:
             return
         self.members = tuple(adopter.member_names())
         self.member_status.track(self.members)
         listing = self.query_one("#members", ListView)
-        listing.clear()
+        await listing.clear()
         for name in self.members:
-            listing.append(
+            await listing.append(
                 ListItem(
                     MemberCard(
                         self.member_status.snapshot(name),

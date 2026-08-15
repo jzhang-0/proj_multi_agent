@@ -1,17 +1,19 @@
  ⭘                                         总控台 — 本机 AI 群聊与指挥中心
- claude          │ [总控台] 总线目录
- codex           │ /private/tmp/claude-501/-Users-jzhang-Downloads-proj-multi-agent/148acdbe-cbd5-49a9-b5eb-7b880a072
- cursor          │ f5d/scratchpad/con8bus
- agy             │ [总控台] ↑↓ 选成员,PgUp/PgDn 翻时间线,Esc 收起详情;q 或 Ctrl-C 退出
-                 │ › /help
-                 │   可用命令:
-                 │   /up <名字>       拉起成员(已在跑的不动它)
-                 │   /down <名字>     关掉成员的 tmux 会话
-                 │   /restart <名字>  关掉再拉起
-                 │   /adopt <会话>    把名册外的 tmux 会话收编为临时成员
+ ○ IDLE  claude  │ [总控台] 总线目录
+ 排队0 · 未活动  │ /private/tmp/claude-501/-Users-jzhang-Downloads-proj-multi-agent/148acdbe-cbd5-49a9-b5eb-7b880a072
+ ○ IDLE  codex   │ f5d/scratchpad/con8bus
+ 排队0 · 未活动  │ [总控台] ↑↓ 选成员,PgUp/PgDn 翻时间线,Esc 收起详情;q 或 Ctrl-C 退出
+ ○ IDLE  cursor  │ › /help
+ 排队0 · 未活动  │   可用命令:
+ ○ IDLE  agy     │   /up <名字>       拉起成员(已在跑的不动它)
+ 排队0 · 未活动  │   /down <名字>     关掉成员的 tmux 会话
+ ○ IDLE  alice   │   /restart <名字>  关掉再拉起
+ 排队0 · 未活动  │   /adopt <会话>    把名册外的 tmux 会话收编为临时成员
                  │   /mute <名字>     临时拒收该成员的消息,再来一次取消
                  │   /help            列出全部命令
-                 │ › /uo claude
+                 │ › /adopt alice
+                 │   [adopt] alice 已收编为临时成员(重启后不保留)
+                 │ › /uo x
                  │   未知命令 /uo,你是不是想用 /up
                  │
                  │

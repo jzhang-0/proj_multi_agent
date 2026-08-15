@@ -27,9 +27,10 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_watch.py -q && uv run python -m bus.bench`
   - 证据:`src/bus/hub.py`(`Hub.run` 走 watchfiles,step 5ms/debounce 20ms,不可用时 `_run_polling` 回退 0.2s;`hub.mode` 暴露实际模式)、`src/bus/bench.py`;`tests/test_bus_watch.py` 4 passed(watch 模式醒、monkeypatch 掉 watchfiles 后 poll 模式醒、存量队列先清空);2026-08-16 实测 `uv run python -m bus.bench`:30 条样本 min 34.2 / P50 50.7 / **P95 94.8** / max 120.9 ms,达标。
   - 顺带:投递里 v0 的盲等 0.3 秒换成"看到目标窗格画面变化就回车"(上限 0.15 秒),否则单条注入本身就超预算;半行拼接的根治仍归 TMX-002。
-- [ ] **BUS-007** — ask/reply 语义:`./msg --ask <收件人> <问题>` 阻塞等待回复(默认 10 分钟超时),投递给收件人的消息里带 ask id 和回复指引;`./msg --reply <id> <答复>` 关联回去。普通用法完全不受影响。
-  - 处理登记:codex,2026-08-16 06:20 +0800,`bus-007-codex`。
+- [x] **BUS-007** — ask/reply 语义:`./msg --ask <收件人> <问题>` 阻塞等待回复(默认 10 分钟超时),投递给收件人的消息里带 ask id 和回复指引;`./msg --reply <id> <答复>` 关联回去。普通用法完全不受影响。
   - 前置:BUS-001。
+  - 验证:`uv run pytest tests/test_bus_ask_reply.py -q && uv run ruff check .`
+  - 证据:`src/bus/{ask,cli}.py` 与 `BusPaths.asks/replies` 实现默认 600 秒等待、首个合法回复关联、超时及总线拒收提前解阻;`src/bus/sanitize.py` 的提问投递行带 ask id/`--reply` 指引;根 `msg` 是兼容低版本 Python 的 uv 薄入口,普通调用仍写严格四字段 JSON;`tests/test_bus_ask_reply.py` 10 passed,README/AGENTS 群规已同步。
 - [x] **BUS-008** — 审计日志统一 schema:每条消息记 `deposit/deliver/deliver-failed/rejected` 事件到 `bus/log.jsonl`(拒收含原因),正文只存 80 字符预览 + 全文另存;日志按 10MB 轮转。
   - 前置:BUS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_audit.py -q`

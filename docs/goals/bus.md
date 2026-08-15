@@ -36,6 +36,7 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_audit.py -q`
   - 证据:`src/bus/audit.py`(`AuditLog.record` 写固定字段 `ts/event/from/to/id/preview` + 可选 `body/kind/replyTo/reason`;`deposit` 在 `queue.deposit` 里记,`deliver`/`deliver-failed`/`rejected` 在 `Hub.drain_once` 里记,拒收带 reason;正文 80 字符预览、全文另存 `bus/bodies/<id>.txt`;`_rotate_if_needed` 到 10MB 改名成 `log-<时间戳>.jsonl`;`entries()` 供 CON-003 回填并跳过坏行);`tests/test_bus_audit.py` 7 passed,全量回归 103 passed。
   - 顺带:多记一个 `malformed` 事件(死信也要可审计),预览过清洗、全文原样留作取证。
-- [ ] **BUS-009** — 契约回归测试:v0 的 `./msg a b c` 用法、四字段 JSON、`human` 保留名语义,各写成契约测试钉死;`hub.py` 与 `start.sh` 成为新实现的薄入口且原用法不变。
-  - 处理登记:claude,2026-08-16 07:20 +0800,`bus-009-claude`。
+- [x] **BUS-009** — 契约回归测试:v0 的 `./msg a b c` 用法、四字段 JSON、`human` 保留名语义,各写成契约测试钉死;`hub.py` 与 `start.sh` 成为新实现的薄入口且原用法不变。
   - 前置:BUS-001、BUS-006。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_v0_contract.py -q`
+  - 证据:`tests/test_v0_contract.py` 8 passed——用系统 `python3` 真跑 `./msg`(三参用法、多词拼接、`AGENTS_NAME` 取发件人、缺参数打用法并退 1)、跑 `python3 hub.py --once`(队列清空、`★` 标记、`claude -> human` 上屏)、四字段与 `ts` 形状、外部程序写的裸四字段 JSON 仍可投、`human` 绝不进 tmux、两个入口都不含投递逻辑且 < 40 行;`hub.py` 变成 `src/bus/headless.py` 的薄入口(与 BUS-007 的 `msg` 用同一套 uv 切换方式),`start.sh` 经 ROS-001 变成 `roster` 薄入口后仍以 `hub.py` 收尾,整条链路都走新实现;全量回归 135 passed。

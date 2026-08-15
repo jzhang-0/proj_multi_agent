@@ -18,9 +18,10 @@
   - 前置:BUS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_backpressure.py tests/test_bus_rate_limit.py tests/test_bus_policy.py tests/test_bus_core.py -q`
   - 证据:`src/bus/policy.py` 在去重/限频前检查每收件人 50 条积压阈值与 32KB UTF-8 正文字节上限,`src/bus/hub.py` 按本轮 FIFO 前序数拒绝第 51 条并复用 `bus` 回执;`tests/test_bus_backpressure.py` 覆盖边界、第 51 条、收件人隔离、UTF-8 与可操作超长提示,同 BUS-001～003 回归共 37 passed;`AGENTS.md` 已同步熔断群规。
-- [ ] **BUS-005** — 投递前清洗:剥离 C0 控制字符(保留换行转空格)、CSI、OSC 转义序列;清洗在投递和上屏两处入口各做一次,附带恶意样本测试(伪造终端标题、光标移动、清屏序列)。
-  - 处理登记:claude,2026-08-16 06:50 +0800,`bus-005-claude`。
+- [x] **BUS-005** — 投递前清洗:剥离 C0 控制字符(保留换行转空格)、CSI、OSC 转义序列;清洗在投递和上屏两处入口各做一次,附带恶意样本测试(伪造终端标题、光标移动、清屏序列)。
   - 前置:BUS-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_bus_sanitize.py -q`
+  - 证据:`src/bus/sanitize.py`(`sanitize` 按 OSC → CSI → 其余 ESC → C1 → C0 的顺序剥,`\n\r\t\v\f` 转空格,其余 C0/DEL 删除;两个入口 `format_for_injection` 投递、`format_for_screen` 上屏)、`src/bus/hub.py` 的 `format_line` 改为走清洗;`tests/test_bus_sanitize.py` 15 passed,恶意样本含伪造终端标题(OSC BEL/ST 两种终止)、清屏 + 光标归位、光标上移覆盖、8-bit CSI/OSC、全屏复位 `ESC c`、`\r` 冲掉前半句、退格响铃 NUL,并钉住中英文与 emoji 不被误伤;全量回归 90 passed;架构 §4 已注明两个入口函数。
 - [x] **BUS-006** — 低延迟投递:用 `watchfiles` 监听队列目录(不可用时自动回退 0.2s 轮询),入队到 send-keys 完成 P95 < 200ms;提供 `uv run python -m bus.bench` 输出实测延迟分布。
   - 前置:BUS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_watch.py -q && uv run python -m bus.bench`

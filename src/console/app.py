@@ -26,12 +26,13 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
+from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
-from bus import BusPaths, DeliveryResult, Message
+from bus import BusPaths, DeliveryResult, Message, deposit
 from bus.audit import AuditLog
 from bus.hub import tmux_deliver
 from console.buspump import BusPump
+from console.compose import ComposeInput, split_address
 from console.members import member_names
 from console.timeline import TimelineEntry, history
 from console.widgets import Timeline
@@ -73,6 +74,13 @@ class ConsoleApp(App[None]):
         height: 3;
         border: tall $primary-darken-2;
     }
+    #suggestions {
+        height: 1;
+        padding: 0 1;
+        background: $panel;
+        color: $text-muted;
+        display: none;
+    }
     #detail {
         width: 34;
         border-left: solid $primary-darken-2;
@@ -103,6 +111,8 @@ class ConsoleApp(App[None]):
         self.pump = BusPump(self.paths, self._on_result, deliver=deliver)
         self.members: tuple[str, ...] = members if members is not None else member_names()
         self.selected_member: str | None = None
+        #: 上一个对话对象:不写 @ 前缀时默认发给它
+        self.last_target: str | None = None
 
     # --- 布局 -----------------------------------------------------------
 
@@ -118,7 +128,12 @@ class ConsoleApp(App[None]):
             )
             with Vertical(id="center"):
                 yield Timeline(id="timeline")
-                yield Input(placeholder="@名字 说点什么,回车发送", id="compose")
+                yield Static("", id="suggestions", markup=False)
+                yield ComposeInput(
+                    members=self.members,
+                    placeholder="@名字 说点什么,回车发送",
+                    id="compose",
+                )
             yield Static("", id="detail", markup=False)
         yield Footer()
 
@@ -170,6 +185,56 @@ class ConsoleApp(App[None]):
 
     def on_resize(self, event: events.Resize) -> None:
         self._sync_detail(width=event.size.width)
+
+    # --- 输入框 ----------------------------------------------------------
+
+    def on_input_changed(self, event: ComposeInput.Changed) -> None:
+        if event.input.id == "compose":
+            self.query_one("#compose", ComposeInput).refresh_candidates()
+
+    def on_compose_input_candidates_changed(self, event: ComposeInput.CandidatesChanged) -> None:
+        self._sync_suggestions()
+
+    def on_input_submitted(self, event: ComposeInput.Submitted) -> None:
+        if event.input.id == "compose":
+            self.send_from_input(event.value)
+
+    def _sync_suggestions(self) -> None:
+        """候选行:只在有候选时占一行,当前候选加方括号。"""
+        compose = self.query_one("#compose", ComposeInput)
+        row = self.query_one("#suggestions", Static)
+        row.display = bool(compose.candidates)
+        if not compose.candidates:
+            return
+        current = compose.current_candidate
+        shown = " ".join(f"[{name}]" if name == current else name for name in compose.candidates)
+        row.update(f"Tab/↑↓ 选择:{shown}")
+
+    def _update_placeholder(self) -> None:
+        compose = self.query_one("#compose", ComposeInput)
+        if self.last_target is None:
+            compose.placeholder = "@名字 说点什么,回车发送"
+        else:
+            compose.placeholder = f"回车发给 {self.last_target}(@名字 可改收件人)"
+
+    def send_from_input(self, raw: str) -> None:
+        """把输入框里的一行发上总线。发件人永远是 human。"""
+        compose = self.query_one("#compose", ComposeInput)
+        timeline = self.query_one("#timeline", Timeline)
+        addressed, text = split_address(raw)
+        target = addressed or self.last_target
+        if not text:
+            return
+        if target is None:
+            timeline.note("[总控台] 还没有对话对象,先用 @名字 指定收件人")
+            return
+        deposit(Message.create(target, text, sender="human"), self.paths)
+        compose.remember(raw)
+        compose.value = ""
+        compose.candidates = ()
+        self._sync_suggestions()
+        self.last_target = target
+        self._update_placeholder()
 
     # --- 总线流量 --------------------------------------------------------
 

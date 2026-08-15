@@ -8,10 +8,13 @@ from tmuxctl.errors import (
     TmuxTimeoutError,
     TmuxVersionError,
 )
+from tmuxctl.inject import InjectOutcome, KeyInjector, inject_text, last_line_uncommitted
 from tmuxctl.version import MIN_VERSION, TmuxVersion, probe
 
 __all__ = [
     "MIN_VERSION",
+    "InjectOutcome",
+    "KeyInjector",
     "PaneInfo",
     "Tmux",
     "TmuxCommandError",
@@ -20,5 +23,7 @@ __all__ = [
     "TmuxTimeoutError",
     "TmuxVersion",
     "TmuxVersionError",
+    "inject_text",
+    "last_line_uncommitted",
     "probe",
 ]

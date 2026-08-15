@@ -20,9 +20,12 @@
   - 证据:`src/console/timeline.py`(`member_color` 用 crc32 取模保证同名永远同色,`human`/`bus` 固定色;`highlight_mentions` 把 `@名字`(含中文)描成白字蓝底;`OUTCOME_MARKS` 给 ✓★✗⊘☠ 五种结局,失败/拒收/畸形整行 `dim` 并带原因;`group` 按分钟分组;`history` 把审计日志多条事件按 id 合并成一行,没有 id 的 v0 消息按 时间+收发+预览 合并)、`src/console/widgets.py`(`Timeline` 组件:写组头、贴底才跟随滚动)、`src/console/app.py`(启动先回填历史再接实时流量,PgUp/PgDn/Home/End 翻看);`tests/test_console_timeline.py` 9 passed,全量回归 209 passed。
   - 视觉自验证:`tests/baseline/con-003-timeline-120x30.txt`/`.ansi`(组头 `── 2026-08-16 06:57 ────` 灰色、`human` 金色加粗、`@claude` 白字蓝底 #005f87、中英文混排右边框对齐)、`tests/baseline/con-003-rejected-120x30.txt`/`.ansi`(同屏出现 ★ 上屏 / ✗ 投递失败 / ⊘ 拒收 三种结局,拒收行整体压暗到 rgb(178,125,72) 并带防复读原因)、`tests/baseline/con-003-backfill-120x30.txt`/`.ansi`(重启后 4 条历史合并回填 + `── 以上 4 条来自 bus/log.jsonl ────` 分界线)。
   - 顺带:审计事件名(`deliver`)与投递结局名(`delivered`)不是一套词,回填时做了映射;发给 `human` 的历史还原成 ★,免得同一条消息历史和实时两种标记。
-- [ ] **CON-004** — 输入框:回车即发;`@` 触发成员名自动补全(Tab/方向键选择);无 @ 前缀时默认发给上一个对话对象并在占位符里提示;上下键翻本人发言历史。
-  - 处理登记:claude,2026-08-16 09:45 +0800,`con-004-claude`。
+- [x] **CON-004** — 输入框:回车即发;`@` 触发成员名自动补全(Tab/方向键选择);无 @ 前缀时默认发给上一个对话对象并在占位符里提示;上下键翻本人发言历史。
   - 前置:CON-002。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_console_compose.py -q`;看画面:tmux 里起 console,`send-keys Tab Tab`、`send-keys -l "@c"`、`Down`、`Tab`、正文、`Enter`
+  - 证据:`src/console/compose.py`(`ComposeInput`:`split_address` 拆 `@名字 正文`;`completion_prefix` 只在光标前的 `@token` 上触发,中文名字也认;Tab / ↑↓ 选候选,Tab 或回车落定,Esc 关候选;`sent_history` + `recall` 翻自己发过的话,翻到最新回到空行;补全开着时 ↑↓ 选候选、关着时才翻历史)、`src/console/app.py`(`#suggestions` 候选行按需占一行、`last_target` 决定不写 @ 时发给谁、占位符实时写明这次发给谁、发件人固定 `human`);`tests/test_console_compose.py` 10 passed(含 4 组地址解析、补全触发边界、Tab 落定、默认收件人、没有对话对象时提示而不是乱猜、上下翻历史),全量回归 229 passed。
+  - 视觉自验证:`tests/baseline/con-004-compose-120x24.txt`/`.ansi`(120×24:候选行 `Tab/↑↓ 选择:claude [codex] cursor` 当前项加方括号、Tab 落定成 `@codex `、回车后时间线出现 `✓ human → codex: 看一下 CON-004 输入框`、占位符变成「回车发给 codex(@名字 可改收件人)」;焦点在输入框时底栏不再显示 `q 退出`,说明按键没被全局绑定抢走)。
+  - 顺带:自验证时在真界面里发给真实成员会**真的**注入对方终端(临时 bus 根不隔离 tmux),已给 codex 澄清一句,并把这条注意写进 [视觉自验证](../quality/visual-check.md)。
 - [ ] **CON-005** — 成员卡片:状态徽标(`idle/working/stuck/dead/failed` 各有颜色与图形区分,不只靠颜色)、未投递排队数、最后活动相对时间;状态来自 TMX-007,变化 1 秒内反映到界面。
   - 处理登记:codex,2026-08-16 07:01 +0800,`con-005-codex`。
   - 前置:CON-002、TMX-007。

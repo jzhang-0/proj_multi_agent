@@ -32,7 +32,7 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-当前 `console` 命令用于验证工程入口;完整 TUI 按 CON 卷 Goal 逐步落地。系统 Python 版本不满足要求时也不要绕过 `uv run`。
+`uv run console` 起全屏 TUI(内嵌总线投递循环,`q` / Ctrl-C 干净退出,不影响任何成员会话);`uv run console --headless` 等价于纯 hub 模式(和 `python3 hub.py` 同一份实现)。三栏布局、时间线、输入框等按 CON 卷 Goal 逐步落地。系统 Python 版本不满足要求时也不要绕过 `uv run`。
 
 投递延迟实测:`uv run python -m bus.bench`(起临时 tmux 会话跑 `cat` 当收件人,打印 min/P50/P95/max 并按 P95 < 200ms 判定;`--fake` 只量总线自身调度)。
 

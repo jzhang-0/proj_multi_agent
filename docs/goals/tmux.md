@@ -27,4 +27,5 @@
   - 验证:`uv run pytest tests/test_tmuxctl_lifecycle.py tests/test_tmuxctl_process.py tests/test_tmuxctl.py -q && uv run ruff check .`
   - 证据:`src/tmuxctl/lifecycle.py` 的 `CrashMonitor` 安装唯一 `pane-died[index]` hook 并每 250ms 轮询 pane_dead/会话存在性,hook 失败自动降级;`Tmux.respawn_pane`/`CrashMonitor.respawn` 原 pane 重启;`tests/test_tmuxctl_lifecycle.py` 覆盖 hook、poll、会话消失、超时、委托参数及隔离真实 tmux 的 SIGTERM→2 秒内检测→respawn,同前置回归共 25 passed;README 已同步。
 - [ ] **TMX-007** — 活性推断:基于输出流活动量把成员归为 `working`(持续输出)/`idle`(静默且进程在)/`stuck`(被标记工作中但超时静默,阈值可配)/`dead`;只看"有无输出",不解析语义。
+  - 处理登记:codex,2026-08-16 06:44 +0800,`tmx-007-codex`。
   - 前置:TMX-003、TMX-006。

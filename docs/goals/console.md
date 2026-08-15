@@ -39,9 +39,12 @@
 - [ ] **CON-007** — 控制操作:对选中成员提供打断 / 终止 / 重启 / 全屏接管(挂起 console 进 `tmux attach`,退出后恢复);终止与重启需二次确认;全部操作有键位并记入审计日志。
   - 处理登记:codex,2026-08-16 07:12 +0800,`con-007-codex`。
   - 前置:CON-005、TMX-005、ROS-003。
-- [ ] **CON-008** — `/` 命令面板:`/up <名字>`、`/down <名字>`、`/restart <名字>`、`/adopt <会话>`(ROS-005)、`/mute <名字>`(临时拒收其消息)、`/help`;命令有补全和错误提示。
-  - 处理登记:claude,2026-08-16 10:40 +0800,`con-008-claude`。
+- [x] **CON-008** — `/` 命令面板:`/up <名字>`、`/down <名字>`、`/restart <名字>`、`/adopt <会话>`(ROS-005)、`/mute <名字>`(临时拒收其消息)、`/help`;命令有补全和错误提示。
   - 前置:CON-004、ROS-003。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_console_commands.py -q`;看画面:tmux 里起 console,依次敲 `/help`、`/adopt alice`、`/uo x`
+  - 证据:`src/console/commands.py`(六条命令的声明式表 + `CommandRunner`:缺参数给用法、错误命令用 difflib 给「你是不是想用 /up」、后端异常收敛成一行、没接上 tmux/名册时明说不可用;`/help` 按**显示宽度**补空格,中文双宽也对齐)、`src/console/compose.py`(`/` 开头补命令、`@` 开头补成员,同一套 Tab/↑↓ 选择)、`src/console/buspump.py` 的 `MutePolicy`(静音走**策略层**拒收,和防环共用一条路:进审计日志、给发件人回执)、`src/console/app.py`(命令输出打到时间线、`/adopt` 后重建成员栏与补全候选);`tests/test_console_commands.py` 16 passed,全量回归 266 passed。
+  - 视觉自验证:`tests/baseline/con-008-commands-120x28.txt`/`.ansi`(120×28:`/help` 六条命令说明列对齐;`/adopt alice` 后成员栏多出 `○ IDLE alice` 一张卡片;`/uo x` 给出最接近命令的提示)。
+  - 顺带:看图先后揪出两个只看测试发现不了的问题——`/help` 里中文按字符数补空格导致说明列错位(改成按显示宽度);`ListView.clear()` 是异步的,不等它做完就 append 会撞 ID 冲突并把整个成员栏清空(改成 `await` 并加了回归测试)。`MemberStatusService` 补了 `track()`,否则收编来的临时成员取不到状态。
 - [ ] **CON-009** — 主题与视觉:深浅色两套主题,颜色 token 化(成员色、状态色、强调色集中定义);中英文混排对齐正确(宽字符计算);首版视觉 baseline 需人工点头后锁定截图存 `tests/baseline/`。
   - 前置:CON-002、CON-003、CON-005。
 - [ ] **CON-010** — 硬指标实测达标:产品定义四项延迟预算各有一个可重复的测量方式(脚本或文档化步骤),实测数字写进证据;不达标项定位原因并修复。

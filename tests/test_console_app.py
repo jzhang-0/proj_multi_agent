@@ -34,7 +34,7 @@ def app_with(paths, sink):
 def events_text(app):
     from textual.widgets import RichLog
 
-    log = app.query_one("#events", RichLog)
+    log = app.query_one("#timeline", RichLog)
     return "\n".join(str(line) for line in log.lines)
 
 

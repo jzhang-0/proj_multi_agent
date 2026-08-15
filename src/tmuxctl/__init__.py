@@ -9,6 +9,7 @@ from tmuxctl.errors import (
     TmuxVersionError,
 )
 from tmuxctl.inject import InjectOutcome, KeyInjector, inject_text, last_line_uncommitted
+from tmuxctl.snapshot import SNAPSHOT_INTERVAL_SECONDS, PaneSnapshot, PaneSnapshotter
 from tmuxctl.version import MIN_VERSION, TmuxVersion, probe
 
 __all__ = [
@@ -16,6 +17,9 @@ __all__ = [
     "InjectOutcome",
     "KeyInjector",
     "PaneInfo",
+    "PaneSnapshot",
+    "PaneSnapshotter",
+    "SNAPSHOT_INTERVAL_SECONDS",
     "Tmux",
     "TmuxCommandError",
     "TmuxError",

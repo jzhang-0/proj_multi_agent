@@ -40,6 +40,8 @@ uv run ruff check .
 
 批 1 收口冒烟:`uv run python -m qa.smoke`(假成员 `cat` 窗格 → 入队 → 投递 → 窗格收到,打印入队到上屏延迟;用临时目录,不碰仓库根 `bus/`)。
 
+四个真实成员的协作实测证据可用 `uv run python -m qa.collab verify` 离线复验；它检查派活、三路回报、最终汇报的入队/投递审计，以及真实 F5 控制事件和 160×40 总控台截取物。复现真实流程见 [协作实测文档](docs/quality/collaboration-check.md)。
+
 消息总线模块是 `src/bus/`:消息 schema v1(`to/from/text/ts` 必备,`id/kind/replyTo` 可选,未知字段原样保留)、文件队列、死信目录、投递循环。bus 运行时根目录默认是仓库根 `bus/`,可用环境变量 `BUS_ROOT` 或 `BusPaths.resolve(root)` 重定向(测试一律指向临时目录)。
 
 tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-session` / `new-session` / `kill-session` / `send-keys` / `capture-pane` / `list-panes` 收口为类型化 API;`PaneOutputStream` 用 control mode 订阅输出并在不可用时回退 pipe-pane FIFO;`ActivityTracker` 只按输出字节活动推断 working/idle/stuck/dead;`PaneSnapshotter` 提供带色/去色与历史快照,并把同窗格高频捕获合并到最多 10Hz;`ProcessController` 提供进程树与打断/终止/强杀分级控制;`CrashMonitor` 用 pane-died hook + 轮询检测崩溃并原地 respawn。其他模块不要直接拼 tmux 命令。

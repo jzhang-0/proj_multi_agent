@@ -51,8 +51,10 @@ DETAIL_MIN_WIDTH = 100
 #: 最小可用尺寸(产品定义)
 MIN_SIZE = (80, 24)
 
-#: 详情栏画面刷新间隔(秒)。产品定义:活跃窗格 < 100ms
-MIRROR_INTERVAL = 0.1
+#: 详情栏画面刷新间隔(秒)。产品定义要求活跃窗格 **< 100ms**,所以定时器
+#: 本身要压在 100ms 以内——正好取 100ms 的话,加上调度抖动实测 P95 会踩到
+#: 104ms(CON-010 量出来的),留一点余量。
+MIRROR_INTERVAL = 0.08
 
 
 class ConsoleApp(App[None]):
@@ -286,7 +288,9 @@ class ConsoleApp(App[None]):
             try:
                 from tmuxctl import PaneSnapshotter, Tmux
 
-                self.snapshotter = PaneSnapshotter(Tmux())
+                # 缓存窗口必须小于刷新间隔:两者相等时定时器每隔一拍就吃到
+                # 缓存,实测画面更新间隔会翻倍到 200ms(CON-010 量出来的)
+                self.snapshotter = PaneSnapshotter(Tmux(), min_interval=MIRROR_INTERVAL / 2)
             except Exception as exc:  # tmux 不在或版本不够:详情栏降级成提示
                 self.query_one("#timeline", Timeline).note(f"[总控台] 详情栏不可用:{exc}")
                 return

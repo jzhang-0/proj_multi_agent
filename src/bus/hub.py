@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import contextlib
-import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -73,16 +72,27 @@ _OUTCOME_EVENTS = {
 }
 
 
-#: 敲回车前最多等目标终端回显多久(秒);等到就立刻回车,不再盲等
-ECHO_TIMEOUT_SECONDS = 0.15
+#: 注入前等"半行未提交输入"最多等多久(秒)。TMX-002 的默认值是给人看的
+#: 交互场景准备的;投递路径上有 P95 < 200ms 的预算,等太久直接超支,所以
+#: 压到 25ms(最多多抓一次画面):等不到就按 TMX-002 的规则先敲 Enter
+#: 换行隔离再注入。实测每多等 25ms,单条投递延迟就整体抬高同样多。
+DELIVER_MAX_WAIT_S = 0.025
 
-#: 等回显时的重试间隔(秒)
-ECHO_POLL_SECONDS = 0.005
+#: 忙碌检测的轮询间隔(秒)。每轮都是一次 capture-pane,别调太密
+DELIVER_POLL_S = 0.025
+
+#: tmux 客户端只建一次:每次构造都会去探一遍版本,投递路径上不该重复付这个钱
+_TMUX_CLIENT: object | None = None
 
 
-def tmux_session_exists(name: str) -> bool:
-    result = subprocess.run(["tmux", "has-session", "-t", name], capture_output=True)
-    return result.returncode == 0
+def _tmux_client():
+    """懒加载的 tmux 客户端(tmuxctl 是拼 tmux 命令的唯一出口,架构 §1)。"""
+    global _TMUX_CLIENT
+    if _TMUX_CLIENT is None:
+        from tmuxctl import Tmux
+
+        _TMUX_CLIENT = Tmux()
+    return _TMUX_CLIENT
 
 
 def format_line(message: Message) -> str:
@@ -90,40 +100,23 @@ def format_line(message: Message) -> str:
     return format_for_injection(message)
 
 
-def _capture(target: str) -> str | None:
-    """取窗格当前画面;取不到返回 None(会话可能刚没了)。"""
-    result = subprocess.run(
-        ["tmux", "capture-pane", "-p", "-t", target], capture_output=True, text=True
-    )
-    return result.stdout if result.returncode == 0 else None
-
-
-def _wait_for_echo(target: str, before: str | None, timeout: float = ECHO_TIMEOUT_SECONDS) -> None:
-    """等目标窗格画面相对 `before` 发生变化,最多等 `timeout` 秒。
-
-    v0 是盲等 0.3 秒,这在硬指标(入队 → 注入完成 P95 < 200ms)里直接超支。
-    改成"看到终端有反应就回车":`cat` 窗格和多数 CLI 只要几毫秒。等不到也
-    照样回车——宁可偶尔拼一次,也不能无限期卡住投递循环(半行拼接的根治在
-    TMX-002)。
-    """
-    if before is None:
-        return
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if _capture(target) != before:
-            return
-        time.sleep(ECHO_POLL_SECONDS)
-
-
 def tmux_deliver(message: Message) -> bool:
-    """把消息"打字"进同名 tmux 会话并回车。"""
-    if not tmux_session_exists(message.to):
+    """把消息"打字"进同名 tmux 会话并回车。
+
+    注入交给 TMX-002 的 `KeyInjector`:它自己做"末行有没有没提交的半行字"
+    的判断,该等就等、等不到就先换行隔离。这里不再自己拼 tmux 命令,也不再
+    额外抓两次画面——投递延迟的预算(P95 < 200ms)经不起多余的进程启动。
+    """
+    from tmuxctl import KeyInjector, TmuxCommandError, TmuxError
+
+    try:
+        tmux = _tmux_client()
+        injector = KeyInjector(tmux, max_wait_s=DELIVER_MAX_WAIT_S, poll_s=DELIVER_POLL_S)
+        injector.text(message.to, format_line(message))
+    except TmuxCommandError:
+        return False  # 会话不在(或窗格没了):算投递失败,不是崩溃
+    except TmuxError:
         return False
-    line = format_line(message)
-    before = _capture(message.to)
-    subprocess.run(["tmux", "send-keys", "-t", message.to, "-l", line], check=True)
-    _wait_for_echo(message.to, before)
-    subprocess.run(["tmux", "send-keys", "-t", message.to, "Enter"], check=True)
     return True
 
 

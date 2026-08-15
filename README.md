@@ -34,6 +34,8 @@ uv run ruff check .
 
 `uv run console` 起全屏 TUI(内嵌总线投递循环,`q` / Ctrl-C 干净退出,不影响任何成员会话);`uv run console --headless` 等价于纯 hub 模式(和 `python3 hub.py` 同一份实现)。三栏布局、时间线、输入框等按 CON 卷 Goal 逐步落地。系统 Python 版本不满足要求时也不要绕过 `uv run`。
 
+硬指标实测:`uv run python -m qa.perf`(产品定义四条延迟预算一次跑完:入队→注入终端、消息→时间线上屏、详情画面刷新、键入回显,打印分布并按预算判定,退出码 0/1)。
+
 投递延迟实测:`uv run python -m bus.bench`(起临时 tmux 会话跑 `cat` 当收件人,打印 min/P50/P95/max 并按 P95 < 200ms 判定;`--fake` 只量总线自身调度)。
 
 批 1 收口冒烟:`uv run python -m qa.smoke`(假成员 `cat` 窗格 → 入队 → 投递 → 窗格收到,打印入队到上屏延迟;用临时目录,不碰仓库根 `bus/`)。

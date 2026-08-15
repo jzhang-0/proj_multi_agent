@@ -146,14 +146,23 @@ class Hub:
             deposit(receipt, self.paths)
         return DeliveryResult(path, DeliveryOutcome.REJECTED, message, reason)
 
-    def _handle(self, path: Path) -> DeliveryResult:
+    def _handle(
+        self,
+        path: Path,
+        queued_before: dict[str, int] | None = None,
+    ) -> DeliveryResult:
         try:
             message = read_message(path)
         except MalformedMessage as exc:
             quarantine(path, self.paths, str(exc))
             return DeliveryResult(path, DeliveryOutcome.MALFORMED, detail=str(exc))
 
-        verdict = self.policy.check(message)
+        unread_backlog = 0
+        if queued_before is not None:
+            unread_backlog = queued_before.get(message.to, 0)
+            queued_before[message.to] = unread_backlog + 1
+
+        verdict = self.policy.check(message, unread_backlog=unread_backlog)
         if not verdict.ok:
             return self._reject(path, message, verdict.reason)
         self.policy.record(message)
@@ -174,8 +183,9 @@ class Hub:
     def drain_once(self) -> list[DeliveryResult]:
         """处理当前队列里的全部消息,返回逐条结果。"""
         results = []
+        queued_before: dict[str, int] = {}
         for path in pending(self.paths):
-            result = self._handle(path)
+            result = self._handle(path, queued_before)
             results.append(result)
             if self.on_result is not None:
                 self.on_result(result)

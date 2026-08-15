@@ -1,7 +1,7 @@
 """传输层防环策略。
 
-去重与限频都必须由长驻的 hub 执行,不能依赖模型自觉。策略的 ``check``
-只判定、不改状态;消息真正获准投递后再由 ``record`` 统一记账。
+去重、限频、积压与正文上限都由传输层执行,不能依赖模型自觉。策略的
+``check`` 只判定、不改状态;消息真正获准投递后再由 ``record`` 统一记账。
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from bus.message import Message
 DEDUPE_WINDOW_SECONDS = 10.0
 RATE_LIMIT_MAX = 8
 RATE_LIMIT_WINDOW_SECONDS = 30.0
+BACKLOG_CAP = 50
+MAX_TEXT_BYTES = 32 * 1024
 
 HUMAN_SENDER = "human"
 SYSTEM_SENDER = "bus"
@@ -38,7 +40,7 @@ class Verdict:
 
 
 class OutboundPolicy:
-    """按发送方维护滑动窗口,同时预留同内容去重状态。"""
+    """统一检查正文、收件人积压、重复内容和发送方滑动窗口。"""
 
     def __init__(
         self,
@@ -46,11 +48,15 @@ class OutboundPolicy:
         dedupe_window: float = DEDUPE_WINDOW_SECONDS,
         rate_limit: int = RATE_LIMIT_MAX,
         rate_window: float = RATE_LIMIT_WINDOW_SECONDS,
+        backlog_cap: int = BACKLOG_CAP,
+        max_text_bytes: int = MAX_TEXT_BYTES,
     ) -> None:
         self._now = now
         self._dedupe_window = dedupe_window
         self._rate_limit = rate_limit
         self._rate_window = rate_window
+        self._backlog_cap = backlog_cap
+        self._max_text_bytes = max_text_bytes
         self._recent: dict[tuple[str, str, str], float] = {}
         self._sent_at: dict[str, deque[float]] = {}
 
@@ -76,10 +82,23 @@ class OutboundPolicy:
         # human 是冻结契约里的特权身份;bus 是内部回执身份,二者都不是 AI。
         return sender not in {HUMAN_SENDER, SYSTEM_SENDER}
 
-    def check(self, message: Message) -> Verdict:
+    def check(self, message: Message, *, unread_backlog: int = 0) -> Verdict:
         """判定一条消息是否放行,不消耗额度。"""
         now = self._now()
         self._prune(now)
+
+        text_bytes = len(message.text.encode("utf-8"))
+        if text_bytes > self._max_text_bytes:
+            return Verdict.reject(
+                f"消息正文 {text_bytes} 字节,超过 {self._max_text_bytes} 字节上限;"
+                "发摘要和路径,不要发内容"
+            )
+
+        if unread_backlog >= self._backlog_cap:
+            return Verdict.reject(
+                f"对方积压中:已有 {unread_backlog} 条未投递消息,"
+                f"达到 {self._backlog_cap} 条上限;请等待队列消化"
+            )
 
         last_seen = self._recent.get(self._key(message))
         if last_seen is not None and now - last_seen < self._dedupe_window:

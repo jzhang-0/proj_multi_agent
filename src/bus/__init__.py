@@ -12,6 +12,8 @@ from bus.hub import DeliveryOutcome, DeliveryResult, Hub
 from bus.message import MalformedMessage, Message
 from bus.paths import BusPaths
 from bus.policy import (
+    BACKLOG_CAP,
+    MAX_TEXT_BYTES,
     RATE_LIMIT_MAX,
     RATE_LIMIT_WINDOW_SECONDS,
     OutboundPolicy,
@@ -21,11 +23,13 @@ from bus.policy import (
 from bus.queue import archive, deposit, pending, quarantine, read_message
 
 __all__ = [
+    "BACKLOG_CAP",
     "BusPaths",
     "DeliveryOutcome",
     "DeliveryResult",
     "Hub",
     "MalformedMessage",
+    "MAX_TEXT_BYTES",
     "Message",
     "OutboundPolicy",
     "RATE_LIMIT_MAX",

@@ -6,6 +6,8 @@
 - `Message`:schema v1 的消息对象(`to/from/text/ts` 必备,`id/kind/replyTo` 可选)。
 - `deposit` / `pending` / `read_message` / `archive` / `quarantine`:队列操作。
 - `Hub`:投递循环,畸形消息进死信目录而不中断循环。
+- `sanitize` / `format_for_injection` / `format_for_screen`:不可信文本的终端清洗
+  (投递与上屏两个入口各一次)。
 """
 
 from bus.hub import DeliveryOutcome, DeliveryResult, Hub
@@ -21,6 +23,7 @@ from bus.policy import (
     receipt_for,
 )
 from bus.queue import archive, deposit, pending, quarantine, read_message
+from bus.sanitize import format_for_injection, format_for_screen, sanitize
 
 __all__ = [
     "BACKLOG_CAP",
@@ -37,8 +40,11 @@ __all__ = [
     "Verdict",
     "archive",
     "deposit",
+    "format_for_injection",
+    "format_for_screen",
     "pending",
     "quarantine",
     "read_message",
     "receipt_for",
+    "sanitize",
 ]

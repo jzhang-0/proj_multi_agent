@@ -133,7 +133,8 @@ def build_process_tree(root_pid: int, processes: Sequence[ProcessInfo]) -> Proce
     return ProcessTree(root, tuple(descendants))
 
 
-def _missing_target(error: TmuxCommandError) -> bool:
+def is_missing_target_error(error: TmuxCommandError) -> bool:
+    """tmux 错误是否只表示目标/server 已消失。"""
     detail = f"{error.stderr}\n{error.stdout}".lower()
     markers = ("can't find", "no server running", "no sessions", "session not found")
     return any(marker in detail for marker in markers)
@@ -157,7 +158,7 @@ class ProcessController:
         try:
             panes = self._tmux.list_panes(target)
         except TmuxCommandError as exc:
-            if _missing_target(exc):
+            if is_missing_target_error(exc):
                 return None
             raise
         if not panes:
@@ -185,7 +186,7 @@ class ProcessController:
         try:
             self._tmux.send_keys(target, "Escape", "C-c")
         except TmuxCommandError as exc:
-            if _missing_target(exc):
+            if is_missing_target_error(exc):
                 return ControlResult(ControlAction.INTERRUPT, target, False)
             raise
         return ControlResult(ControlAction.INTERRUPT, target, True)

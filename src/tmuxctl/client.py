@@ -154,6 +154,57 @@ class Tmux:
             args.extend(["-E", str(end)])
         return self._run(*args).stdout
 
+    def display_message(self, target: str, format_string: str) -> str:
+        """读取一个 tmux format,不向用户界面显示。"""
+        return self._run("display-message", "-p", "-t", target, format_string).stdout
+
+    def set_pane_remain_on_exit(self, target: str, enabled: bool = True) -> None:
+        """设置 pane 进程退出后是否保留窗格,供崩溃检测与 respawn 使用。"""
+        value = "on" if enabled else "off"
+        self._run("set-option", "-p", "-t", target, "remain-on-exit", value)
+
+    def set_hook(self, name: str, command: str) -> None:
+        """追加/设置全局 hook(调用方可用 ``name[index]`` 隔离实例)。"""
+        self._run("set-hook", "-g", name, command)
+
+    def unset_hook(self, name: str) -> None:
+        """移除全局 hook；不存在时不报错。"""
+        self._run("set-hook", "-gu", name, check=False)
+
+    def show_global_option(self, name: str) -> str | None:
+        """读取全局 user option；不存在或 server 已消失时返回 ``None``。"""
+        process = self._run("show-options", "-gv", name, check=False)
+        return process.stdout.strip() if process.returncode == 0 else None
+
+    def unset_global_option(self, name: str) -> None:
+        """移除全局 user option；不存在时不报错。"""
+        self._run("set-option", "-gu", name, check=False)
+
+    def respawn_pane(
+        self,
+        target: str,
+        command: str | Sequence[str],
+        *,
+        kill: bool = True,
+        cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> None:
+        """在原 pane 重启命令；默认 ``-k`` 允许替换仍存活的进程。"""
+        args = ["respawn-pane"]
+        if kill:
+            args.append("-k")
+        args.extend(["-t", target])
+        if cwd is not None:
+            args.extend(["-c", cwd])
+        if env:
+            for key, value in env.items():
+                args.extend(["-e", f"{key}={value}"])
+        if isinstance(command, str):
+            args.append(command)
+        else:
+            args.extend(command)
+        self._run(*args)
+
     def list_panes(
         self,
         target: str | None = None,

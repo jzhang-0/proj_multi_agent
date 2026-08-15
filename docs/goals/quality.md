@@ -7,6 +7,7 @@
   - 验证:`uv run pytest -q && uv run ruff check . && uv run console`
   - 证据:`pyproject.toml`、`uv.lock`、`src/console/`、`tests/test_engineering_skeleton.py`;2026-08-16 在 `main` 实测 3 passed、ruff 全绿、console 正常运行。
 - [ ] **QA-002** — 端到端冒烟:一条命令(`uv run python -m qa.smoke`)完成「起假成员窗格(cat)→ msg 入队 → 投递 → 窗格收到 → 清理」,输出投递延迟;这是批 1 的收口命令。
+  - 处理登记:cursor,2026-08-16 06:16 +0800,`qa-002-cursor`。
   - 前置:BUS-006、TMX-002。
 - [ ] **QA-003** — 防环策略单元测试:去重、限频、熔断、超长、human 豁免各分支覆盖;不依赖真实 tmux。
   - 前置:BUS-002、BUS-003、BUS-004。

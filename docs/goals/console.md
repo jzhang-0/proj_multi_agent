@@ -8,9 +8,12 @@
   - 证据:`src/console/app.py`(Textual 全屏 App,`q` 与 Ctrl-C 两个绑定)、`src/console/buspump.py`(投递循环跑在后台线程,`call_from_thread` 回 UI 线程;停时只置标志,最多 0.2 秒后线程自己收尾)、`src/console/cli.py`(`--headless` 直接转 `bus.headless`,与 `python3 hub.py` 同一份实现);`tests/test_console_app.py` 5 passed(内嵌循环真的投出消息并上屏、`q` 退出后线程不残留、退出路径不执行任何外部命令、headless 等价、`--once` 误用被拒),全量回归 161 passed。
   - 视觉自验证:截取物 `tests/baseline/con-001-skeleton.txt`(100×24)。画面确认:标题栏「总控台 — 本机 AI 群聊与指挥中心」、圆角蓝色边框事件区、底部 `q 退出` 与命令面板提示;流量实时上屏,`claude -> human: … ★`、投不出去的显示 `✗(没有这个 tmux 会话)`;中英文混排右边框不错位。`q` 与 Ctrl-C 各试一次都干净退出,退出后 `tmux ls` 六个会话(含四个真实成员)创建时间不变,一个都没被带走。
   - 顺带:`tests/test_engineering_skeleton.py` 里断言旧占位输出的那条会因为 TUI 常驻而永久阻塞,已改成用 `--headless --once` 验证入口接线(已知会 codex)。
-- [ ] **CON-002** — 三栏布局:左成员栏 / 中时间线 + 底部输入框 / 右详情栏(默认折叠,选中成员展开);终端宽度不足时详情栏自动让位;最小可用尺寸 80×24。
-  - 处理登记:claude,2026-08-16 08:25 +0800,`con-002-claude`。
+- [x] **CON-002** — 三栏布局:左成员栏 / 中时间线 + 底部输入框 / 右详情栏(默认折叠,选中成员展开);终端宽度不足时详情栏自动让位;最小可用尺寸 80×24。
   - 前置:CON-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_console_layout.py -q`;看画面:`tmux new-session -d -s con2 -x 120 -y 30 "uv run console --bus-root <临时目录>"`,`tmux send-keys -t con2 Down` 后 `tmux capture-pane -p -e -t con2`
+  - 证据:`src/console/app.py`(`Horizontal` 三栏:`#members` 宽 18 含分隔边框 / `#center` 1fr 内含 `#timeline` + `#compose` / `#detail` 宽 34 默认 `display:none`;`ListView(initial_index=None)` 保证一起来不自动选中;`_sync_detail` 要求"选中成员"且"宽度 ≥ 100 列"两个条件,Resize 时用事件里的新尺寸判断)、`src/console/members.py`(成员来自 `roster.toml`,读不出来就空列表不拖垮界面);`tests/test_console_layout.py` 4 passed(三栏与输入框尺寸、选中展开/Esc 收起、窄屏让位再拉宽回来、80×24 各区可用),全量回归 182 passed。
+  - 视觉自验证:`tests/baseline/con-002-three-columns-120x30.txt`(120×30,选中 claude:成员栏蓝底高亮、右侧「成员详情 · claude」展开、三栏分隔线对齐)、`tests/baseline/con-002-min-80x24.txt`(80×24:详情栏自动让位,成员栏 + 时间线 + 输入框全部可读,中英文混排行右边框不错位)。
+  - 顺带:`Static` 默认吃 markup,`[claude]` 会被当成标签整段吞掉,详情栏改成 `markup=False`;输入框边框统一成 Textual 的 `tall`,否则和自绘边框叠出双线。
 - [ ] **CON-003** — 群聊时间线:总线全部流量实时追加(含拒收事件的灰色提示),发件人按成员固定着色,@ 提及高亮,时间戳分组;支持滚动回看并从 `bus/log.jsonl` 回填启动前历史。
   - 前置:CON-001、BUS-008。
 - [ ] **CON-004** — 输入框:回车即发;`@` 触发成员名自动补全(Tab/方向键选择);无 @ 前缀时默认发给上一个对话对象并在占位符里提示;上下键翻本人发言历史。

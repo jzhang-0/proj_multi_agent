@@ -11,6 +11,7 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_tmuxctl_inject.py tests/test_tmuxctl.py -q`
   - 证据:`src/tmuxctl/inject.py`(`KeyInjector.text/enter/escape/interrupt`);`tests/test_tmuxctl_inject.py` 覆盖末行启发式(含 capture-pane 空行补齐)、空闲直注、等待后注入、超时 Enter 隔离、控制键跳过检测;隔离 socket 下 bash 半行 `echo HELLO` 再注入 `echo WORLD` 不出现 `HELLOecho`。
 - [ ] **TMX-003** — 输出流订阅:基于 control mode(`tmux -C` 常驻子进程)订阅指定窗格的 `%output` 事件,提供 async 迭代器接口;control mode 不可用时回退 `pipe-pane` 到 FIFO。
+  - 处理登记:codex,2026-08-16 06:40 +0800,`tmx-003-codex`。
   - 前置:TMX-001。
 - [x] **TMX-004** — 画面快照 API:`capture-pane -p -e`(带颜色)与去色两种模式,支持历史滚动区(`-S`);对同一窗格的高频请求做节流合并(≥ 10Hz 请求合并为一次)。
   - 前置:TMX-001。

@@ -1,5 +1,11 @@
 """tmux 控制层:总控台与成员终端之间全部 tmux 交互的唯一出口。"""
 
+from tmuxctl.activity import (
+    ActivityMonitor,
+    ActivitySnapshot,
+    ActivityState,
+    ActivityTracker,
+)
 from tmuxctl.client import PaneInfo, Tmux
 from tmuxctl.errors import (
     TmuxCommandError,
@@ -25,6 +31,10 @@ from tmuxctl.snapshot import SNAPSHOT_INTERVAL_SECONDS, PaneSnapshot, PaneSnapsh
 from tmuxctl.version import MIN_VERSION, TmuxVersion, probe
 
 __all__ = [
+    "ActivityMonitor",
+    "ActivitySnapshot",
+    "ActivityState",
+    "ActivityTracker",
     "ControlAction",
     "ControlResult",
     "CrashEvent",

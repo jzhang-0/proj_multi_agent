@@ -40,7 +40,7 @@ uv run ruff check .
 
 消息总线模块是 `src/bus/`:消息 schema v1(`to/from/text/ts` 必备,`id/kind/replyTo` 可选,未知字段原样保留)、文件队列、死信目录、投递循环。bus 运行时根目录默认是仓库根 `bus/`,可用环境变量 `BUS_ROOT` 或 `BusPaths.resolve(root)` 重定向(测试一律指向临时目录)。
 
-tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-session` / `new-session` / `kill-session` / `send-keys` / `capture-pane` / `list-panes` 收口为类型化 API;`PaneOutputStream` 用 control mode 订阅输出并在不可用时回退 pipe-pane FIFO;`PaneSnapshotter` 提供带色/去色与历史快照,并把同窗格高频捕获合并到最多 10Hz;`ProcessController` 提供进程树与打断/终止/强杀分级控制;`CrashMonitor` 用 pane-died hook + 轮询检测崩溃并原地 respawn。其他模块不要直接拼 tmux 命令。
+tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-session` / `new-session` / `kill-session` / `send-keys` / `capture-pane` / `list-panes` 收口为类型化 API;`PaneOutputStream` 用 control mode 订阅输出并在不可用时回退 pipe-pane FIFO;`ActivityTracker` 只按输出字节活动推断 working/idle/stuck/dead;`PaneSnapshotter` 提供带色/去色与历史快照,并把同窗格高频捕获合并到最多 10Hz;`ProcessController` 提供进程树与打断/终止/强杀分级控制;`CrashMonitor` 用 pane-died hook + 轮询检测崩溃并原地 respawn。其他模块不要直接拼 tmux 命令。
 
 成员名册是 `roster.toml`(由 `src/roster` 加载校验)。`./start.sh` 是读名册的薄入口。生命周期直接用 `roster` 命令,单个成员或全体都行,而且幂等(已经在跑的不会被顶掉):
 

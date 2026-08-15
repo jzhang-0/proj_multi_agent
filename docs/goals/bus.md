@@ -6,9 +6,10 @@
   - 前置:无。
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_core.py -q`
   - 证据:`src/bus/{message,paths,queue,hub}.py`;`tests/test_bus_core.py` 16 passed(schema 必备/可选/未知字段容忍、8 类畸形载荷、路径注入三级优先级、死信 + 投递异常不中断循环、human 只上屏);`.gitignore` 的 `bus/` 收窄为 `/bus/`,否则 `src/bus/` 会被误忽略。
-- [ ] **BUS-002** — 传输层去重:同发件人→同收件人的相同内容 10 秒窗口内直接丢弃,并回执发件人一条说明(防两个 AI 复读死循环)。
-  - 处理登记:claude,2026-08-16 06:20 +0800,`bus-002-claude`。
+- [x] **BUS-002** — 传输层去重:同发件人→同收件人的相同内容 10 秒窗口内直接丢弃,并回执发件人一条说明(防两个 AI 复读死循环)。
   - 前置:BUS-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_bus_policy.py -q`
+  - 证据:`src/bus/policy.py`(`OutboundPolicy` 按 发件人+收件人+正文 做 10 秒窗口去重,`receipt_for` 生成 `bus` 署名回执)、`src/bus/hub.py` 新增 `rejected` 处理分支;`tests/test_bus_policy.py` + `tests/test_bus_core.py` 23 passed(假时钟窗口内/窗口外、换收件人/发件人/正文三种不去重、回执不再生回执、hub 端到端丢弃 + 回执入队并投出);群规与架构 §3 已补 `bus` 保留名与防复读说明。
 - [ ] **BUS-003** — 限频:每个 AI 发件人 30 秒窗口最多 8 条,超出拒收并回执;`human` 发件人不受限。
   - 处理登记:codex,2026-08-16 06:09 +0800,`bus-003-codex`。
   - 前置:BUS-001。

@@ -1,0 +1,28 @@
+# 成员名册。name = tmux 会话名,也是总线收件人名字。
+# 适配细节(免弹窗参数与残留弹窗)见 ROS-002;本文件由 ROS-001 提供加载契约。
+
+default_greeting_template = """你是本机AI群聊的成员,你的名字是 {name}。先阅读本目录的 AGENTS.md 了解通信协议,然后运行 ./msg human {name}已上线 向人类报到,之后待命等待群消息。"""
+
+[[members]]
+name = "claude"
+command = "claude"
+args = ["--permission-mode", "acceptEdits"]
+enabled = true
+
+[[members]]
+name = "codex"
+command = "codex"
+args = ["-s", "workspace-write", "-a", "on-request"]
+enabled = true
+
+[[members]]
+name = "cursor"
+command = "agent"
+args = ["--force"]
+enabled = true
+
+[[members]]
+name = "agy"
+command = "agy"
+args = ["--dangerously-skip-permissions", "-i"]
+enabled = true

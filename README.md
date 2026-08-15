@@ -38,6 +38,8 @@ uv run ruff check .
 
 tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-session` / `new-session` / `kill-session` / `send-keys` / `capture-pane` / `list-panes` 收口为类型化 API;其他模块不要直接拼 tmux 命令。
 
+成员名册是 `roster.toml`(由 `src/roster` 加载校验)。`./start.sh` 是读名册的薄入口。
+
 ## 仓库结构
 
 | 路径 | 内容 |
@@ -45,7 +47,8 @@ tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-sessio
 | `AGENTS.md` / `CLAUDE.md` | AI 入口:群聊协议 + 工作规则 |
 | `docs/` | 产品定义、架构决策、Goal 清单 |
 | `pyproject.toml` / `uv.lock` | Python、依赖、pytest、ruff 与命令入口配置 |
-| `src/` / `tests/` | 应用源码与自动化测试(`src/bus`、`src/console`、`src/tmuxctl`、`src/qa`) |
-| `hub.py` `msg` `start.sh` | v0 总线(保持可用,逐步变薄入口) |
+| `src/` / `tests/` | 应用源码与自动化测试(`src/bus`、`src/console`、`src/tmuxctl`、`src/qa`、`src/roster`) |
+| `hub.py` `msg` `start.sh` | v0 总线入口(`start.sh` 现读 `roster.toml`) |
+| `roster.toml` | 成员名册(名字、启动命令、开场白、启用与否) |
 | `bus/` | 运行时数据(gitignore) |
 | `reference/pi-extensions/` | 参考实现:pi 的 talk 扩展(只读,防环策略的出处) |

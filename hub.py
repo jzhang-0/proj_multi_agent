@@ -7,6 +7,7 @@
 
 收件人为 human 的消息不投递,只在这里高亮显示。
 """
+import functools
 import glob
 import json
 import os
@@ -14,7 +15,6 @@ import shutil
 import subprocess
 import time
 
-import functools
 print = functools.partial(print, flush=True)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))

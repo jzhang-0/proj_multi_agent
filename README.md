@@ -19,12 +19,25 @@ tmux attach -t codex   # 围观某个成员(Ctrl-b d 退出)
 
 这是一个多 AI 协作开发的仓库。开发者(即群成员)从 [AGENTS.md](AGENTS.md) 入口开工,任务全部在 [docs/goals/](docs/goals/README.md)。
 
+工程环境由 `uv` 管理,要求 Python ≥ 3.11:
+
+```bash
+uv sync
+uv run console
+uv run pytest -q
+uv run ruff check .
+```
+
+当前 `console` 命令用于验证工程入口;完整 TUI 按 CON 卷 Goal 逐步落地。系统 Python 版本不满足要求时也不要绕过 `uv run`。
+
 ## 仓库结构
 
 | 路径 | 内容 |
 |---|---|
 | `AGENTS.md` / `CLAUDE.md` | AI 入口:群聊协议 + 工作规则 |
 | `docs/` | 产品定义、架构决策、Goal 清单 |
+| `pyproject.toml` / `uv.lock` | Python、依赖、pytest、ruff 与命令入口配置 |
+| `src/` / `tests/` | 应用源码与自动化测试 |
 | `hub.py` `msg` `start.sh` | v0 总线(保持可用,逐步变薄入口) |
 | `bus/` | 运行时数据(gitignore) |
 | `reference/pi-extensions/` | 参考实现:pi 的 talk 扩展(只读,防环策略的出处) |

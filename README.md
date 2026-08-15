@@ -42,7 +42,16 @@ uv run ruff check .
 
 tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-session` / `new-session` / `kill-session` / `send-keys` / `capture-pane` / `list-panes` 收口为类型化 API;`PaneSnapshotter` 提供带色/去色与历史快照,并把同窗格高频捕获合并到最多 10Hz。其他模块不要直接拼 tmux 命令。
 
-成员名册是 `roster.toml`(由 `src/roster` 加载校验)。`./start.sh` 是读名册的薄入口。各成员免弹窗参数与残留弹窗写在 `roster.toml` 注释里;claude 的 `./msg` 白名单在 `.claude/settings.json`。
+成员名册是 `roster.toml`(由 `src/roster` 加载校验)。`./start.sh` 是读名册的薄入口。生命周期直接用 `roster` 命令,单个成员或全体都行,而且幂等(已经在跑的不会被顶掉):
+
+```bash
+uv run roster up            # 拉起全部启用成员(已在跑的跳过)
+uv run roster up claude     # 只拉一个
+uv run roster restart codex # 关掉再拉起
+uv run roster down          # 全部关掉(含已停用成员的残留会话)
+```
+
+各成员免弹窗参数与残留弹窗写在 `roster.toml` 注释里;claude 的 `./msg` 白名单在 `.claude/settings.json`。
 
 ## 仓库结构
 

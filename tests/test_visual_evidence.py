@@ -20,6 +20,10 @@ GOAL_BLOCK = re.compile(r"^- \[(?P<done>[ x])\] \*\*(?P<id>CON-\d+)\*\*(?P<body>
 
 BASELINE_REF = re.compile(r"tests/baseline/[\w.\-]+")
 
+#: 纯性能/无界面变化的 Goal 可以显式声明视觉例外,免于引用截取物;例外
+#: 必须带原因,不能只写"视觉例外"四个字就跳过。
+VISUAL_EXEMPTION = re.compile(r"视觉例外\([^)]+\)[:：]\s*\S")
+
 
 def finished_console_goals():
     text = CONSOLE_GOALS.read_text(encoding="utf-8")
@@ -42,6 +46,9 @@ def test_visual_check_doc_exists_and_is_indexed():
 
 @pytest.mark.parametrize("goal_id,body", finished_console_goals())
 def test_finished_console_goal_cites_real_capture(goal_id, body):
+    if VISUAL_EXEMPTION.search(body):
+        return  # 纯性能/无界面变化,已显式声明例外并带原因
+
     refs = BASELINE_REF.findall(body)
     assert refs, f"{goal_id} 已完成但证据里没有引用 tests/baseline/ 下的截取物"
     for ref in refs:

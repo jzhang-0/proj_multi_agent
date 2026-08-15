@@ -14,8 +14,10 @@
   - 前置:BUS-002、BUS-003、BUS-004。
   - 验证:`uv run pytest tests/test_bus_policy_matrix.py -q && uv run ruff check .`
   - 证据:`tests/test_bus_policy_matrix.py` 直接调用 `OutboundPolicy`,以 5 个独立测试覆盖复读、第 9 条限频、50 条积压、32KB 超长与 human 发送豁免,未导入或启动 tmux;2026-08-16 在 `main` 实测 5 passed、ruff 全绿。
-- [ ] **QA-004** — 视觉自验证流程落地:文档化「console 跑在 tmux 里 → `capture-pane -p -e` 截画面 → 读图/读文本判断」的步骤和判定清单(对齐、配色、状态徽标、中文宽度),CON 卷的证据必须引用实际截取物路径。
-  - 处理登记:claude,2026-08-16 08:55 +0800,`qa-004-claude`。
+- [x] **QA-004** — 视觉自验证流程落地:文档化「console 跑在 tmux 里 → `capture-pane -p -e` 截画面 → 读图/读文本判断」的步骤和判定清单(对齐、配色、状态徽标、中文宽度),CON 卷的证据必须引用实际截取物路径。
   - 前置:CON-002。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_visual_evidence.py -q && uv run python -m qa.visual --goal QA-004 --scene tool --size 100x26 --say 视觉自验证流程跑通了 --keys Down`
+  - 证据:[视觉自验证](../quality/visual-check.md)——三步流程(截画面 / 看图判定 / 写证据)与六组判定清单(对齐、配色、状态徽标、中文宽度、尺寸、退出安全),含手动等价命令与"审美问题标需人工交 human"的出口;`src/qa/visual.py` 把流程固化成 `uv run python -m qa.visual`(临时 bus 根 + 临时会话、等界面画完再截、`-p` 与 `-p -e` 各存一份到 `tests/baseline/`、跑完核对原有 tmux 会话没被带走);`tests/test_visual_evidence.py` 3 passed,钉死"每个已完成的 CON Goal 必须引用真实存在的 `tests/baseline/` 截取物"以及清单六节都在;`docs/README.md` 与 Goal 总索引已加索引。
+  - 实测截取物:`tests/baseline/qa-004-tool-100x26.txt` 与同名 `.ansi`(100×26,发一条消息 + 按 Down 选中 claude:三栏分隔线贯通、右侧详情栏展开、中英文混排行右边框不错位);跑完 `tmux ls` 六个原有会话一个不少。
 - [ ] **QA-005** — 多成员协作实测:四个真实成员经总控台完成一次「派活 → 协作 → 汇报」全流程,时间线、状态、控制操作全程可用;过程记录(截取物 + 审计日志片段)存档作为证据。
   - 前置:CON-007、ROS-002、QA-002。

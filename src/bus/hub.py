@@ -20,6 +20,7 @@ from bus.message import MalformedMessage, Message
 from bus.paths import BusPaths
 from bus.policy import OutboundPolicy, receipt_for
 from bus.queue import archive, deposit, pending, quarantine, read_message
+from bus.sanitize import format_for_injection
 
 #: `human` 是保留名:不投递,只上屏(架构决策 §3)
 HUMAN = "human"
@@ -74,12 +75,8 @@ def tmux_session_exists(name: str) -> bool:
 
 
 def format_line(message: Message) -> str:
-    """成员终端里看到的那一行(单行,换行压成空格)。"""
-    text = message.text.replace("\n", " ")
-    return (
-        f"[群消息] 来自 {message.sender}: {text}"
-        f' —— 如需回复,运行: ./msg {message.sender} "你的回复"'
-    )
+    """成员终端里看到的那一行:清洗过的单行文本(见 `bus.sanitize`)。"""
+    return format_for_injection(message)
 
 
 def _capture(target: str) -> str | None:

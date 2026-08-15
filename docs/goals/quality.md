@@ -11,6 +11,7 @@
   - 验证:`uv run ruff check . && uv run python -m qa.smoke && uv run pytest tests/test_qa_smoke.py -q`
   - 证据:`src/qa/smoke.py`(隔离 socket + 临时 `BUS_ROOT` + `KeyInjector` 投递);2026-08-16 实测 `qa.smoke: ok enqueue→pane 35.1ms mode=watch`;`tests/test_qa_smoke.py` 1 passed。
 - [ ] **QA-003** — 防环策略单元测试:去重、限频、熔断、超长、human 豁免各分支覆盖;不依赖真实 tmux。
+  - 处理登记:codex,2026-08-16 06:19 +0800,`qa-003-codex`。
   - 前置:BUS-002、BUS-003、BUS-004。
 - [ ] **QA-004** — 视觉自验证流程落地:文档化「console 跑在 tmux 里 → `capture-pane -p -e` 截画面 → 读图/读文本判断」的步骤和判定清单(对齐、配色、状态徽标、中文宽度),CON 卷的证据必须引用实际截取物路径。
   - 前置:CON-002。

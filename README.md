@@ -44,6 +44,8 @@ tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-sessio
 
 成员可在 `roster.toml` 中设置 `auto_respawn = true` 开启无人值守恢复（缺省关闭）。`HealthSupervisor` 会为所有崩溃发布状态更新；开启恢复时，死窗格原地 respawn，整个会话消失则重新创建，连续三次失败后进入 `failed` 并停止重试，需显式 `reset_failed()` 解除熔断。
 
+`SessionAdopter.discover()` 可发现静态名册外的现有 tmux 会话，`adopt(name)` 一步收编为可寻址的临时成员；`member_names()` 是收件人补全、成员栏和时间线着色的统一名称集合。收编记录只在当前进程内存中，重启不会写入或改动 `roster.toml`，`forget(name)` 也不会关闭用户原有会话。
+
 成员名册是 `roster.toml`(由 `src/roster` 加载校验)。`./start.sh` 是读名册的薄入口。生命周期直接用 `roster` 命令,单个成员或全体都行,而且幂等(已经在跑的不会被顶掉):
 
 ```bash

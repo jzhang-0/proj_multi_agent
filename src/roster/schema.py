@@ -87,7 +87,8 @@ def _optional_env(raw: Mapping[str, Any]) -> dict[str, str]:
     return dict(value)
 
 
-def _validate_name(name: str) -> str:
+def validate_member_name(name: str) -> str:
+    """校验可同时作为总线收件人和 tmux 会话名的成员名。"""
     if name in RESERVED_NAMES:
         raise RosterError(f"成员名 {name!r} 是保留名,不能进名册")
     if any(ch in name for ch in ":\n\t "):
@@ -98,7 +99,7 @@ def _validate_name(name: str) -> str:
 def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
     if not isinstance(raw, dict):
         raise RosterError("members 的每一项必须是表")
-    name = _validate_name(_require_str(raw, "name"))
+    name = validate_member_name(_require_str(raw, "name"))
     command = _require_str(raw, "command")
     greeting = raw.get("greeting_template", default_greeting)
     if not isinstance(greeting, str) or not greeting.strip():

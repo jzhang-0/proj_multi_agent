@@ -14,8 +14,25 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 
-from bus import BusPaths, DeliveryResult, Hub, Message
+from bus import BusPaths, DeliveryResult, Hub, Message, OutboundPolicy, Verdict
 from bus.hub import tmux_deliver
+
+
+class MutePolicy(OutboundPolicy):
+    """在总线默认策略之上再加一层:被 `/mute` 的成员发出的消息直接拒收。
+
+    走策略层而不是"收到后不显示",是为了让静音和防环用同一条路:被拒的
+    消息照样进审计日志、照样给发件人回执,人事后能看出它为什么没送到。
+    """
+
+    def __init__(self, muted: set[str]) -> None:
+        super().__init__()
+        self.muted = muted
+
+    def check(self, message: Message, *, unread_backlog: int = 0) -> Verdict:
+        if message.sender in self.muted:
+            return Verdict.reject(f"{message.sender} 已被总控台静音(/mute),消息未投递")
+        return super().check(message, unread_backlog=unread_backlog)
 
 
 class BusPump:
@@ -26,9 +43,10 @@ class BusPump:
         paths: BusPaths,
         on_result: Callable[[DeliveryResult], None],
         deliver: Callable[[Message], bool] = tmux_deliver,
+        policy: OutboundPolicy | None = None,
     ) -> None:
         self.paths = paths
-        self.hub = Hub(paths, deliver=deliver, on_result=on_result)
+        self.hub = Hub(paths, deliver=deliver, on_result=on_result, policy=policy)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 

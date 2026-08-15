@@ -32,7 +32,8 @@ from textual.widgets import Footer, Header, ListItem, ListView, Static
 from bus import BusPaths, DeliveryOutcome, DeliveryResult, Message, deposit
 from bus.audit import AuditLog
 from bus.hub import tmux_deliver
-from console.buspump import BusPump
+from console.buspump import BusPump, MutePolicy
+from console.commands import CommandRunner, is_command
 from console.compose import ComposeInput, split_address
 from console.members import MemberStatusService, member_names, pending_counts
 from console.mirror import Mirror
@@ -122,7 +123,11 @@ class ConsoleApp(App[None]):
     ) -> None:
         super().__init__()
         self.paths = (paths or BusPaths.resolve()).ensure()
-        self.pump = BusPump(self.paths, self._on_result, deliver=deliver)
+        #: 被 /mute 静音的成员;策略在投递前据此拒收
+        self.muted: set[str] = set()
+        self.pump = BusPump(
+            self.paths, self._on_result, deliver=deliver, policy=MutePolicy(self.muted)
+        )
         self.pump_enabled = pump_enabled
         self.members: tuple[str, ...] = members if members is not None else member_names()
         if member_status is None:
@@ -141,6 +146,7 @@ class ConsoleApp(App[None]):
         #: 详情栏画面来源(TMX-004);None 表示还没接上 tmux
         self.snapshotter = snapshotter
         self._mirror_timer = None
+        self.commands = CommandRunner(muted=self.muted, on_members_changed=self._schedule_reload)
 
     # --- 布局 -----------------------------------------------------------
 
@@ -189,6 +195,7 @@ class ConsoleApp(App[None]):
         if self.pump_enabled:
             self.pump.start()
         self._start_mirror()
+        self._connect_roster()
 
     def on_unmount(self) -> None:
         self.member_status.stop()
@@ -202,8 +209,57 @@ class ConsoleApp(App[None]):
         """每 0.5 秒刷新，保证状态变化 1 秒内出现在界面。"""
         counts = pending_counts(self.paths)
         for name in self.members:
-            card = self.query_one(f"#card-{name}", MemberCard)
-            card.apply(self.member_status.snapshot(name, queued=counts[name]))
+            card = self.query(f"#card-{name}")
+            if card:
+                card.only_one(MemberCard).apply(
+                    self.member_status.snapshot(name, queued=counts[name])
+                )
+
+    # --- 命令面板要用的名册/生命周期 ---------------------------------------
+
+    def _connect_roster(self) -> None:
+        """接上 roster 的生命周期与收编能力;接不上就让命令给出明确失败。"""
+        try:
+            from roster.adopt import SessionAdopter
+            from roster.lifecycle import Lifecycle
+            from roster.load import load_roster
+            from tmuxctl import Tmux
+
+            roster, tmux = load_roster(), Tmux()
+            self.commands.lifecycle = Lifecycle(roster, tmux)
+            self.commands.adopter = SessionAdopter(roster, tmux)
+        except Exception as exc:
+            self.query_one("#timeline", Timeline).note(f"[总控台] 控制命令不可用:{exc}")
+
+    def _schedule_reload(self) -> None:
+        """命令处理是同步的,重建成员栏要等组件真的移除,所以排到下一轮。"""
+        self.call_later(self._reload_members)
+
+    async def _reload_members(self) -> None:
+        """名册变了(`/adopt`)之后重建成员栏和补全候选。
+
+        `clear()` 是异步的:不等它做完就 append,会撞上"同 ID 已存在"并把
+        成员栏清空(实测踩过)。
+        """
+        adopter = self.commands.adopter
+        if adopter is None:
+            return
+        self.members = tuple(adopter.member_names())
+        self.member_status.track(self.members)
+        listing = self.query_one("#members", ListView)
+        await listing.clear()
+        for name in self.members:
+            await listing.append(
+                ListItem(
+                    MemberCard(
+                        self.member_status.snapshot(name),
+                        id=f"card-{name}",
+                        classes="member-card",
+                    ),
+                    id=f"member-{name}",
+                )
+            )
+        self.query_one("#compose", ComposeInput).members = self.members
 
     # --- 成员详情:终端画面镜像 -------------------------------------------
 
@@ -302,7 +358,11 @@ class ConsoleApp(App[None]):
         if not compose.candidates:
             return
         current = compose.current_candidate
-        shown = " ".join(f"[{name}]" if name == current else name for name in compose.candidates)
+        mark = "/" if compose.candidate_kind == "command" else ""
+        shown = " ".join(
+            f"[{mark}{name}]" if name == current else f"{mark}{name}"
+            for name in compose.candidates
+        )
         row.update(f"Tab/↑↓ 选择:{shown}")
 
     def _update_placeholder(self) -> None:
@@ -312,10 +372,25 @@ class ConsoleApp(App[None]):
         else:
             compose.placeholder = f"回车发给 {self.last_target}(@名字 可改收件人)"
 
-    def send_from_input(self, raw: str) -> None:
-        """把输入框里的一行发上总线。发件人永远是 human。"""
+    def run_command(self, raw: str) -> None:
+        """执行一条 `/` 命令,输出打到时间线上。"""
         compose = self.query_one("#compose", ComposeInput)
         timeline = self.query_one("#timeline", Timeline)
+        timeline.note(f"› {raw.strip()}")
+        for line in self.commands.run(raw):
+            timeline.note(f"  {line}")
+        compose.remember(raw)
+        compose.value = ""
+        compose.candidates = ()
+        self._sync_suggestions()
+
+    def send_from_input(self, raw: str) -> None:
+        """把输入框里的一行发上总线;`/` 开头的当命令执行。发件人永远是 human。"""
+        compose = self.query_one("#compose", ComposeInput)
+        timeline = self.query_one("#timeline", Timeline)
+        if is_command(raw):
+            self.run_command(raw)
+            return
         addressed, text = split_address(raw)
         target = addressed or self.last_target
         if not text:

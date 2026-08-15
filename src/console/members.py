@@ -14,17 +14,41 @@ from dataclasses import dataclass
 
 from bus import BusPaths
 from bus.queue import pending, read_message
+from console.theme import STATUS_GLYPHS, status_presentation
 from roster.load import load_roster
 from roster.schema import RosterError
 from tmuxctl import ActivityMonitor, ActivityTracker, PaneOutputStream, Tmux
 
-STATUS_PRESENTATION = {
-    "idle": ("○", "IDLE", "#87afff"),
-    "working": ("▶", "WORK", "#5fd7ff"),
-    "stuck": ("◐", "STUCK", "#ffd75f"),
-    "dead": ("✕", "DEAD", "#ff5f5f"),
-    "failed": ("‼", "FAIL", "#ff00af"),
-}
+
+class _StatusPresentation:
+    """按状态名取 (图形, 标签, 颜色);颜色现取,换主题立刻跟上。"""
+
+    def __getitem__(self, state: str) -> tuple[str, str, str]:
+        if state not in STATUS_GLYPHS:
+            raise KeyError(state)
+        return status_presentation(state)
+
+    def __contains__(self, state: object) -> bool:
+        return state in STATUS_GLYPHS
+
+    def __iter__(self):
+        return iter(STATUS_GLYPHS)
+
+    def keys(self):
+        return STATUS_GLYPHS.keys()
+
+    def values(self):
+        return [status_presentation(state) for state in STATUS_GLYPHS]
+
+    def items(self):
+        return [(state, status_presentation(state)) for state in STATUS_GLYPHS]
+
+    def __len__(self) -> int:
+        return len(STATUS_GLYPHS)
+
+#: 状态 → (图形, 短标签, 颜色)。图形与标签是固定的,颜色跟着主题走,
+#: 所以这里做成"取值函数"而不是常量表(`console.theme` 是唯一定义处)。
+STATUS_PRESENTATION = _StatusPresentation()
 
 
 @dataclass(frozen=True)

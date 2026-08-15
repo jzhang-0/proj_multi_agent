@@ -9,9 +9,10 @@
 from __future__ import annotations
 
 import difflib
-import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+
+from console.layout import display_width, pad
 
 
 @dataclass(frozen=True)
@@ -61,15 +62,6 @@ def matching_commands(prefix: str) -> tuple[str, ...]:
 def did_you_mean(name: str) -> str:
     close = difflib.get_close_matches(name, COMMAND_NAMES, n=1, cutoff=0.5)
     return f",你是不是想用 /{close[0]}" if close else ",`/help` 看全部命令"
-
-
-def display_width(text: str) -> int:
-    """终端里占几列。中文是双宽,按字符数补空格会对不齐。"""
-    return sum(2 if unicodedata.east_asian_width(char) in "WF" else 1 for char in text)
-
-
-def pad(text: str, width: int) -> str:
-    return text + " " * max(0, width - display_width(text))
 
 
 def help_lines() -> list[str]:

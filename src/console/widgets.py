@@ -7,7 +7,9 @@ from collections.abc import Iterable
 from rich.text import Text
 from textual.widgets import RichLog, Static
 
+from console.layout import pad
 from console.members import STATUS_PRESENTATION, MemberCardSnapshot
+from console.theme import tokens
 from console.timeline import TimelineEntry, divider, group_header, render_entry
 
 
@@ -15,9 +17,10 @@ def render_member_card(snapshot: MemberCardSnapshot) -> Text:
     """两行成员卡片：图形+文字状态、队列数、最后活动。"""
     glyph, label, color = STATUS_PRESENTATION[snapshot.state]
     rendered = Text()
-    rendered.append(f"{glyph} {label:<5} ", style=f"bold {color}")
+    # 列宽按显示宽度补:成员名可能是中文,按字符数补会把第二行顶歪
+    rendered.append(f"{glyph} {pad(label, 5)} ", style=f"bold {color}")
     rendered.append(snapshot.name, style="bold")
-    rendered.append(f"\n排队{snapshot.queued} · {snapshot.last_activity}", style="#9e9e9e")
+    rendered.append(f"\n排队{snapshot.queued} · {snapshot.last_activity}", style=tokens().muted)
     return rendered
 
 
@@ -43,6 +46,9 @@ class Timeline(RichLog):
     def __init__(self, **kwargs: object) -> None:
         super().__init__(markup=False, wrap=True, **kwargs)  # type: ignore[arg-type]
         self._group: str | None = None
+        #: 已上屏的内容。换主题要按新颜色重画,所以得留着原始数据,
+        #: 不能只留渲染完的行
+        self._history: list[TimelineEntry | str] = []
 
     @property
     def sticking_to_bottom(self) -> bool:
@@ -54,15 +60,29 @@ class Timeline(RichLog):
 
     def note(self, text: str) -> None:
         """总控台自己说的话(不是总线流量)。"""
-        self._emit(Text(text, style="#5a5a5a"), stick=self.sticking_to_bottom)
+        self._history.append(text)
+        self._emit(Text(text, style=tokens().divider), stick=self.sticking_to_bottom)
 
     def add(self, entry: TimelineEntry) -> None:
         """追加一条流量,必要时先写组头。"""
+        self._history.append(entry)
         stick = self.sticking_to_bottom
         if entry.group and entry.group != self._group:
             self._group = entry.group
             self._emit(group_header(entry.group), stick=stick)
         self._emit(render_entry(entry), stick=stick)
+
+    def rerender(self) -> None:
+        """按当前主题把已有内容整体重画一遍。"""
+        history = list(self._history)
+        self.clear()
+        self._group = None
+        self._history = []
+        for item in history:
+            if isinstance(item, str):
+                self.note(item)
+            else:
+                self.add(item)
 
     def backfill(self, entries: Iterable[TimelineEntry]) -> int:
         """回填启动前的历史,末尾画一条分界线。返回回填条数。"""

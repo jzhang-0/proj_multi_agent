@@ -25,19 +25,7 @@ from rich.text import Text
 from bus import DeliveryResult
 from bus.audit import AuditLog
 from bus.sanitize import sanitize
-
-#: 成员正文色。挑的是深浅色终端下都还看得清的中间调
-MEMBER_PALETTE = (
-    "#5fd7ff",
-    "#ffaf5f",
-    "#87ff87",
-    "#ff87d7",
-    "#d7d75f",
-    "#87afff",
-)
-
-#: 两个保留名的固定颜色:人显眼,总线自己压低
-FIXED_COLORS = {"human": "#ffd75f", "bus": "#9e9e9e"}
+from console.theme import tokens
 
 #: 结局 → (标记, 是否压暗)。拒收/失败都不是正常发言
 OUTCOME_MARKS = {
@@ -67,10 +55,17 @@ HISTORY_LIMIT = 200
 
 
 def member_color(name: str) -> str:
-    """按名字算固定颜色。同一个名字永远同一个色。"""
-    if name in FIXED_COLORS:
-        return FIXED_COLORS[name]
-    return MEMBER_PALETTE[zlib.crc32(name.encode("utf-8")) % len(MEMBER_PALETTE)]
+    """按名字算固定颜色:同一个名字在同一套主题里永远同一个色。
+
+    颜色本身来自当前主题的 token(`console.theme`),换主题只换色号,
+    "谁是几号色"这件事不变。
+    """
+    palette = tokens()
+    if name == "human":
+        return palette.human
+    if name == "bus":
+        return palette.bus
+    return palette.members[zlib.crc32(name.encode("utf-8")) % len(palette.members)]
 
 
 @dataclass(frozen=True)
@@ -154,25 +149,26 @@ def history(audit: AuditLog, limit: int = HISTORY_LIMIT) -> list[TimelineEntry]:
 
 def group_header(group: str) -> Text:
     """时间戳分组的组头。"""
-    return Text(f"── {group} " + "─" * 4, style="#5a5a5a")
+    return Text(f"── {group} " + "─" * 4, style=tokens().divider)
 
 
 def divider(label: str) -> Text:
-    return Text(f"── {label} " + "─" * 4, style="#5a5a5a")
+    return Text(f"── {label} " + "─" * 4, style=tokens().divider)
 
 
 def render_entry(entry: TimelineEntry) -> Text:
     """把一行渲染成带样式的文本。上屏文本一律先清洗(BUS-005)。"""
+    palette = tokens()
     mark, dimmed = OUTCOME_MARKS.get(entry.outcome, ("?", True))
     line = Text(no_wrap=False)
-    line.append(f"{mark} ", style="#9e9e9e" if dimmed else "#5a5a5a")
+    line.append(f"{mark} ", style=palette.muted if dimmed else palette.divider)
     line.append(sanitize(entry.sender), style=f"bold {member_color(entry.sender)}")
-    line.append(" → ", style="#5a5a5a")
+    line.append(" → ", style=palette.divider)
     line.append(sanitize(entry.to), style=member_color(entry.to))
-    line.append(": ", style="#5a5a5a")
+    line.append(": ", style=palette.divider)
     line.append_text(highlight_mentions(sanitize(entry.text)))
     if entry.reason:
-        line.append(f"  ({sanitize(entry.reason)})", style="#9e9e9e")
+        line.append(f"  ({sanitize(entry.reason)})", style=palette.muted)
     if dimmed:
         line.stylize("dim")
     return line
@@ -184,7 +180,10 @@ def highlight_mentions(text: str) -> Text:
     cursor = 0
     for match in MENTION.finditer(text):
         rendered.append(text[cursor : match.start()])
-        rendered.append(match.group(0), style="bold #ffffff on #005f87")
+        palette = tokens()
+        rendered.append(
+            match.group(0), style=f"bold {palette.accent_text} on {palette.accent}"
+        )
         cursor = match.end()
     rendered.append(text[cursor:])
     return rendered

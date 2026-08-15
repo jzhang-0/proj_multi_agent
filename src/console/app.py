@@ -39,6 +39,8 @@ from console.control import ConfirmControlScreen, ControlFeedback, MemberControl
 from console.health import ConsoleHealthMonitor, FaultEvent, FaultKind
 from console.members import MemberStatusService, member_names, pending_counts
 from console.mirror import Mirror
+from console.theme import THEMES, Tokens
+from console.theme import tokens as theme_tokens
 from console.timeline import TimelineEntry, history
 from console.widgets import MemberCard, Timeline
 from roster import RosterError, load_roster
@@ -111,6 +113,7 @@ class ConsoleApp(App[None]):
         Binding("q", "quit", "退出"),
         Binding("ctrl+c", "quit", "退出", priority=True, show=False),
         Binding("escape", "clear_selection", "收起详情"),
+        Binding("t", "toggle_theme", "深浅主题"),
         Binding("pageup", "timeline_scroll('page_up')", "上翻", show=False),
         Binding("pagedown", "timeline_scroll('page_down')", "下翻", show=False),
         Binding("home", "timeline_scroll('home')", "回到最早", show=False),
@@ -211,7 +214,42 @@ class ConsoleApp(App[None]):
             yield Mirror(id="detail")
         yield Footer()
 
+    def _register_themes(self) -> None:
+        """把 `console.theme` 的两套 token 注册成 Textual 主题。"""
+        from textual.theme import Theme
+
+        for token_set in THEMES.values():
+            self.register_theme(
+                Theme(
+                    name=token_set.name,
+                    primary=token_set.status["working"],
+                    secondary=token_set.status["idle"],
+                    accent=token_set.accent,
+                    warning=token_set.status["stuck"],
+                    error=token_set.status["dead"],
+                    success=token_set.status["working"],
+                    background=token_set.background,
+                    surface=token_set.surface,
+                    panel=token_set.panel,
+                    foreground=token_set.foreground,
+                    dark=token_set.dark,
+                )
+            )
+
+    def action_toggle_theme(self) -> None:
+        """深浅主题互换,已经画出来的内容按新 token 重画。"""
+        from console.theme import toggle
+
+        self.apply_theme(toggle())
+
+    def apply_theme(self, token_set: Tokens) -> None:
+        self.theme = token_set.name
+        self.query_one("#timeline", Timeline).rerender()
+        self.refresh_member_cards()
+
     def on_mount(self) -> None:
+        self._register_themes()
+        self.theme = theme_tokens().name
         timeline = self.query_one("#timeline", Timeline)
         timeline.note(f"[总控台] 总线目录 {self.paths.root}")
         timeline.backfill(history(AuditLog(self.paths)))

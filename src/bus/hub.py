@@ -24,6 +24,24 @@ from bus.queue import archive, deposit, pending, quarantine, read_message
 #: `human` 是保留名:不投递,只上屏(架构决策 §3)
 HUMAN = "human"
 
+#: watchfiles 内部的轮询步长(毫秒),压到最小换低延迟
+WATCH_STEP_MS = 5
+
+#: 同一批文件事件的合并窗口(毫秒)
+WATCH_DEBOUNCE_MS = 20
+
+#: watchfiles 不可用时的轮询间隔(秒)
+FALLBACK_POLL_SECONDS = 0.2
+
+
+def watchfiles_available() -> bool:
+    """`watchfiles` 能不能用;不能就回退轮询,不让投递停摆。"""
+    try:
+        import watchfiles  # noqa: F401
+    except Exception:
+        return False
+    return True
+
 
 class DeliveryOutcome(StrEnum):
     """一条消息在这一轮里的处理结果。"""
@@ -43,22 +61,60 @@ class DeliveryResult:
     detail: str = ""
 
 
+#: 敲回车前最多等目标终端回显多久(秒);等到就立刻回车,不再盲等
+ECHO_TIMEOUT_SECONDS = 0.15
+
+#: 等回显时的重试间隔(秒)
+ECHO_POLL_SECONDS = 0.005
+
+
 def tmux_session_exists(name: str) -> bool:
     result = subprocess.run(["tmux", "has-session", "-t", name], capture_output=True)
     return result.returncode == 0
 
 
-def tmux_deliver(message: Message) -> bool:
-    """v0 行为:把消息"打字"进同名 tmux 会话并回车。"""
-    if not tmux_session_exists(message.to):
-        return False
+def format_line(message: Message) -> str:
+    """成员终端里看到的那一行(单行,换行压成空格)。"""
     text = message.text.replace("\n", " ")
-    line = (
+    return (
         f"[群消息] 来自 {message.sender}: {text}"
         f' —— 如需回复,运行: ./msg {message.sender} "你的回复"'
     )
+
+
+def _capture(target: str) -> str | None:
+    """取窗格当前画面;取不到返回 None(会话可能刚没了)。"""
+    result = subprocess.run(
+        ["tmux", "capture-pane", "-p", "-t", target], capture_output=True, text=True
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def _wait_for_echo(target: str, before: str | None, timeout: float = ECHO_TIMEOUT_SECONDS) -> None:
+    """等目标窗格画面相对 `before` 发生变化,最多等 `timeout` 秒。
+
+    v0 是盲等 0.3 秒,这在硬指标(入队 → 注入完成 P95 < 200ms)里直接超支。
+    改成"看到终端有反应就回车":`cat` 窗格和多数 CLI 只要几毫秒。等不到也
+    照样回车——宁可偶尔拼一次,也不能无限期卡住投递循环(半行拼接的根治在
+    TMX-002)。
+    """
+    if before is None:
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _capture(target) != before:
+            return
+        time.sleep(ECHO_POLL_SECONDS)
+
+
+def tmux_deliver(message: Message) -> bool:
+    """把消息"打字"进同名 tmux 会话并回车。"""
+    if not tmux_session_exists(message.to):
+        return False
+    line = format_line(message)
+    before = _capture(message.to)
     subprocess.run(["tmux", "send-keys", "-t", message.to, "-l", line], check=True)
-    time.sleep(0.3)  # 给输入框一点时间接住文本,再敲回车
+    _wait_for_echo(message.to, before)
     subprocess.run(["tmux", "send-keys", "-t", message.to, "Enter"], check=True)
     return True
 
@@ -71,7 +127,7 @@ class Hub:
         paths: BusPaths,
         deliver: Callable[[Message], bool] = tmux_deliver,
         on_result: Callable[[DeliveryResult], None] | None = None,
-        poll_interval: float = 0.5,
+        poll_interval: float = FALLBACK_POLL_SECONDS,
         policy: OutboundPolicy | None = None,
     ) -> None:
         self.paths = paths.ensure()
@@ -79,6 +135,8 @@ class Hub:
         self.on_result = on_result
         self.poll_interval = poll_interval
         self.policy = policy if policy is not None else OutboundPolicy()
+        #: 实际跑起来用的是 watch 还是 poll,起循环后才有值
+        self.mode: str | None = None
 
     def _reject(self, path: Path, message: Message, reason: str) -> DeliveryResult:
         """拒收:消息不投递直接归档,给发件人回执一条说明。"""
@@ -123,8 +181,38 @@ class Hub:
                 self.on_result(result)
         return results
 
-    def run(self, stop: Callable[[], bool] | None = None) -> None:
-        """轮询直到 `stop()` 为真(默认永不停,靠 KeyboardInterrupt 退出)。"""
+    def run(self, stop: Callable[[], bool] | None = None, watch: bool = True) -> None:
+        """跑投递循环直到 `stop()` 为真(默认永不停,靠 KeyboardInterrupt 退出)。
+
+        默认用 `watchfiles` 监听队列目录,新消息落盘立刻醒;`watchfiles` 装不上
+        或起不来就自动退回轮询。两种模式都先清一次存量队列。
+        """
+        self.drain_once()
+        if watch and watchfiles_available():
+            self._run_watching(stop)
+        else:
+            self._run_polling(stop)
+
+    def _run_polling(self, stop: Callable[[], bool] | None) -> None:
+        self.mode = "poll"
         while stop is None or not stop():
-            self.drain_once()
             time.sleep(self.poll_interval)
+            self.drain_once()
+
+    def _run_watching(self, stop: Callable[[], bool] | None) -> None:
+        import watchfiles
+
+        self.mode = "watch"
+        # yield_on_timeout + rust_timeout:没有文件事件时也定期醒一次,
+        # 既能查 stop(),也能兜住极端情况下漏掉的事件。
+        for _ in watchfiles.watch(
+            self.paths.queue,
+            step=WATCH_STEP_MS,
+            debounce=WATCH_DEBOUNCE_MS,
+            rust_timeout=int(self.poll_interval * 1000),
+            yield_on_timeout=True,
+            raise_interrupt=False,
+        ):
+            if stop is not None and stop():
+                return
+            self.drain_once()

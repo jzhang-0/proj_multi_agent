@@ -10,16 +10,21 @@
   - 前置:BUS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_policy.py -q`
   - 证据:`src/bus/policy.py`(`OutboundPolicy` 按 发件人+收件人+正文 做 10 秒窗口去重,`receipt_for` 生成 `bus` 署名回执)、`src/bus/hub.py` 新增 `rejected` 处理分支;`tests/test_bus_policy.py` + `tests/test_bus_core.py` 23 passed(假时钟窗口内/窗口外、换收件人/发件人/正文三种不去重、回执不再生回执、hub 端到端丢弃 + 回执入队并投出);群规与架构 §3 已补 `bus` 保留名与防复读说明。
-- [ ] **BUS-003** — 限频:每个 AI 发件人 30 秒窗口最多 8 条,超出拒收并回执;`human` 发件人不受限。
-  - 处理登记:codex,2026-08-16 06:09 +0800,`bus-003-codex`。
+- [x] **BUS-003** — 限频:每个 AI 发件人 30 秒窗口最多 8 条,超出拒收并回执;`human` 发件人不受限。
   - 前置:BUS-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_bus_rate_limit.py tests/test_bus_policy.py tests/test_bus_core.py -q`
+  - 证据:`src/bus/policy.py` 按发件人维护 30 秒滑动窗口并豁免 `human`/`bus`,`src/bus/hub.py` 在投递及 human 上屏前统一判定并复用拒收回执;`tests/test_bus_rate_limit.py` 覆盖第 9 条拒收、每发件人隔离、窗口恢复、human 豁免、回执和 Hub 路径,与 BUS-001/002 回归共 31 passed;`AGENTS.md` 已同步限频群规。
 - [ ] **BUS-004** — 积压熔断:收件人未投递队列 ≥ 50 时拒收新消息并回执发件人「对方积压中」;单条消息 ≤ 32KB,超长拒收并提示「发摘要和路径,不要发内容」。
+  - 处理登记:codex,2026-08-16 06:15 +0800,`bus-004-codex`。
   - 前置:BUS-001。
 - [ ] **BUS-005** — 投递前清洗:剥离 C0 控制字符(保留换行转空格)、CSI、OSC 转义序列;清洗在投递和上屏两处入口各做一次,附带恶意样本测试(伪造终端标题、光标移动、清屏序列)。
+  - 处理登记:claude,2026-08-16 06:50 +0800,`bus-005-claude`。
   - 前置:BUS-001。
-- [ ] **BUS-006** — 低延迟投递:用 `watchfiles` 监听队列目录(不可用时自动回退 0.2s 轮询),入队到 send-keys 完成 P95 < 200ms;提供 `uv run python -m bus.bench` 输出实测延迟分布。
-  - 处理登记:claude,2026-08-16 06:35 +0800,`bus-006-claude`。
+- [x] **BUS-006** — 低延迟投递:用 `watchfiles` 监听队列目录(不可用时自动回退 0.2s 轮询),入队到 send-keys 完成 P95 < 200ms;提供 `uv run python -m bus.bench` 输出实测延迟分布。
   - 前置:BUS-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_bus_watch.py -q && uv run python -m bus.bench`
+  - 证据:`src/bus/hub.py`(`Hub.run` 走 watchfiles,step 5ms/debounce 20ms,不可用时 `_run_polling` 回退 0.2s;`hub.mode` 暴露实际模式)、`src/bus/bench.py`;`tests/test_bus_watch.py` 4 passed(watch 模式醒、monkeypatch 掉 watchfiles 后 poll 模式醒、存量队列先清空);2026-08-16 实测 `uv run python -m bus.bench`:30 条样本 min 34.2 / P50 50.7 / **P95 94.8** / max 120.9 ms,达标。
+  - 顺带:投递里 v0 的盲等 0.3 秒换成"看到目标窗格画面变化就回车"(上限 0.15 秒),否则单条注入本身就超预算;半行拼接的根治仍归 TMX-002。
 - [ ] **BUS-007** — ask/reply 语义:`./msg --ask <收件人> <问题>` 阻塞等待回复(默认 10 分钟超时),投递给收件人的消息里带 ask id 和回复指引;`./msg --reply <id> <答复>` 关联回去。普通用法完全不受影响。
   - 前置:BUS-001。
 - [ ] **BUS-008** — 审计日志统一 schema:每条消息记 `deposit/deliver/deliver-failed/rejected` 事件到 `bus/log.jsonl`(拒收含原因),正文只存 80 字符预览 + 全文另存;日志按 10MB 轮转。

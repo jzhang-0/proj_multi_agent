@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "textual>=1.0",
+  "watchfiles>=0.24",
 ]
 
 [project.scripts]

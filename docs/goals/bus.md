@@ -7,6 +7,7 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_core.py -q`
   - 证据:`src/bus/{message,paths,queue,hub}.py`;`tests/test_bus_core.py` 16 passed(schema 必备/可选/未知字段容忍、8 类畸形载荷、路径注入三级优先级、死信 + 投递异常不中断循环、human 只上屏);`.gitignore` 的 `bus/` 收窄为 `/bus/`,否则 `src/bus/` 会被误忽略。
 - [ ] **BUS-002** — 传输层去重:同发件人→同收件人的相同内容 10 秒窗口内直接丢弃,并回执发件人一条说明(防两个 AI 复读死循环)。
+  - 处理登记:claude,2026-08-16 06:20 +0800,`bus-002-claude`。
   - 前置:BUS-001。
 - [ ] **BUS-003** — 限频:每个 AI 发件人 30 秒窗口最多 8 条,超出拒收并回执;`human` 发件人不受限。
   - 前置:BUS-001。

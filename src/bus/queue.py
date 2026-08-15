@@ -11,6 +11,7 @@ import time
 import uuid
 from pathlib import Path
 
+from bus.audit import AuditEvent, AuditLog
 from bus.message import MalformedMessage, Message
 from bus.paths import BusPaths
 
@@ -20,14 +21,20 @@ def new_filename() -> str:
     return f"{time.time_ns()}-{uuid.uuid4().hex[:6]}.json"
 
 
-def deposit(message: Message, paths: BusPaths) -> Path:
-    """把消息写进队列,返回最终文件路径。"""
+def deposit(message: Message, paths: BusPaths, *, audit: bool = True) -> Path:
+    """把消息写进队列,返回最终文件路径。
+
+    默认顺手记一条 `deposit` 审计事件——入队方是 `./msg` 这种短命进程,
+    不在这里记就没有别的地方记了。`audit=False` 留给不想留痕的场景(bench)。
+    """
     paths.ensure()
     filename = new_filename()
     tmp = paths.queue / f".{filename}"
     tmp.write_text(json.dumps(message.to_dict(), ensure_ascii=False), encoding="utf-8")
     final = paths.queue / filename
     tmp.rename(final)
+    if audit:
+        AuditLog(paths).record(AuditEvent.DEPOSIT, message)
     return final
 
 

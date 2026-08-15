@@ -2,9 +2,12 @@
 
 `src/console/`,Textual 实现。布局与硬指标见 [产品定义](../product/product.md)。本卷全部界面 Goal 受 QA-004 视觉自验证约束:必须看画面截取,不允许只跑测试。
 
-- [ ] **CON-001** — 应用骨架:`uv run console` 启动全屏应用,`q`/Ctrl-C 干净退出且不影响任何成员会话;内嵌总线投递循环(复用 `src/bus`),同时 `uv run console --headless` 等价于纯 hub 模式。
-  - 处理登记:claude,2026-08-16 08:00 +0800,`con-001-claude`。
+- [x] **CON-001** — 应用骨架:`uv run console` 启动全屏应用,`q`/Ctrl-C 干净退出且不影响任何成员会话;内嵌总线投递循环(复用 `src/bus`),同时 `uv run console --headless` 等价于纯 hub 模式。
   - 前置:BUS-006。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_console_app.py -q`;看画面:`tmux new-session -d -s con1 -x 100 -y 24 "uv run console --bus-root <临时目录>"` 后 `tmux capture-pane -p -e -t con1`
+  - 证据:`src/console/app.py`(Textual 全屏 App,`q` 与 Ctrl-C 两个绑定)、`src/console/buspump.py`(投递循环跑在后台线程,`call_from_thread` 回 UI 线程;停时只置标志,最多 0.2 秒后线程自己收尾)、`src/console/cli.py`(`--headless` 直接转 `bus.headless`,与 `python3 hub.py` 同一份实现);`tests/test_console_app.py` 5 passed(内嵌循环真的投出消息并上屏、`q` 退出后线程不残留、退出路径不执行任何外部命令、headless 等价、`--once` 误用被拒),全量回归 161 passed。
+  - 视觉自验证:截取物 `tests/baseline/con-001-skeleton.txt`(100×24)。画面确认:标题栏「总控台 — 本机 AI 群聊与指挥中心」、圆角蓝色边框事件区、底部 `q 退出` 与命令面板提示;流量实时上屏,`claude -> human: … ★`、投不出去的显示 `✗(没有这个 tmux 会话)`;中英文混排右边框不错位。`q` 与 Ctrl-C 各试一次都干净退出,退出后 `tmux ls` 六个会话(含四个真实成员)创建时间不变,一个都没被带走。
+  - 顺带:`tests/test_engineering_skeleton.py` 里断言旧占位输出的那条会因为 TUI 常驻而永久阻塞,已改成用 `--headless --once` 验证入口接线(已知会 codex)。
 - [ ] **CON-002** — 三栏布局:左成员栏 / 中时间线 + 底部输入框 / 右详情栏(默认折叠,选中成员展开);终端宽度不足时详情栏自动让位;最小可用尺寸 80×24。
   - 前置:CON-001。
 - [ ] **CON-003** — 群聊时间线:总线全部流量实时追加(含拒收事件的灰色提示),发件人按成员固定着色,@ 提及高亮,时间戳分组;支持滚动回看并从 `bus/log.jsonl` 回填启动前历史。

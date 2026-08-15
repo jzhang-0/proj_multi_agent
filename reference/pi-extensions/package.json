@@ -1,0 +1,89 @@
+{
+  "name": "@trim21/personal-pi-extensions",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Custom pi coding-agent extensions: bwrap sandbox, workspace guard, opencode edit, and more",
+  "keywords": [
+    "pi-package"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trim21/pi-extensions"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "check": "tsc --noEmit && prettier --check .",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "prepare": "husky"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": ">=0.84.1",
+    "@earendil-works/pi-ai": ">=0.84.1",
+    "@earendil-works/pi-coding-agent": ">=0.84.1",
+    "typebox": ">=1.3.1"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.84.1",
+    "@earendil-works/pi-coding-agent": "^0.84.1",
+    "@eslint/js": "10.0.1",
+    "@types/node": "^24.13.3",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-erasable-syntax-only": "0.4.2",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-promise": "7.3.0",
+    "eslint-plugin-simple-import-sort": "14.0.0",
+    "eslint-plugin-unicorn": "73.0.0",
+    "eslint-plugin-unused-imports": "4.4.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "prettier": "^3.9.6",
+    "typebox": "1.3.1",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "src/opencode/index.ts",
+      "src/claude-code/index.ts",
+      "src/vision-agent.ts",
+      "src/session-name.ts",
+      "src/gh-readonly.ts",
+      "src/spawn-agent.ts",
+      "src/talk/index.ts"
+    ],
+    "skills": [
+      "src/talk/skills",
+      "src/claude-code/skills"
+    ]
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yaml,yml}": [
+      "prettier --write"
+    ]
+  },
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@vscode/tree-sitter-wasm": "^0.3.1",
+    "web-tree-sitter": "^0.26.12"
+  }
+}

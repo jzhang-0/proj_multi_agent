@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "**/*.wasm"
+      - "**/*.ts"
+      - "**/*.bpf"
+      - .github/workflows/release.yaml
+      - package.json
+
+concurrency:
+  group: release-master
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+
+      # npm >= 11 is required for OIDC trusted publishing
+      - run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run check
+
+      - name: Set version from commit count
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          VERSION="0.0.$COMMIT_COUNT"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.argv[1];
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          " "$VERSION"
+          echo "Publishing @trim21/personal-pi-extensions@$VERSION"
+
+      - name: Publish to npm via OIDC
+        run: npm publish --provenance

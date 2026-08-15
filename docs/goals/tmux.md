@@ -1,0 +1,18 @@
+# tmux 控制层(TMX)
+
+`src/tmuxctl/`:总控台与成员终端之间的全部 tmux 交互都收口在这一个模块,其他模块不允许直接拼 tmux 命令。已验证的能力边界见仓库探针记录:send-keys 全键盘、pipe-pane 实时流、pane_pid 可取可杀、capture-pane 可截画面。
+
+- [ ] **TMX-001** — 版本探测与命令封装:启动时探测 tmux ≥ 3.2,不满足给出明确报错;`has-session/new-session/kill-session/send-keys/capture-pane/list-panes` 的类型化封装,统一超时与错误处理。
+  - 前置:无。
+- [ ] **TMX-002** — 按键注入 API:文本(`-l` 字面模式)+ `Enter`/`Escape`/`C-c`;注入长文本前检测目标输入框是否有未提交内容(capture-pane 末行启发式),有则等待或换行隔离,解决 v0 的"半行字拼接污染"问题。
+  - 前置:TMX-001。
+- [ ] **TMX-003** — 输出流订阅:基于 control mode(`tmux -C` 常驻子进程)订阅指定窗格的 `%output` 事件,提供 async 迭代器接口;control mode 不可用时回退 `pipe-pane` 到 FIFO。
+  - 前置:TMX-001。
+- [ ] **TMX-004** — 画面快照 API:`capture-pane -p -e`(带颜色)与去色两种模式,支持历史滚动区(`-S`);对同一窗格的高频请求做节流合并(≥ 10Hz 请求合并为一次)。
+  - 前置:TMX-001。
+- [ ] **TMX-005** — 进程控制分级:取窗格 `pane_pid` 及子进程树;`interrupt`(send C-c/Escape)、`terminate`(SIGTERM 到 CLI 进程)、`kill`(SIGKILL / kill-session)三级 API,各自幂等。
+  - 前置:TMX-001。
+- [ ] **TMX-006** — 崩溃检测与重启:会话消失或窗格进程退出能在 2 秒内被感知(hook `pane-died` 或轮询兜底);`respawn` API 原地重启成员命令。
+  - 前置:TMX-001、TMX-005。
+- [ ] **TMX-007** — 活性推断:基于输出流活动量把成员归为 `working`(持续输出)/`idle`(静默且进程在)/`stuck`(被标记工作中但超时静默,阈值可配)/`dead`;只看"有无输出",不解析语义。
+  - 前置:TMX-003、TMX-006。

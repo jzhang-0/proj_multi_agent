@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run lint
+
+      - run: pnpm run check
+
+      # bwrap.test.ts imports src/bwrap which resolves the bwrap binary at
+      # module load time; bubblewrap is not preinstalled on ubuntu-latest.
+      # The claude-code Glob tool and its tests spawn `rg` directly, which is
+      # also not preinstalled on ubuntu-latest.
+      # Cache the apt packages to avoid re-downloading on every run.
+      - uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        with:
+          packages: bubblewrap ripgrep
+
+      - run: pnpm test

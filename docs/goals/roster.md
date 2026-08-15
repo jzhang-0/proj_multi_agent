@@ -20,6 +20,7 @@
   - 验证:`uv run pytest tests/test_roster_health.py tests/test_roster_lifecycle.py tests/test_tmuxctl_lifecycle.py tests/test_roster_load.py -q && uv run ruff check .`
   - 证据:`Member.auto_respawn` 纳入 roster schema 且缺省 `false`;`src/roster/health.py` 的 `HealthSupervisor` 消费 TMX-006 崩溃事件并发布状态更新,关闭时仅告警,开启时对死窗格原地 respawn、会话消失则重建,连续 3 次失败转 `failed` 且停止重试,成功后清零计数并支持显式解除熔断;`tests/test_roster_health.py` 覆盖配置、告警、两类恢复、失败/成功计数、停止重试及隔离真实 tmux 的 2 秒内检测恢复,同 ROS-001/003、TMX-006 回归共 31 passed;README 与 `roster.toml` 注释已同步。
 - [ ] **ROS-005** — 收编存量会话:发现不在 roster 里的 tmux 会话,支持一键收编为临时成员(可收消息、上时间线),重启不保留。
+  - 处理登记:codex,2026-08-16 06:53 +0800,`ros-005-codex`。
   - 前置:ROS-003。
 - [ ] **ROS-006** — 群规单一事实来源:成员运行时协议只维护在 `AGENTS.md`「群聊协议」一节,开场白由它生成;写一个一致性检查(测试或脚本)防止两处漂移。
   - 前置:ROS-001。

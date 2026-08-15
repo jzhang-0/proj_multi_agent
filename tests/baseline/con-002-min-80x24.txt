@@ -1,0 +1,24 @@
+ ⭘                     总控台 — 本机 AI 群聊与指挥中心
+ claude          │ [总控台] 总线目录
+ codex           │ /private/tmp/claude-501/-Users-jzhang-Downloads-proj-multi
+ cursor          │ f5d/scratchpad/con2bus
+ agy             │ [总控台] ↑↓ 选成员看详情,Esc 收起,Tab 去输入框;q 或 Ctrl-C
+                 │ 2026-08-16 06:49:06  claude -> codex: 中英文混排 alignment
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │
+                 │                                   ▍
+                 │▊▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▎
+                 │▊  @名字 说点什么,回车发送                                   ▎
+                 │▊▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▎
+ q 退出  esc 收起详情                                               ▏^p palette

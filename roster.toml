@@ -3,8 +3,6 @@
 # 下面每条写清:用什么参数免弹窗、以及仍然可能冒出来的残留弹窗。
 # auto_respawn 缺省为 false;需要无人值守恢复时才按成员显式开启。
 
-default_greeting_template = """你是本机AI群聊的成员,你的名字是 {name}。先阅读本目录的 AGENTS.md 了解通信协议,然后运行 ./msg human {name}已上线 向人类报到,之后待命等待群消息。"""
-
 # claude: --permission-mode acceptEdits 自动接受文件编辑,不再为每次 Edit/Write 弹窗。
 # 项目级白名单见 .claude/settings.json,放行 Bash(./msg *)——群聊回执不必人点允许。
 # 残留弹窗:网络请求、git push / 删文件 / 装软件等危险 bash,以及切换到 bypass 之外的权限模式时。

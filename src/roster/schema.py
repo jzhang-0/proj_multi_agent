@@ -25,9 +25,15 @@ class Member:
     enabled: bool = True
     auto_respawn: bool = False
 
-    def render_greeting(self) -> str:
-        """用成员名填充开场白模板。"""
-        return self.greeting_template.replace("{NAME}", self.name).replace("{name}", self.name)
+    def render_greeting(self, *, protocol: str | None = None) -> str:
+        """从 AGENTS.md 权威协议生成开场白；模板只作为可选的成员前言。"""
+        from roster.protocol import render_member_greeting
+
+        return render_member_greeting(
+            self.name,
+            intro_template=self.greeting_template,
+            protocol=protocol,
+        )
 
 
 @dataclass(frozen=True)
@@ -102,8 +108,8 @@ def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
     name = validate_member_name(_require_str(raw, "name"))
     command = _require_str(raw, "command")
     greeting = raw.get("greeting_template", default_greeting)
-    if not isinstance(greeting, str) or not greeting.strip():
-        raise RosterError(f"成员 {name} 的开场白模板必须是非空字符串")
+    if not isinstance(greeting, str):
+        raise RosterError(f"成员 {name} 的开场白模板必须是字符串")
     known = {
         "name",
         "command",
@@ -145,8 +151,4 @@ def roster_from_dict(raw: Any, *, source: str = "roster.toml") -> Roster:
     dupes = {name for name in names if names.count(name) > 1}
     if dupes:
         raise RosterError(f"成员名重复: {', '.join(sorted(dupes))}")
-    missing_greeting = [m.name for m in members if not m.greeting_template.strip()]
-    if missing_greeting:
-        names = ", ".join(missing_greeting)
-        raise RosterError(f"这些成员没有开场白模板(也没有 default_greeting_template): {names}")
     return Roster(members=members, source=source)

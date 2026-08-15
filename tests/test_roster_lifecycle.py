@@ -127,7 +127,7 @@ def test_real_session_gets_agent_name_and_greeting():
         assert life.up(name)[0].changed
         subprocess.run(["sleep", "0.3"], check=True)
         screen = subprocess.run(
-            ["tmux", "capture-pane", "-p", "-t", name],
+            ["tmux", "capture-pane", "-p", "-S", "-", "-t", name],
             capture_output=True,
             text=True,
             check=True,

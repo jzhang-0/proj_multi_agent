@@ -46,7 +46,7 @@ tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-sessio
 
 `SessionAdopter.discover()` 可发现静态名册外的现有 tmux 会话，`adopt(name)` 一步收编为可寻址的临时成员；`member_names()` 是收件人补全、成员栏和时间线着色的统一名称集合。收编记录只在当前进程内存中，重启不会写入或改动 `roster.toml`，`forget(name)` 也不会关闭用户原有会话。
 
-成员名册是 `roster.toml`(由 `src/roster` 加载校验)。`./start.sh` 是读名册的薄入口。生命周期直接用 `roster` 命令,单个成员或全体都行,而且幂等(已经在跑的不会被顶掉):
+成员名册是 `roster.toml`(由 `src/roster` 加载校验)。成员启动开场白由 `AGENTS.md` 的「群聊协议」章节动态生成,roster 不保存协议副本；`check_single_source()` 与回归测试负责防漂移。`./start.sh` 是读名册的薄入口。生命周期直接用 `roster` 命令,单个成员或全体都行,而且幂等(已经在跑的不会被顶掉):
 
 ```bash
 uv run roster up            # 拉起全部启用成员(已在跑的跳过)
@@ -66,6 +66,6 @@ uv run roster down          # 全部关掉(含已停用成员的残留会话)
 | `pyproject.toml` / `uv.lock` | Python、依赖、pytest、ruff 与命令入口配置 |
 | `src/` / `tests/` | 应用源码与自动化测试(`src/bus`、`src/console`、`src/tmuxctl`、`src/qa`、`src/roster`) |
 | `hub.py` `msg` `start.sh` | v0 总线入口(`start.sh` 现读 `roster.toml`) |
-| `roster.toml` | 成员名册(名字、启动命令、开场白、启用与否) |
+| `roster.toml` | 成员名册(名字、启动命令、启用与否、自动恢复配置) |
 | `bus/` | 运行时数据(gitignore) |
 | `reference/pi-extensions/` | 参考实现:pi 的 talk 扩展(只读,防环策略的出处) |

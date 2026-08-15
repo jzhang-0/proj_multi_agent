@@ -17,6 +17,7 @@
   - 验证:`uv run pytest tests/test_tmuxctl_snapshot.py tests/test_tmuxctl.py -q && uv run ruff check .`
   - 证据:`src/tmuxctl/snapshot.py` 的异步 `PaneSnapshotter` 在线程中调用类型化 `capture_pane`,同参数并发请求共享任务且 100ms 内复用缓存,颜色/历史变体隔离;`tests/test_tmuxctl_snapshot.py` 覆盖转参、10Hz、并发合并、变体隔离及隔离真实 tmux 的 ANSI/去色/`-S` 滚动区,连同 TMX-001 回归共 17 passed;README 已同步 API。
 - [ ] **TMX-005** — 进程控制分级:取窗格 `pane_pid` 及子进程树;`interrupt`(send C-c/Escape)、`terminate`(SIGTERM 到 CLI 进程)、`kill`(SIGKILL / kill-session)三级 API,各自幂等。
+  - 处理登记:codex,2026-08-16 06:31 +0800,`tmx-005-codex`。
   - 前置:TMX-001。
 - [ ] **TMX-006** — 崩溃检测与重启:会话消失或窗格进程退出能在 2 秒内被感知(hook `pane-died` 或轮询兜底);`respawn` API 原地重启成员命令。
   - 前置:TMX-001、TMX-005。

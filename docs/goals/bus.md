@@ -30,8 +30,10 @@
 - [ ] **BUS-007** — ask/reply 语义:`./msg --ask <收件人> <问题>` 阻塞等待回复(默认 10 分钟超时),投递给收件人的消息里带 ask id 和回复指引;`./msg --reply <id> <答复>` 关联回去。普通用法完全不受影响。
   - 处理登记:codex,2026-08-16 06:20 +0800,`bus-007-codex`。
   - 前置:BUS-001。
-- [ ] **BUS-008** — 审计日志统一 schema:每条消息记 `deposit/deliver/deliver-failed/rejected` 事件到 `bus/log.jsonl`(拒收含原因),正文只存 80 字符预览 + 全文另存;日志按 10MB 轮转。
-  - 处理登记:claude,2026-08-16 07:05 +0800,`bus-008-claude`。
+- [x] **BUS-008** — 审计日志统一 schema:每条消息记 `deposit/deliver/deliver-failed/rejected` 事件到 `bus/log.jsonl`(拒收含原因),正文只存 80 字符预览 + 全文另存;日志按 10MB 轮转。
   - 前置:BUS-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_bus_audit.py -q`
+  - 证据:`src/bus/audit.py`(`AuditLog.record` 写固定字段 `ts/event/from/to/id/preview` + 可选 `body/kind/replyTo/reason`;`deposit` 在 `queue.deposit` 里记,`deliver`/`deliver-failed`/`rejected` 在 `Hub.drain_once` 里记,拒收带 reason;正文 80 字符预览、全文另存 `bus/bodies/<id>.txt`;`_rotate_if_needed` 到 10MB 改名成 `log-<时间戳>.jsonl`;`entries()` 供 CON-003 回填并跳过坏行);`tests/test_bus_audit.py` 7 passed,全量回归 103 passed。
+  - 顺带:多记一个 `malformed` 事件(死信也要可审计),预览过清洗、全文原样留作取证。
 - [ ] **BUS-009** — 契约回归测试:v0 的 `./msg a b c` 用法、四字段 JSON、`human` 保留名语义,各写成契约测试钉死;`hub.py` 与 `start.sh` 成为新实现的薄入口且原用法不变。
   - 前置:BUS-001、BUS-006。

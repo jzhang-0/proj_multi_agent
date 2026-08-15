@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from pytest import CaptureFixture
+import pytest
 
 from console import __version__
 from console.cli import main
@@ -22,11 +22,16 @@ def test_project_requires_supported_python_and_exposes_console_script() -> None:
     assert config["tool"]["ruff"]["target-version"] == "py311"
 
 
-def test_console_entry_point_runs(capsys: CaptureFixture[str]) -> None:
-    assert main([]) == 0
-    output = capsys.readouterr().out
+def test_console_entry_point_runs(tmp_path: Path) -> None:
+    # CON-001 之后 `console` 不带参数会起全屏 TUI(会一直跑),入口接线用
+    # --headless 验证:它等价于纯 hub 模式,清一次队列就返回。
+    assert main(["--headless", "--once", "--bus-root", str(tmp_path / "bus")]) == 0
 
-    assert "总控台工程环境已就绪" in output
+
+def test_console_reports_version() -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--version"])
+    assert exit_info.value.code == 0
 
 
 def test_package_has_version() -> None:

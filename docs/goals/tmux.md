@@ -21,6 +21,7 @@
   - 验证:`uv run pytest tests/test_tmuxctl_process.py tests/test_tmuxctl.py -q && uv run ruff check .`
   - 证据:`src/tmuxctl/process.py` 的 `ProcessController` 暴露 pane PID/递归 `ProcessTree`,软打断发 Escape+C-c,terminate/kill 对 CLI 子进程发 SIGTERM/SIGKILL,kill-session 与目标/PID 消失均幂等;`tests/test_tmuxctl_process.py` 覆盖树隔离、三级信号、重复调用、竞态及隔离真实 tmux,同 TMX-001 回归共 20 passed;README 已同步 API。
 - [ ] **TMX-006** — 崩溃检测与重启:会话消失或窗格进程退出能在 2 秒内被感知(hook `pane-died` 或轮询兜底);`respawn` API 原地重启成员命令。
+  - 处理登记:codex,2026-08-16 06:35 +0800,`tmx-006-codex`。
   - 前置:TMX-001、TMX-005。
 - [ ] **TMX-007** — 活性推断:基于输出流活动量把成员归为 `working`(持续输出)/`idle`(静默且进程在)/`stuck`(被标记工作中但超时静默,阈值可配)/`dead`;只看"有无输出",不解析语义。
   - 前置:TMX-003、TMX-006。

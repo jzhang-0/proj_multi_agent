@@ -7,6 +7,7 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_tmuxctl.py -q`
   - 证据:`src/tmuxctl/{__init__,errors,version,client}.py`;`tests/test_tmuxctl.py` 12 passed(版本过低/缺失/超时、六个命令 argv 与 `=name` 精确匹配、send-keys 不用 `=name`、隔离 socket 真实会话生命周期)。
 - [ ] **TMX-002** — 按键注入 API:文本(`-l` 字面模式)+ `Enter`/`Escape`/`C-c`;注入长文本前检测目标输入框是否有未提交内容(capture-pane 末行启发式),有则等待或换行隔离,解决 v0 的"半行字拼接污染"问题。
+  - 处理登记:cursor,2026-08-16 06:14 +0800,`tmx-002-cursor`。
   - 前置:TMX-001。
 - [ ] **TMX-003** — 输出流订阅:基于 control mode(`tmux -C` 常驻子进程)订阅指定窗格的 `%output` 事件,提供 async 迭代器接口;control mode 不可用时回退 `pipe-pane` 到 FIFO。
   - 前置:TMX-001。

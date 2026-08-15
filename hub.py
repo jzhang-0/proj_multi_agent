@@ -1,69 +1,34 @@
 #!/usr/bin/env python3
-"""本机多 AI 消息 hub。
+"""本机多 AI 消息 hub —— v0 入口,用法不变:`python3 hub.py`。
 
-轮询 bus/queue/ 里的消息文件,按收件人名字找到同名 tmux 会话,
-用 send-keys 把消息"打字"进那个终端并回车。全部流量打印在本进程
-的终端里(这个窗口就是人看的"群聊记录"),同时追加到 bus/log.jsonl。
+监听 `bus/queue/`,按收件人名字找到同名 tmux 会话,把消息"打字"进那个
+终端并回车;全部流量打印在本窗口(这就是人看的群聊记录),同时落审计
+日志。收件人为 `human` 的消息不投递,只在这里显示。
 
-收件人为 human 的消息不投递,只在这里高亮显示。
+实现在 `src/bus/headless.py`,这里和 `msg` 一样只负责切到 Python 3.11+
+的项目环境。可选参数:`--bus-root <目录>`、`--once`(清一次队列就退出)。
 """
-import functools
-import glob
-import json
+
 import os
-import shutil
-import subprocess
-import time
+import sys
 
-print = functools.partial(print, flush=True)
+root = os.path.dirname(os.path.abspath(__file__))
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-QUEUE = os.path.join(ROOT, "bus", "queue")
-DONE = os.path.join(ROOT, "bus", "processed")
-LOG = os.path.join(ROOT, "bus", "log.jsonl")
+if sys.version_info < (3, 11):
+    os.execvp(
+        "uv",
+        (
+            "uv",
+            "run",
+            "--project",
+            root,
+            "python",
+            os.path.abspath(__file__),
+            *sys.argv[1:],
+        ),
+    )
 
+sys.path.insert(0, os.path.join(root, "src"))
 
-def tmux_session_exists(name):
-    r = subprocess.run(["tmux", "has-session", "-t", f"={name}"], capture_output=True)
-    return r.returncode == 0
-
-
-def deliver(m):
-    """把消息注入收件人的 tmux 会话,返回是否成功。"""
-    to = m["to"]
-    if to == "human":
-        return True  # 人的消息只显示在 hub 窗口,不需要投递
-    if not tmux_session_exists(to):
-        return False
-    text = m["text"].replace("\n", " ")
-    line = f"[群消息] 来自 {m['from']}: {text} —— 如需回复,运行: ./msg {m['from']} \"你的回复\""
-    subprocess.run(["tmux", "send-keys", "-t", to, "-l", line], check=True)
-    time.sleep(0.3)  # 给输入框一点时间接住文本,再敲回车
-    subprocess.run(["tmux", "send-keys", "-t", to, "Enter"], check=True)
-    return True
-
-
-def main():
-    os.makedirs(QUEUE, exist_ok=True)
-    os.makedirs(DONE, exist_ok=True)
-    print(f"[hub] 已启动,监听 {QUEUE}")
-    print("[hub] 收件人名字 = tmux 会话名;发给 human 的消息只在本窗口显示\n")
-    while True:
-        for path in sorted(glob.glob(os.path.join(QUEUE, "*.json"))):
-            with open(path, encoding="utf-8") as f:
-                m = json.load(f)
-            ok = deliver(m)
-            mark = "★" if m["to"] == "human" else ("✓" if ok else "✗ 投递失败(没有这个 tmux 会话)")
-            print(f"{m['ts']}  {m['from']} -> {m['to']}: {m['text']}  {mark}")
-            m["delivered"] = ok
-            with open(LOG, "a", encoding="utf-8") as f:
-                f.write(json.dumps(m, ensure_ascii=False) + "\n")
-            shutil.move(path, os.path.join(DONE, os.path.basename(path)))
-        time.sleep(0.5)
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n[hub] 已退出")
+main = __import__("bus.headless", fromlist=["main"]).main
+raise SystemExit(main(sys.argv[1:]))

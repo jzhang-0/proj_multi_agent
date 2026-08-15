@@ -17,6 +17,7 @@ tmux attach -t codex   # 围观某个成员(Ctrl-b d 退出)
 - 消息单行注入;成员正忙时排进其输入队列。全部流量留档 `bus/log.jsonl`。
 - `--ask` 默认阻塞等待关联回复 10 分钟;收件人按投递消息里的 `--reply <ask-id>` 指引答复。可用 `--timeout <秒>` 缩短等待。
 - 各成员的免权限弹窗配置见 `start.sh` 与 [roster Goal 卷](docs/goals/roster.md)。
+- `./msg` 与 `hub.py` 现在是 `src/bus/` 的薄入口(用法一字未变,自己会切到项目 venv),第一次用前在仓库根跑一次 `uv sync`。
 
 ## 开发中:总控台
 

@@ -95,14 +95,14 @@ class Hub:
             quarantine(path, self.paths, str(exc))
             return DeliveryResult(path, DeliveryOutcome.MALFORMED, detail=str(exc))
 
-        if message.to == HUMAN:
-            archive(path, self.paths)
-            return DeliveryResult(path, DeliveryOutcome.SHOWN, message)
-
         verdict = self.policy.check(message)
         if not verdict.ok:
             return self._reject(path, message, verdict.reason)
         self.policy.record(message)
+
+        if message.to == HUMAN:
+            archive(path, self.paths)
+            return DeliveryResult(path, DeliveryOutcome.SHOWN, message)
 
         try:
             ok = self.deliver(message)

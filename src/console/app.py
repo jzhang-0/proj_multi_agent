@@ -34,6 +34,7 @@ from bus.hub import tmux_deliver
 from console.buspump import BusPump
 from console.compose import ComposeInput, split_address
 from console.members import member_names
+from console.mirror import Mirror
 from console.timeline import TimelineEntry, history
 from console.widgets import Timeline
 
@@ -43,6 +44,9 @@ DETAIL_MIN_WIDTH = 100
 
 #: 最小可用尺寸(产品定义)
 MIN_SIZE = (80, 24)
+
+#: 详情栏画面刷新间隔(秒)。产品定义:活跃窗格 < 100ms
+MIRROR_INTERVAL = 0.1
 
 
 class ConsoleApp(App[None]):
@@ -86,6 +90,7 @@ class ConsoleApp(App[None]):
         border-left: solid $primary-darken-2;
         padding: 0 1;
         display: none;
+        overflow-x: hidden;
     }
     """
 
@@ -105,6 +110,7 @@ class ConsoleApp(App[None]):
         *,
         deliver: Callable[[Message], bool] = tmux_deliver,
         members: tuple[str, ...] | None = None,
+        snapshotter: object | None = None,
     ) -> None:
         super().__init__()
         self.paths = (paths or BusPaths.resolve()).ensure()
@@ -113,6 +119,9 @@ class ConsoleApp(App[None]):
         self.selected_member: str | None = None
         #: 上一个对话对象:不写 @ 前缀时默认发给它
         self.last_target: str | None = None
+        #: 详情栏画面来源(TMX-004);None 表示还没接上 tmux
+        self.snapshotter = snapshotter
+        self._mirror_timer = None
 
     # --- 布局 -----------------------------------------------------------
 
@@ -134,7 +143,7 @@ class ConsoleApp(App[None]):
                     placeholder="@名字 说点什么,回车发送",
                     id="compose",
                 )
-            yield Static("", id="detail", markup=False)
+            yield Mirror(id="detail")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -145,15 +154,53 @@ class ConsoleApp(App[None]):
         # 焦点先给成员栏:CON-002 的交互就是选成员。输入框的焦点规则在 CON-004/012。
         self.query_one("#members", ListView).focus()
         self.pump.start()
+        self._start_mirror()
 
     def on_unmount(self) -> None:
         self.pump.stop()
+        if self._mirror_timer is not None:
+            self._mirror_timer.stop()
+            self._mirror_timer = None
+
+    # --- 成员详情:终端画面镜像 -------------------------------------------
+
+    def _start_mirror(self) -> None:
+        """接上快照器并起刷新定时器(默认先暂停,选中成员才跑)。"""
+        if self.snapshotter is None:
+            try:
+                from tmuxctl import PaneSnapshotter, Tmux
+
+                self.snapshotter = PaneSnapshotter(Tmux())
+            except Exception as exc:  # tmux 不在或版本不够:详情栏降级成提示
+                self.query_one("#timeline", Timeline).note(f"[总控台] 详情栏不可用:{exc}")
+                return
+        self._mirror_timer = self.set_interval(MIRROR_INTERVAL, self._refresh_mirror, pause=True)
+
+    def _mirror(self) -> Mirror | None:
+        """详情栏组件;应用正在拆的时候可能已经没有了。"""
+        found = self.query("#detail")
+        return found.only_one(Mirror) if found else None
+
+    async def _refresh_mirror(self) -> None:
+        """拉一帧成员画面。只有详情栏真的在显示时才会被调到。"""
+        member, mirror = self.selected_member, self._mirror()
+        if member is None or mirror is None or self.snapshotter is None or not mirror.display:
+            return
+        try:
+            snapshot = await self.snapshotter.capture(
+                member, color=True, start=mirror.capture_start
+            )
+        except Exception as exc:
+            mirror.notice(f"取不到 {member} 的画面:{exc}")
+            return
+        mirror.show_screen(snapshot.text)
 
     # --- 详情栏的展开/让位 ------------------------------------------------
 
     @property
     def detail_visible(self) -> bool:
-        return bool(self.query_one("#detail", Static).display)
+        mirror = self._mirror()
+        return bool(mirror is not None and mirror.display)
 
     def _sync_detail(self, width: int | None = None) -> None:
         """详情栏只在"选中了成员"且"宽度够"时出现,两个条件缺一不可。
@@ -161,17 +208,22 @@ class ConsoleApp(App[None]):
         `width` 显式传进来是因为处理 Resize 事件时 `self.size` 还是旧值,
         必须用事件里带的新尺寸判断。
         """
-        detail = self.query_one("#detail", Static)
+        detail = self._mirror()
+        if detail is None:
+            return
         wide_enough = (self.size.width if width is None else width) >= DETAIL_MIN_WIDTH
         detail.display = self.selected_member is not None and wide_enough
+        # 不可见就把定时器停掉:看不见的画面不值得每 100ms 去问一次 tmux
+        if self._mirror_timer is not None:
+            self._mirror_timer.resume() if detail.display else self._mirror_timer.pause()
         if detail.display:
-            detail.update(
-                f"成员详情 · {self.selected_member}\n\n"
-                "终端画面镜像在 CON-006;这里先占位,证明详情栏能按选中展开。"
-            )
+            detail.notice(f"成员详情 · {self.selected_member}(取画面中…)")
 
     def select_member(self, name: str | None) -> None:
         self.selected_member = name
+        mirror = self._mirror()
+        if mirror is not None:
+            mirror.history_offset = 0  # 换人就回到当前画面
         self._sync_detail()
 
     def action_clear_selection(self) -> None:

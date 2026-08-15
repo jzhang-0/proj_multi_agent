@@ -36,9 +36,11 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_console_mirror.py -q`;看画面:tmux 里起 console(140×32)后 `send-keys Down` 选中成员
   - 证据:`src/console/mirror.py`(`Mirror` 组件:`show_screen` 用 `Text.from_ansi` 把 `capture-pane -p -e` 的颜色照搬进来;`history_offset` 映射成 `capture-pane -S`,PgUp/PgDn/Home/End 翻的是**成员终端自己的回滚区**;换成员回到当前画面)、`src/console/app.py`(`MIRROR_INTERVAL = 0.1` 定时器复用 TMX-004 的 `PaneSnapshotter`(自带 10Hz 合并),`_sync_detail` 里详情栏不可见就 `timer.pause()`、可见才 `resume()`,退出时 `stop()`);`tests/test_console_mirror.py` 6 passed(刷新间隔达标、带色抓取且 ANSI 不作为可见字符残留、未选中/窄屏让位时一次 capture 都不发、PgUp 真的把 `-S` 传下去并显示回滚区内容、Home/End、换成员归位、Tab 能走到详情栏);全量回归 236 passed。
   - 视觉自验证:`tests/baseline/con-006-mirror-140x32.txt`/`.ansi`(140×32,选中 claude:右栏实时镜像出该成员终端里正在显示的群消息与 `⏺` 输出行,连它自己的灰色 `❯` 提示符背景色都照搬;三栏分隔线仍对齐,中文按双宽换行没有把边框顶歪)。
-- [ ] **CON-007** — 控制操作:对选中成员提供打断 / 终止 / 重启 / 全屏接管(挂起 console 进 `tmux attach`,退出后恢复);终止与重启需二次确认;全部操作有键位并记入审计日志。
-  - 处理登记:codex,2026-08-16 07:12 +0800,`con-007-codex`。
+- [x] **CON-007** — 控制操作:对选中成员提供打断 / 终止 / 重启 / 全屏接管(挂起 console 进 `tmux attach`,退出后恢复);终止与重启需二次确认;全部操作有键位并记入审计日志。
   - 前置:CON-005、TMX-005、ROS-003。
+  - 验证:`uv run pytest tests/test_console_control.py tests/test_console_commands.py tests/test_console_members.py tests/test_console_compose.py tests/test_console_mirror.py tests/test_console_layout.py tests/test_console_app.py tests/test_console_timeline.py tests/test_bus_audit.py tests/test_tmuxctl_process.py tests/test_roster_lifecycle.py tests/test_visual_evidence.py -q && uv run ruff check .`;看画面:`uv run python -m qa.visual --goal CON-007 --scene terminate-confirm --size 120x30 --keys Down,F6 --fixture controls`。
+  - 证据:`src/console/control.py` 的 `MemberController` 复用 TMX-005 `ProcessController` 实现 Escape+Ctrl-C 打断与 SIGTERM 终止,复用 ROS-003 `Lifecycle.restart`,接管以类型化 argv 运行 `tmux attach-session -t =name`;App 用 F5/F6/F7/F8 暴露四操作,接管包在 Textual `suspend()` 内并在退出 attach 后恢复;终止/重启共用 `ConfirmControlScreen`,默认焦点为取消且 Y/N/Esc 明确;`AuditLog.record_control()` 对成功、空操作和异常写 `control` 事件;`tests/test_console_control.py` 覆盖委托、精确 argv、审计、选中前置、确认/取消、挂起顺序和全部键位,与 CON-008 及前置联合回归共 96 passed。
+  - 视觉自验证:`tests/baseline/con-007-terminate-confirm-120x30.txt`/`.ansi`(安全 QA 夹具,不含真实成员内容)。画面确认黄色警告框居中且中英文对齐,「确认终止成员 claude」与风险提示完整,确认按钮为红色而取消按钮为蓝色反显默认焦点;底栏 F5 打断/F6 终止/F7 重启/F8 接管全部可见,三栏和输入框边框无错位,显示宽高 119×30 有效内容未溢出 120×30,取证结束未丢失原有 tmux 会话。
 - [x] **CON-008** — `/` 命令面板:`/up <名字>`、`/down <名字>`、`/restart <名字>`、`/adopt <会话>`(ROS-005)、`/mute <名字>`(临时拒收其消息)、`/help`;命令有补全和错误提示。
   - 前置:CON-004、ROS-003。
   - 验证:`uv run ruff check . && uv run pytest tests/test_console_commands.py -q`;看画面:tmux 里起 console,依次敲 `/help`、`/adopt alice`、`/uo x`

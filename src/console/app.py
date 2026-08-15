@@ -35,10 +35,13 @@ from bus.hub import tmux_deliver
 from console.buspump import BusPump, MutePolicy
 from console.commands import CommandRunner, is_command
 from console.compose import ComposeInput, split_address
+from console.control import ConfirmControlScreen, ControlFeedback, MemberController
 from console.members import MemberStatusService, member_names, pending_counts
 from console.mirror import Mirror
 from console.timeline import TimelineEntry, history
 from console.widgets import MemberCard, Timeline
+from roster import RosterError, load_roster
+from roster.lifecycle import Lifecycle
 from tmuxctl import Tmux, TmuxError
 
 #: 低于这个列数就不再显示详情栏:80 列时成员栏 + 时间线已经占满,
@@ -109,6 +112,10 @@ class ConsoleApp(App[None]):
         Binding("pagedown", "timeline_scroll('page_down')", "下翻", show=False),
         Binding("home", "timeline_scroll('home')", "回到最早", show=False),
         Binding("end", "timeline_scroll('end')", "回到最新", show=False),
+        Binding("f5", "interrupt_selected", "打断"),
+        Binding("f6", "terminate_selected", "终止"),
+        Binding("f7", "restart_selected", "重启"),
+        Binding("f8", "takeover_selected", "接管"),
     ]
 
     def __init__(
@@ -120,6 +127,7 @@ class ConsoleApp(App[None]):
         snapshotter: object | None = None,
         member_status: MemberStatusService | None = None,
         pump_enabled: bool = True,
+        controller: MemberController | None = None,
     ) -> None:
         super().__init__()
         self.paths = (paths or BusPaths.resolve()).ensure()
@@ -140,6 +148,17 @@ class ConsoleApp(App[None]):
                 for name in self.members:
                     member_status.set_alive(name, False)
         self.member_status = member_status
+        if controller is None and deliver is tmux_deliver and member_status.tmux is not None:
+            try:
+                roster = load_roster()
+                controller = MemberController(
+                    member_status.tmux,
+                    Lifecycle(roster, member_status.tmux),
+                    AuditLog(self.paths),
+                )
+            except (OSError, RosterError, TmuxError):
+                controller = None
+        self.controller = controller
         self.selected_member: str | None = None
         #: 上一个对话对象:不写 @ 前缀时默认发给它
         self.last_target: str | None = None
@@ -208,12 +227,10 @@ class ConsoleApp(App[None]):
     def refresh_member_cards(self) -> None:
         """每 0.5 秒刷新，保证状态变化 1 秒内出现在界面。"""
         counts = pending_counts(self.paths)
-        for name in self.members:
-            card = self.query(f"#card-{name}")
-            if card:
-                card.only_one(MemberCard).apply(
-                    self.member_status.snapshot(name, queued=counts[name])
-                )
+        # 定时器与卸载或 `/adopt` 重建列表可能擦肩；只刷新仍挂在 DOM 上的卡片。
+        for card in self.query(MemberCard):
+            name = card.snapshot.name
+            card.apply(self.member_status.snapshot(name, queued=counts[name]))
 
     # --- 命令面板要用的名册/生命周期 ---------------------------------------
 
@@ -432,3 +449,72 @@ class ConsoleApp(App[None]):
             "home": timeline.scroll_home,
             "end": timeline.scroll_end,
         }[direction]()
+
+    # --- 成员控制 --------------------------------------------------------
+
+    def _control_target(self) -> str | None:
+        if self.selected_member is None:
+            self.query_one("#timeline", Timeline).note("[总控台] 先在成员栏选择一个成员")
+            return None
+        if self.controller is None:
+            self.query_one("#timeline", Timeline).note("[总控台] 成员控制不可用")
+            return None
+        return self.selected_member
+
+    def _show_control_feedback(self, feedback: ControlFeedback) -> None:
+        mark = "✓" if feedback.changed else "·"
+        self.query_one("#timeline", Timeline).note(
+            f"[控制] {mark} {feedback.action} {feedback.target}: {feedback.detail}"
+        )
+
+    def _perform_control(self, action: str, target: str) -> None:
+        assert self.controller is not None
+        try:
+            feedback = getattr(self.controller, action)(target)
+        except Exception as exc:
+            self.query_one("#timeline", Timeline).note(
+                f"[控制] ✗ {action} {target}: {type(exc).__name__}: {exc}"
+            )
+            return
+        self._show_control_feedback(feedback)
+
+    def action_interrupt_selected(self) -> None:
+        target = self._control_target()
+        if target is not None:
+            self._perform_control("interrupt", target)
+
+    def _confirm_selected(self, action: str, label: str) -> None:
+        target = self._control_target()
+        if target is None:
+            return
+
+        def after_confirmation(confirmed: bool) -> None:
+            if confirmed:
+                self._perform_control(action, target)
+
+        self.push_screen(ConfirmControlScreen(label, target), after_confirmation)
+
+    def action_terminate_selected(self) -> None:
+        self._confirm_selected("terminate", "终止")
+
+    def action_restart_selected(self) -> None:
+        self._confirm_selected("restart", "重启")
+
+    def action_takeover_selected(self) -> None:
+        target = self._control_target()
+        if target is None:
+            return
+        assert self.controller is not None
+        invoked = False
+        try:
+            with self.suspend():
+                invoked = True
+                feedback = self.controller.takeover(target)
+        except Exception as exc:
+            if not invoked:
+                self.controller.record_failure("takeover", target, exc)
+            self.query_one("#timeline", Timeline).note(
+                f"[控制] ✗ takeover {target}: {type(exc).__name__}: {exc}"
+            )
+            return
+        self._show_control_feedback(feedback)

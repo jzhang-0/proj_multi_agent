@@ -56,6 +56,7 @@ AUDIT_TO_OUTCOME = {
     "deliver-failed": "deliver-failed",
     "rejected": "rejected",
     "malformed": "malformed",
+    "control": "shown",
 }
 
 #: `@名字`:字母数字下划线连字符,或中文

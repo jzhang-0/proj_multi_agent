@@ -1,4 +1,4 @@
-"""审计日志:每条消息在总线上的遭遇都留一行。
+"""审计日志:每条消息的遭遇和 console 控制操作都留一行。
 
 一行一个 JSON 对象追加进 `bus/log.jsonl`,字段固定,便于 `tail -f`、
 `jq` 和总控台时间线回填(CON-003)。
@@ -41,6 +41,7 @@ class AuditEvent(StrEnum):
     DELIVER_FAILED = "deliver-failed"  # 投递失败(会话不在等)
     REJECTED = "rejected"  # 被防环策略拒收,reason 里写原因
     MALFORMED = "malformed"  # 结构非法,进了死信目录
+    CONTROL = "control"  # 人在 console 对成员执行控制动作
 
 
 def preview_of(text: str) -> str:
@@ -134,6 +135,29 @@ class AuditLog:
             "preview": preview_of(path.name),
             "reason": reason,
         }
+        return self._append(entry)
+
+    def record_control(
+        self,
+        action: str,
+        target: str,
+        *,
+        changed: bool,
+        detail: str = "",
+    ) -> dict[str, Any]:
+        """记录人对成员执行的控制操作，不伪装成总线消息。"""
+        entry: dict[str, Any] = {
+            "ts": time.strftime(TS_FORMAT),
+            "event": str(AuditEvent.CONTROL),
+            "from": "human",
+            "to": target,
+            "id": None,
+            "preview": sanitize(action),
+            "action": sanitize(action),
+            "changed": changed,
+        }
+        if detail:
+            entry["reason"] = sanitize(detail)
         return self._append(entry)
 
     def entries(self, limit: int | None = None) -> list[dict[str, Any]]:

@@ -85,7 +85,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--keep", action="store_true", help="截完不关会话,方便继续手动看")
     parser.add_argument(
         "--fixture",
-        choices=("console", "member-cards"),
+        choices=("console", "member-cards", "controls"),
         default="console",
         help="取证入口;member-cards 同屏展示 CON-005 五态",
     )
@@ -110,6 +110,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "python",
                 "-m",
                 "qa.member_cards",
+                "--bus-root",
+                str(bus_root),
+            ]
+        elif args.fixture == "controls":
+            command = [
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "qa.controls",
                 "--bus-root",
                 str(bus_root),
             ]

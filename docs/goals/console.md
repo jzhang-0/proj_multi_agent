@@ -59,8 +59,11 @@
     - 入队 → 注入终端实测 P95 334ms(预算 200)。原因:`bus.hub` 自己拼 tmux 命令(还违反架构 §1「tmuxctl 是唯一出口」),每条消息要起 5 个 tmux 进程,其中两次只是为了"等画面有反应"。修复:改走 TMX-002 的 `KeyInjector`,并把它的忙碌等待从 600ms 压到 25ms(等不到就按 TMX-002 的规则先 Enter 换行隔离)——`cat` 这类没有提示符的窗格会被启发式判为"忙",默认参数下每条要多等半秒多。
     - 键入回显实测 P95 131ms(预算 16)。原因:量错了——`pilot.press()` 的墙上时间绝大部分是等事件循环空闲,裸 Textual 应用(只有一个 Input)同样要 66ms 中位。改成量一次按键让应用消耗的 **CPU 时间**,这才是帧预算关心的量;实测 P95 14.8ms。
   - 顺带:`bus.bench` 的等待上限改成随样本数放大,否则并发跑着几个 AI CLI 时会在测完前误判超时;20 个样本的 P95 等于最大值,一个抖动就能把结论带偏,默认样本数提到 50。
-- [ ] **CON-011** — 错误与降级:tmux server 丢失、成员会话消失、总线目录不可写三种故障注入下,console 给出可见告警并在故障恢复后自动续上,不崩溃、不静默。
-  - 处理登记:codex,2026-08-16 07:22 +0800,`con-011-codex`。
+  - 视觉例外(纯性能):本 Goal 全部产出是延迟数字与退出码判定,界面本身没有任何变化,没有可截取的画面,所以不补 `tests/baseline/` 截取物;四项实测数字见上面「证据」一行,可重复执行 `uv run python -m qa.perf` 验证。
+- [x] **CON-011** — 错误与降级:tmux server 丢失、成员会话消失、总线目录不可写三种故障注入下,console 给出可见告警并在故障恢复后自动续上,不崩溃、不静默。
   - 前置:CON-005、TMX-006。
+  - 验证:`uv run ruff check .`;`uv run pytest tests/test_console_health.py tests/test_console_commands.py tests/test_console_control.py tests/test_console_members.py tests/test_console_compose.py tests/test_console_mirror.py tests/test_console_layout.py tests/test_console_app.py tests/test_console_timeline.py tests/test_tmuxctl_lifecycle.py tests/test_qa_perf.py -q`(82 passed);`uv run python -m qa.visual --goal CON-011 --scene faults-recovered --size 120x30 --fixture health`。
+  - 证据:`src/console/health.py` 每 0.5 秒异步探测 tmux server、名册成员会话和 bus 可写性，只在故障/恢复边沿上屏，server 不在时折叠成员级噪声；`src/console/buspump.py` 收敛后台异常并支持 bus 恢复后重启，`src/console/app.py` 对人类入队失败显式告警且保留输入。`tests/test_console_health.py` 注入三类故障，覆盖一次性告警、自动恢复、重试与投递线程重启。
+  - 视觉自验证:`tests/baseline/con-011-faults-recovered-120x30.txt`/`.ansi`(120×30)同屏可见三条`[告警]`与对应三条`[恢复]`，中英文故障详情未截断，时间线、成员卡和输入框分隔线对齐；fixture 不读取也不向真实成员终端发送内容。
 - [ ] **CON-012** — 键盘完备与帮助:全部功能可纯键盘完成;`?` 弹出快捷键帮助面板;焦点顺序合理(输入框 ↔ 时间线 ↔ 成员栏 ↔ 详情)。
   - 前置:CON-007、CON-008。

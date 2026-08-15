@@ -17,17 +17,21 @@ def window_command(member: Member) -> str:
     return f"{shlex.join(argv)} {shlex.quote(prompt)}; exec $SHELL"
 
 
+def member_env(member: Member) -> dict[str, str]:
+    """构造启动与原窗格重启共用的成员环境。"""
+    return {**dict(member.env), "AGENT_NAME": member.name}
+
+
 def start_member(member: Member, tmux: Tmux, *, cwd: Path | None = None) -> str:
     """拉起一名成员。已在跑则跳过。返回说明字符串。"""
     if tmux.has_session(member.name):
         return f"[start] {member.name} 已在运行,跳过"
-    env = {**dict(member.env), "AGENT_NAME": member.name}
     tmux.new_session(
         member.name,
         command=window_command(member),
         detached=True,
         cwd=str(cwd or repo_root()),
-        env=env,
+        env=member_env(member),
     )
     return f"[start] {member.name} 已启动 (查看: tmux attach -t {member.name})"
 

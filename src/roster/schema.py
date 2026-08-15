@@ -23,6 +23,7 @@ class Member:
     env: Mapping[str, str] = field(default_factory=dict)
     greeting_template: str = ""
     enabled: bool = True
+    auto_respawn: bool = False
 
     def render_greeting(self) -> str:
         """用成员名填充开场白模板。"""
@@ -102,7 +103,15 @@ def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
     greeting = raw.get("greeting_template", default_greeting)
     if not isinstance(greeting, str) or not greeting.strip():
         raise RosterError(f"成员 {name} 的开场白模板必须是非空字符串")
-    known = {"name", "command", "args", "env", "greeting_template", "enabled"}
+    known = {
+        "name",
+        "command",
+        "args",
+        "env",
+        "greeting_template",
+        "enabled",
+        "auto_respawn",
+    }
     unknown = sorted(set(raw) - known)
     if unknown:
         raise RosterError(f"成员 {name} 含未知字段: {', '.join(unknown)}")
@@ -113,6 +122,7 @@ def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
         env=_optional_env(raw),
         greeting_template=greeting,
         enabled=_optional_bool(raw, "enabled", True),
+        auto_respawn=_optional_bool(raw, "auto_respawn", False),
     )
 
 

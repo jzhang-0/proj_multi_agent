@@ -22,7 +22,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/console", "src/tmuxctl"]
+packages = ["src/bus", "src/console", "src/tmuxctl"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers --strict-config"

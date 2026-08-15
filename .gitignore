@@ -1,4 +1,4 @@
-bus/
+/bus/
 .worktrees/
 .venv/
 __pycache__/

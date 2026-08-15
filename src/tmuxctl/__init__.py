@@ -10,6 +10,7 @@ from tmuxctl.errors import (
 )
 from tmuxctl.inject import InjectOutcome, KeyInjector, inject_text, last_line_uncommitted
 from tmuxctl.lifecycle import CrashEvent, CrashKind, CrashMonitor
+from tmuxctl.output import PaneOutputStream, decode_control_data, subscribe_pane
 from tmuxctl.process import (
     ControlAction,
     ControlResult,
@@ -33,6 +34,7 @@ __all__ = [
     "InjectOutcome",
     "KeyInjector",
     "PaneInfo",
+    "PaneOutputStream",
     "PaneSnapshot",
     "PaneSnapshotter",
     "ProcessController",
@@ -49,7 +51,9 @@ __all__ = [
     "inject_text",
     "is_missing_target_error",
     "build_process_tree",
+    "decode_control_data",
     "last_line_uncommitted",
     "probe",
     "read_processes",
+    "subscribe_pane",
 ]

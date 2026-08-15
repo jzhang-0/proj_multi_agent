@@ -58,6 +58,10 @@ class Tmux:
         cmd.extend(args)
         return cmd
 
+    def command_argv(self, *args: str) -> list[str]:
+        """为常驻子进程等高级用法构造带 socket 参数的 tmux argv。"""
+        return self._argv(*args)
+
     def _run(
         self,
         *args: str,
@@ -203,6 +207,13 @@ class Tmux:
             args.append(command)
         else:
             args.extend(command)
+        self._run(*args)
+
+    def pipe_pane(self, target: str, command: str | None = None) -> None:
+        """把 pane 原始输出接到 shell 命令；``command=None`` 关闭现有 pipe。"""
+        args = ["pipe-pane", "-t", target]
+        if command is not None:
+            args.append(command)
         self._run(*args)
 
     def list_panes(

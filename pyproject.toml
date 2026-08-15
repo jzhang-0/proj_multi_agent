@@ -22,7 +22,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/console"]
+packages = ["src/bus", "src/console"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers --strict-config"

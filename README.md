@@ -30,6 +30,8 @@ uv run ruff check .
 
 当前 `console` 命令用于验证工程入口;完整 TUI 按 CON 卷 Goal 逐步落地。系统 Python 版本不满足要求时也不要绕过 `uv run`。
 
+消息总线模块是 `src/bus/`:消息 schema v1(`to/from/text/ts` 必备,`id/kind/replyTo` 可选,未知字段原样保留)、文件队列、死信目录、投递循环。bus 运行时根目录默认是仓库根 `bus/`,可用环境变量 `BUS_ROOT` 或 `BusPaths.resolve(root)` 重定向(测试一律指向临时目录)。
+
 ## 仓库结构
 
 | 路径 | 内容 |

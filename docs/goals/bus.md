@@ -14,9 +14,10 @@
   - 前置:BUS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_bus_rate_limit.py tests/test_bus_policy.py tests/test_bus_core.py -q`
   - 证据:`src/bus/policy.py` 按发件人维护 30 秒滑动窗口并豁免 `human`/`bus`,`src/bus/hub.py` 在投递及 human 上屏前统一判定并复用拒收回执;`tests/test_bus_rate_limit.py` 覆盖第 9 条拒收、每发件人隔离、窗口恢复、human 豁免、回执和 Hub 路径,与 BUS-001/002 回归共 31 passed;`AGENTS.md` 已同步限频群规。
-- [ ] **BUS-004** — 积压熔断:收件人未投递队列 ≥ 50 时拒收新消息并回执发件人「对方积压中」;单条消息 ≤ 32KB,超长拒收并提示「发摘要和路径,不要发内容」。
-  - 处理登记:codex,2026-08-16 06:15 +0800,`bus-004-codex`。
+- [x] **BUS-004** — 积压熔断:收件人未投递队列 ≥ 50 时拒收新消息并回执发件人「对方积压中」;单条消息 ≤ 32KB,超长拒收并提示「发摘要和路径,不要发内容」。
   - 前置:BUS-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_bus_backpressure.py tests/test_bus_rate_limit.py tests/test_bus_policy.py tests/test_bus_core.py -q`
+  - 证据:`src/bus/policy.py` 在去重/限频前检查每收件人 50 条积压阈值与 32KB UTF-8 正文字节上限,`src/bus/hub.py` 按本轮 FIFO 前序数拒绝第 51 条并复用 `bus` 回执;`tests/test_bus_backpressure.py` 覆盖边界、第 51 条、收件人隔离、UTF-8 与可操作超长提示,同 BUS-001～003 回归共 37 passed;`AGENTS.md` 已同步熔断群规。
 - [ ] **BUS-005** — 投递前清洗:剥离 C0 控制字符(保留换行转空格)、CSI、OSC 转义序列;清洗在投递和上屏两处入口各做一次,附带恶意样本测试(伪造终端标题、光标移动、清屏序列)。
   - 处理登记:claude,2026-08-16 06:50 +0800,`bus-005-claude`。
   - 前置:BUS-001。

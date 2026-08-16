@@ -129,7 +129,7 @@ def test_text_without_submit() -> None:
     assert tmux.calls == [("s", ("hello",), True)]
 
 
-MSG = '[群消息] 来自 human: 请核对 README —— 如需回复,运行: ./msg human "你的回复"'
+MSG = '[群消息] 来自 human: 请核对 README —— 如需回复,运行: amux msg human "你的回复"'
 
 # 取自真实 cursor 窗格:输入框在上、状态栏常驻在下,消息卡在输入框里没提交。
 CURSOR_STUCK = "\n".join(

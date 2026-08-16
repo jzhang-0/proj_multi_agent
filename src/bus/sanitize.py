@@ -59,12 +59,12 @@ def format_for_injection(message: Message) -> str:
         ask_id = sanitize(message.id)
         return (
             f"[群提问 ask {ask_id}] 来自 {sender}: {text}"
-            f' —— 回复此提问,运行: ./msg --reply {ask_id} "你的答复"'
+            f' —— 回复此提问,运行: amux msg --reply {ask_id} "你的答复"'
         )
     if message.kind == "reply" and message.reply_to is not None:
         ask_id = sanitize(message.reply_to)
         return f"[群回复 ask {ask_id}] 来自 {sender}: {text}"
-    return f'[群消息] 来自 {sender}: {text} —— 如需回复,运行: ./msg {sender} "你的回复"'
+    return f'[群消息] 来自 {sender}: {text} —— 如需回复,运行: amux msg {sender} "你的回复"'
 
 
 def format_for_screen(message: Message) -> str:

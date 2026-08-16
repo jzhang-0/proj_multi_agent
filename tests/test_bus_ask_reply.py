@@ -213,7 +213,7 @@ def test_ask_delivery_contains_id_and_reply_instructions() -> None:
     line = format_for_injection(ask_message())
 
     assert "ask ask-123" in line
-    assert './msg --reply ask-123 "你的答复"' in line
+    assert 'amux msg --reply ask-123 "你的答复"' in line
 
 
 def test_reply_rejects_path_traversal_id(tmp_path: Path) -> None:

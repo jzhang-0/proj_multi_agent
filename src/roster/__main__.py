@@ -28,7 +28,7 @@ def _exec_hub() -> None:
     """把本窗口交给 hub(v0 行为:群聊记录就在这个窗口里)。"""
     print()
     print("全部成员已拉起。本窗口是群聊记录(hub),Ctrl-C 退出(不影响成员会话)。")
-    print("派活示例: ./msg claude 写一个fizzbuzz到fizzbuzz.py 写完让codex review 通过后向我汇报")
+    print("派活示例: amux msg claude 写一个fizzbuzz到fizzbuzz.py 写完让codex review 通过后向我汇报")
     print()
     os.execvp("uv", ["uv", "run", "python", str(repo_root() / "hub.py")])
 

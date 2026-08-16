@@ -47,9 +47,11 @@
   - 证据:`src/console/commands.py`(六条命令的声明式表 + `CommandRunner`:缺参数给用法、错误命令用 difflib 给「你是不是想用 /up」、后端异常收敛成一行、没接上 tmux/名册时明说不可用;`/help` 按**显示宽度**补空格,中文双宽也对齐)、`src/console/compose.py`(`/` 开头补命令、`@` 开头补成员,同一套 Tab/↑↓ 选择)、`src/console/buspump.py` 的 `MutePolicy`(静音走**策略层**拒收,和防环共用一条路:进审计日志、给发件人回执)、`src/console/app.py`(命令输出打到时间线、`/adopt` 后重建成员栏与补全候选);`tests/test_console_commands.py` 16 passed,全量回归 266 passed。
   - 视觉自验证:`tests/baseline/con-008-commands-120x28.txt`/`.ansi`(120×28:`/help` 六条命令说明列对齐;`/adopt alice` 后成员栏多出 `○ IDLE alice` 一张卡片;`/uo x` 给出最接近命令的提示)。
   - 顺带:看图先后揪出两个只看测试发现不了的问题——`/help` 里中文按字符数补空格导致说明列错位(改成按显示宽度);`ListView.clear()` 是异步的,不等它做完就 append 会撞 ID 冲突并把整个成员栏清空(改成 `await` 并加了回归测试)。`MemberStatusService` 补了 `track()`,否则收编来的临时成员取不到状态。
-- [ ] **CON-009** — 主题与视觉:深浅色两套主题,颜色 token 化(成员色、状态色、强调色集中定义);中英文混排对齐正确(宽字符计算);首版视觉 baseline 需人工点头后锁定截图存 `tests/baseline/`。
-  - 处理登记:claude,2026-08-16 07:30 +0800,`con-009-claude`。
+- [x] **CON-009** — 主题与视觉:深浅色两套主题,颜色 token 化(成员色、状态色、强调色集中定义);中英文混排对齐正确(宽字符计算);首版视觉 baseline 需人工点头后锁定截图存 `tests/baseline/`。
   - 前置:CON-002、CON-003、CON-005。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_console_theme.py -q`;看画面:`uv run console --theme console-dark` / `--theme console-light`(界面里 `t` 键随时切换)
+  - 证据:`src/console/theme.py` 是**颜色的唯一定义处**(成员色池、五种状态色、human/bus 保留身份色、强调色、次要文字、分隔线、深浅底色各一套 token);`src/console/layout.py` 提供 `display_width/pad/truncate`,列对齐一律按显示宽度算;`timeline.py`/`widgets.py`/`commands.py` 全部改成从 token 取色并用 `pad` 对齐;`app.py` 把两套 token 注册成 Textual 主题、`t` 键切换并按新颜色重画已上屏内容(`Timeline.rerender`),`cli.py` 加 `--theme`;`tests/test_console_theme.py` 12 passed——含一条**扫描源码禁止再出现十六进制色号**的守卫测试(它当场揪出成员卡第二行漏改的一处)、状态形状/标签互不相同(不只靠颜色)、换主题后"谁是几号色"不变、`t` 键真的重画、宽字符对齐与截断不劈半个字;全量回归 298 passed。
+  - 视觉自验证与 baseline 锁定:`tests/baseline/con-009-console-dark-120x30.txt`/`.ansi`(底色 rgb(30,30,30)、`○ IDLE` #87afff、分隔线灰、`@codex` 白字蓝底)与 `tests/baseline/con-009-console-light-120x30.txt`/`.ansi`(底色 rgb(242,242,242)、`claude` #005f87、`human` #875f00、`@codex` 深蓝字浅蓝底 #cfe6ff、正文 #1c1c1c);两张都确认中英文混排右边框不错位。**2026-08-16 human 已点头「可以,锁定这版」**,以这两张截图为首版视觉基准。
 - [x] **CON-010** — 硬指标实测达标:产品定义四项延迟预算各有一个可重复的测量方式(脚本或文档化步骤),实测数字写进证据;不达标项定位原因并修复。
   - 前置:CON-003、CON-006。
   - 验证:`uv run python -m qa.perf`(默认每项 50 个样本;`uv run ruff check . && uv run pytest tests/test_qa_perf.py -q`)

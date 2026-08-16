@@ -6,9 +6,11 @@
   - 前置:BUS-008;人拍板 IM 平台(2026-08-16 拍板:自建)。
   - 验证:`uv run ruff check . && uv run pytest tests/test_gateway_base.py -q`
   - 证据:`src/gateway/base.py`(`GatewayAdapter` 只要求 start/stop/post 三件事;`Gateway` 双向桥:`on_group_message` 路由后入队,`pump_once` 读审计日志把新流量推进群,`catch_up` 保证启动不把历史一股脑倒进群里,`deliver` 事件与 `deposit` 重复所以不转)、`src/gateway/router.py`(单 bot 模式:`@名字 正文` 路由、不写 @ 就按**该房间**上一个对话对象、代发署名 `claude: → codex: …`、远程身份统一 `im:` 前缀且天然不等于 `human` 所以照样受限频);`bus.message.REMOTE_PREFIX` + `bus.hub.is_screen_only` 让 `im:` 收件人像 `human` 一样只上屏、不去 tmux 找会话(成员回给手机上的人不再被记成投递失败);`tests/test_gateway_base.py` 14 passed,含一条**扫描核心模块禁止出现平台名或传输细节**的解耦守卫测试,全量回归 318 passed。
-- [ ] **GATE-002** — 第一个 adapter 实现(平台按人拍板结果),含凭证配置方式与断线重连。
-  - 处理登记:claude,2026-08-16 07:55 +0800,`gate-002-claude`。
+- [x] **GATE-002** — 第一个 adapter 实现(平台按人拍板结果),含凭证配置方式与断线重连。
   - 前置:GATE-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_gateway_local.py -q`;真跑:`GATEWAY_TOKEN=… GATEWAY_PORT=8799 uv run python -m gateway --bus-root <临时目录>`
+  - 证据:`src/gateway/local.py`(`LocalChatAdapter`:标准库 `ThreadingHTTPServer`,`GET /` 发页面、`GET /api/messages?since=&token=` 长轮询、`POST /api/send` 收消息;内存里留 500 条历史供补齐)、`src/gateway/page.py`(手机端单文件页面,零外部资源)、`src/gateway/config.py`(**凭证配置**:`gateway.toml` + `GATEWAY_TOKEN/PORT/HOST/ROOM` 环境变量覆盖,第一次跑随机生成 token 并落盘,`gateway.toml` 已 gitignore)、`src/gateway/__main__.py`(打印手机可用的局域网地址);**断线重连**做在游标续传上:客户端记 `cursor`,重连带上就补齐断线期间的消息,页面侧 1→5 秒退避重试、回前台立刻重连;`tests/test_gateway_local.py` 10 passed(口令双向校验、空消息拒收、页面无外部依赖、断线后按游标补齐两条、长轮询来消息即返回、历史有界、token 生成与持久化、环境变量覆盖),全量回归 328 passed。
+  - 真机路径实测:2026-08-16 起在 127.0.0.1:8799,`POST /api/send {"user":"小明","text":"@claude 手机上派个活"}` → 队列里出现 `{"to":"claude","from":"im:小明","text":"手机上派个活",…}`;`GET /api/messages` 回 `im:小明: → claude: 手机上派个活`,单 bot 署名与游标都对。
 - [ ] **GATE-003** — 端到端:手机群里 @ 成员派活、成员间协作、结果回到群里,全程不碰电脑实测一遍。
   - 前置:GATE-002、ROS-003。
   - 进行中:**未开工**,阻塞在 GATE-002;另一半前置 ROS-003 已完成。

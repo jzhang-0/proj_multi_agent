@@ -51,6 +51,14 @@ def test_suggested_slug_asks_for_flag_when_dirname_illegal() -> None:
         suggested_slug("项目")
 
 
+def test_implicit_slug_sanitizes_illegal_dirname() -> None:
+    from workspace.slug import implicit_slug
+
+    assert implicit_slug("my.project") == "my-project"
+    assert implicit_slug("项目") == "ws"
+    assert implicit_slug("proj_multi_agent") == "proj_multi_agent"
+
+
 def test_allocate_slug_adds_numeric_suffix() -> None:
     assert allocate_slug("demo", set()) == "demo"
     assert allocate_slug("demo", {"demo"}) == "demo-2"
@@ -268,3 +276,4 @@ def test_amux_help_mentions_workspace() -> None:
 
     help_text = build_parser().format_help()
     assert "workspace add|list|rm|current|gc|migrate" in help_text
+    assert "amux member" in help_text

@@ -48,6 +48,21 @@ def suggested_slug(dirname: str) -> str:
         ) from exc
 
 
+def implicit_slug(dirname: str) -> str:
+    """自动登记时从目录名挤出一个合法 slug;挤不出来就用 `ws`。
+
+    显式 `amux workspace add` 仍走 `suggested_slug`(非法就要求 `--slug`)。
+    人在某个目录裸敲 `amux` 不该因为目录名带点就被弹回 amux 仓库。
+    """
+    try:
+        return suggested_slug(dirname)
+    except SlugError:
+        cleaned = re.sub(r"[^A-Za-z0-9]+", "-", dirname).strip("-_")
+        if not cleaned or not cleaned[0].isalnum():
+            cleaned = "ws" if not cleaned else f"ws-{cleaned}"
+        return validate_slug(cleaned[:MAX_SLUG_LENGTH].rstrip("-_"))
+
+
 def allocate_slug(base: str, taken: set[str]) -> str:
     """base 已被占用则依次试 base-2、base-3,直到空位。"""
     candidate = validate_slug(base)

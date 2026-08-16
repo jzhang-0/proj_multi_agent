@@ -7,6 +7,7 @@ from workspace.errors import SlugError, WorkspaceError, WorkspaceNotFound
 from workspace.model import Workspace
 from workspace.paths import ENV_AMUX_HOME, amux_home
 from workspace.resolve import (
+    ensure_from_cwd,
     project_root_for_members,
     require_from_cwd,
     require_slug,
@@ -21,7 +22,7 @@ from workspace.session import (
     member_for,
     session_for,
 )
-from workspace.slug import allocate_slug, suggested_slug, validate_slug
+from workspace.slug import allocate_slug, implicit_slug, suggested_slug, validate_slug
 from workspace.store import Store
 
 __all__ = [
@@ -38,6 +39,8 @@ __all__ = [
     "allocate_slug",
     "amux_home",
     "bind_tmux",
+    "ensure_from_cwd",
+    "implicit_slug",
     "is_sessionless",
     "load_project_config",
     "member_for",

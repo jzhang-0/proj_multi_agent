@@ -17,16 +17,15 @@ from gateway.base import Gateway
 from gateway.config import GatewayConfig
 from gateway.local import LocalChatAdapter, lan_address
 from gateway.security import PendingStore, SecurityPolicy
+from gateway.workspaces import WorkspaceBinder, members_of
+from workspace.errors import WorkspaceNotFound
+from workspace.resolve import require_slug, resolve_from_cwd
+from workspace.store import Store
 
 
 def members_provider() -> Sequence[str]:
     """成员名来自名册;读不出来就给个空列表,由路由提示。"""
-    try:
-        from roster.load import load_roster
-
-        return [member.name for member in load_roster().enabled_members()]
-    except Exception:
-        return []
+    return members_of(resolve_from_cwd())
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("request_id", nargs="?", default=None, help="approve/reject 的编号")
     parser.add_argument("--bus-root", default=None, help="bus 运行时根目录")
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="名字",
+        help="只服务这一个工作区(默认按 IM 房间名路由到对应工作区)",
+    )
     parser.add_argument("--port", type=int, default=None, help="监听端口(默认读配置)")
     parser.add_argument("--host", default=None, help="监听地址(默认读配置)")
     return parser
@@ -50,28 +55,46 @@ def build_parser() -> argparse.ArgumentParser:
 
 def handle_pending(action: str, request_id: str | None, paths: BusPaths) -> int:
     """本机侧的二次确认:远程指令必须过这一关(GATE-004)。"""
-    store = PendingStore(paths)
+    stores = _pending_stores(paths)
     if action == "pending":
-        items = store.entries()
-        if not items:
+        found = False
+        for label, store in stores:
+            for item in store.entries():
+                found = True
+                message = item.get("message", {})
+                where = f"{label} " if label else ""
+                print(
+                    f"{where}{item['id']}  {item['ts']}  {item['user']}(手机)→ {message.get('to')}"
+                    f"  「{item['label']}」  {message.get('text')}"
+                )
+        if not found:
             print("[gateway] 没有待确认的远程指令")
-        for item in items:
-            message = item.get("message", {})
-            print(
-                f"{item['id']}  {item['ts']}  {item['user']}(手机)→ {message.get('to')}"
-                f"  「{item['label']}」  {message.get('text')}"
-            )
         return 0
     if not request_id:
         print(f"[gateway] {action} 要给编号,先跑 pending 看有哪些")
         return 1
-    ok = store.approve(request_id) if action == "approve" else store.reject(request_id)
-    verb = "已放行,网关下一轮转给成员" if action == "approve" else "已拒绝并丢弃"
-    print(f"[gateway] {request_id} {verb}" if ok else f"[gateway] 没有编号 {request_id}")
-    return 0 if ok else 1
+    for _label, store in stores:
+        ok = store.approve(request_id) if action == "approve" else store.reject(request_id)
+        if ok:
+            verb = "已放行,网关下一轮转给成员" if action == "approve" else "已拒绝并丢弃"
+            print(f"[gateway] {request_id} {verb}")
+            return 0
+    print(f"[gateway] 没有编号 {request_id}")
+    return 1
 
 
-async def serve(config: GatewayConfig, paths: BusPaths) -> None:
+def _pending_stores(paths: BusPaths) -> list[tuple[str, PendingStore]]:
+    """默认总线 + 每个已登记工作区的 pending,approve 才找得到跨区挂起的指令。"""
+    seen: dict[str, tuple[str, PendingStore]] = {
+        str(paths.root): (paths.workspace or "", PendingStore(paths))
+    }
+    for workspace in Store.default().list():
+        root = BusPaths.for_workspace(workspace).ensure()
+        seen.setdefault(str(root.root), (workspace.slug, PendingStore(root)))
+    return list(seen.values())
+
+
+async def serve(config: GatewayConfig, paths: BusPaths, *, binder: WorkspaceBinder | None) -> None:
     adapter = LocalChatAdapter(config)
     security = SecurityPolicy.from_config(config.rooms, config.users, config.room)
     gateway = Gateway(
@@ -80,6 +103,7 @@ async def serve(config: GatewayConfig, paths: BusPaths) -> None:
         members=members_provider,
         room=config.room,
         security=security,
+        binder=binder,
     )
     stop = asyncio.Event()
     task = asyncio.create_task(gateway.run(stop))
@@ -112,14 +136,43 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.host is not None:
         config = replace(config, host=args.host)
 
-    paths = BusPaths.resolve(args.bus_root).ensure()
+    try:
+        paths, binder = _runtime(args, config)
+    except WorkspaceNotFound as exc:
+        print(f"[gateway] {exc}")
+        return 1
     if args.action != "serve":
         return handle_pending(args.action, args.request_id, paths)
     try:
-        asyncio.run(serve(config, paths))
+        asyncio.run(serve(config, paths, binder=binder))
     except KeyboardInterrupt:
         print("\n[gateway] 已退出")
     return 0
+
+
+def _runtime(
+    args: argparse.Namespace, config: GatewayConfig
+) -> tuple[BusPaths, WorkspaceBinder | None]:
+    """`--bus-root` > `--workspace` > cwd;不锁死单个工作区时挂上按房间路由。"""
+    store = Store.default()
+    workspace = require_slug(args.workspace, store=store) if args.workspace else resolve_from_cwd()
+    if args.bus_root is not None:
+        paths = BusPaths.resolve(args.bus_root).ensure()
+    elif workspace is not None:
+        paths = BusPaths.for_workspace(workspace).ensure()
+    else:
+        paths = BusPaths.resolve().ensure()
+    security = SecurityPolicy.from_config(config.rooms, config.users, config.room)
+    if args.workspace:
+        return paths, None
+    binder = WorkspaceBinder(
+        store=store,
+        config=config,
+        fallback=paths,
+        fallback_security=security,
+        fallback_members=members_provider,
+    )
+    return paths, binder
 
 
 if __name__ == "__main__":

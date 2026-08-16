@@ -127,9 +127,9 @@ class LocalChatAdapter:
 
     # --- 收到群消息 -------------------------------------------------------
 
-    def submit(self, user: str, text: str) -> None:
+    def submit(self, user: str, text: str, *, room: str | None = None) -> None:
         if self.on_message is not None:
-            self.on_message(GroupMessage(user=user, text=text, room=self.config.room))
+            self.on_message(GroupMessage(user=user, text=text, room=room or self.config.room))
 
     @property
     def port(self) -> int:
@@ -218,7 +218,8 @@ def _make_handler(adapter: LocalChatAdapter) -> type[BaseHTTPRequestHandler]:
             if not text:
                 self._json(400, {"error": "消息是空的"})
                 return
-            adapter.submit(user, text)
+            room = str(payload.get("workspace") or payload.get("room") or adapter.config.room)
+            adapter.submit(user, text, room=room.strip() or adapter.config.room)
             self._json(200, {"ok": True})
 
     return Handler

@@ -93,7 +93,7 @@ uv run roster down          # 全部关掉(含已停用成员的残留会话)
 uv run python -m gateway        # 打印带口令的地址,手机同 WiFi 打开就是群聊页
 ```
 
-第一次跑会在 `gateway.toml` 里生成访问口令(该文件已 gitignore,别提交),并要在同一个文件里写白名单 `users = ["你的名字"]`——**白名单是空的时候网关谁都不服务**。远程指令弱于本机指令:手机上发的消息里出现 push / 删文件 / 装软件 / 出仓库这类要求时不会直接转给成员,而是挂起等本机确认:
+第一次跑会在 `gateway.toml` 里生成访问口令(该文件已 gitignore,别提交),并要在同一个文件里写白名单 `users = ["你的名字"]`——**白名单是空的时候网关谁都不服务**。多工作区时 IM 的房间名(或 POST 里的 `workspace`)对上已登记 slug 就投进该区总线,可在 `[workspaces.<slug>]` 里单独写 `users`/`rooms`。远程指令弱于本机指令:手机上发的消息里出现 push / 删文件 / 装软件 / 出仓库这类要求时不会直接转给成员,而是挂起等本机确认:
 
 ```bash
 uv run python -m gateway pending          # 看有哪些待确认

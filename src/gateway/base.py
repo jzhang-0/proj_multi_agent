@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from bus.audit import AuditLog
@@ -93,10 +93,12 @@ class Gateway:
     room: str = "default"
     #: 白名单(GATE-004)。默认空 users = 谁都不服务
     security: SecurityPolicy = field(default_factory=SecurityPolicy)
+    #: 多工作区路由(WS-008)。None = 只走上面这一条总线
+    binder: object | None = None
     audit: AuditLog = field(init=False)
     pending: PendingStore = field(init=False)
-    #: 已经转发过的审计条目数,避免重复发进群
-    _forwarded: int = field(default=0, init=False)
+    #: 已经转发过的审计条目数,按总线根分开,避免串台
+    _forwarded: dict[str, int] = field(default_factory=dict, init=False)
     #: 每个房间上一个 @ 过的成员:不写 @ 时默认发给它
     _last_target: dict[str, str] = field(default_factory=dict, init=False)
     #: 本机确认放行后要回群里说一声的通知
@@ -106,40 +108,81 @@ class Gateway:
         self.audit = AuditLog(self.paths)
         self.pending = PendingStore(self.paths)
 
+    def _binding(self, room: str):
+        """这条群消息该进哪条总线、用哪份白名单。"""
+        if self.binder is not None:
+            return self.binder.resolve(room)
+        from gateway.workspaces import Binding
+
+        return Binding(
+            slug=self.paths.workspace,
+            paths=self.paths,
+            security=self.security,
+            members=tuple(self.members()),
+        )
+
+    def _tag_workspace(self, message: Message, slug: str | None) -> Message:
+        if not slug:
+            return message
+        extra = {**message.extra, "workspace": slug}
+        return replace(message, extra=extra)
+
+    def _bus_paths(self) -> list[BusPaths]:
+        if self.binder is None:
+            return [self.paths]
+        return list(self.binder.iter_paths())
+
     # --- 收群消息 → 入队 bus ---------------------------------------------
 
     def route(self, message: GroupMessage) -> Route:
+        binding = self._binding(message.room)
         return route_group_message(
             message.user,
             message.text,
-            members=tuple(self.members()),
+            members=binding.members,
             last_target=self._last_target.get(message.room),
         )
 
     def on_group_message(self, message: GroupMessage) -> Route:
-        """群里来了一条消息:白名单 → 路由 → 危险指令降权 → 入队。
+        """群里来了一条消息:定工作区 → 白名单 → 路由 → 危险指令降权 → 入队。
 
         路由失败或被安全策略挡下都不入队,原样回群里说清楚为什么。
         """
-        refusal = self.security.refusal(message.room, message.user)
+        binding = self._binding(message.room)
+        refusal = binding.security.refusal(message.room, message.user)
         if refusal:
             return Route(error=refusal)
 
-        route = self.route(message)
+        route = route_group_message(
+            message.user,
+            message.text,
+            members=binding.members,
+            last_target=self._last_target.get(message.room),
+        )
         if route.error or route.message is None:
             return route
 
-        label = danger_in(route.message.text)
+        tagged = self._tag_workspace(route.message, binding.slug)
+        label = danger_in(tagged.text)
         if label:
-            return Route(error=self._hold_for_confirmation(route.message, label, message))
+            return Route(error=self._hold_for_confirmation(tagged, label, message, binding.paths))
 
-        deposit(route.message, self.paths)
-        self._last_target[message.room] = route.message.to
-        return route
+        deposit(tagged, binding.paths)
+        self._last_target[message.room] = tagged.to
+        return Route(message=tagged)
 
-    def _hold_for_confirmation(self, message: Message, label: str, origin: GroupMessage) -> str:
+    def _hold_for_confirmation(
+        self,
+        message: Message,
+        label: str,
+        origin: GroupMessage,
+        paths: BusPaths | None = None,
+    ) -> str:
         """危险指令不直接入队:落一条待确认,并在本机时间线上叫人。"""
-        request_id = self.pending.add(message, label=label, user=origin.user, room=origin.room)
+        target = paths or self.paths
+        request_id = PendingStore(target).add(
+            message, label=label, user=origin.user, room=origin.room
+        )
         deposit(
             Message.create(
                 "human",
@@ -148,8 +191,9 @@ class Gateway:
                 f"不同意就 reject {request_id}",
                 sender="bus",
                 kind="gateway-confirm",
+                workspace=target.workspace,
             ),
-            self.paths,
+            target,
         )
         return (
             f"这条涉及「{label}」,远程指令不能直接生效,已交本机确认(编号 {request_id});"
@@ -159,29 +203,47 @@ class Gateway:
     def release_approved(self) -> list[Message]:
         """把本机已确认的远程指令真正入队。"""
         released = []
-        for label, message in self.pending.take_approved():
-            deposit(message, self.paths)
-            self._last_target[self.room] = message.to
-            released.append(message)
-            self._approved_notices.append(
-                GroupPost("bus", f"本机已确认「{label}」,已转给 {message.to}", "notice", self.room)
-            )
+        for paths in self._bus_paths():
+            store = PendingStore(paths)
+            for label, message in store.take_approved():
+                deposit(message, paths)
+                room = str(message.extra.get("workspace") or self.room)
+                self._last_target[room] = message.to
+                released.append(message)
+                self._approved_notices.append(
+                    GroupPost(
+                        "bus",
+                        f"本机已确认「{label}」,已转给 {message.to}",
+                        "notice",
+                        room,
+                    )
+                )
         return released
 
     # --- 订阅 bus → 发回群 -----------------------------------------------
 
     def catch_up(self) -> None:
         """把当前日志全部标记为已转发。启动时用,免得把历史一股脑倒进群里。"""
-        self._forwarded = len(self.audit.entries())
+        for paths in self._bus_paths():
+            self._forwarded[str(paths.root)] = len(AuditLog(paths).entries())
 
     def pending_posts(self) -> list[GroupPost]:
         """自上次以来新增的、该发进群的消息。"""
-        entries = self.audit.entries()
-        fresh = entries[self._forwarded :]
-        self._forwarded = len(entries)
-        return [post for post in map(self.post_for, fresh) if post is not None]
+        posts: list[GroupPost] = []
+        for paths in self._bus_paths():
+            key = str(paths.root)
+            entries = AuditLog(paths).entries()
+            start = self._forwarded.get(key, 0)
+            fresh = entries[start:]
+            self._forwarded[key] = len(entries)
+            room = paths.workspace or self.room
+            for entry in fresh:
+                post = self.post_for(entry, room=room)
+                if post is not None:
+                    posts.append(post)
+        return posts
 
-    def post_for(self, entry: dict[str, Any]) -> GroupPost | None:
+    def post_for(self, entry: dict[str, Any], room: str | None = None) -> GroupPost | None:
         """一条审计事件 → 群里的一条消息;不该发的返回 None。"""
         event = str(entry.get("event", ""))
         if event not in FORWARDED_EVENTS:
@@ -189,12 +251,16 @@ class Gateway:
         author = str(entry.get("from") or "bus")
         to = str(entry.get("to") or "")
         text = str(entry.get("preview", ""))
+        dest = room or self.room
+        slug = entry.get("workspace")
+        if isinstance(slug, str) and slug and slug != dest:
+            dest = slug
         if event == "deposit":
             # 群里已经能看到发言人,收件人写在正文里,和终端里的格式对齐
-            return GroupPost(author, f"→ {to}: {text}", "message", self.room)
+            return GroupPost(author, f"→ {to}: {text}", "message", dest)
         reason = str(entry.get("reason", ""))
         label = "被拒收" if event == "rejected" else "投递失败"
-        return GroupPost(author, f"→ {to}: {text} ({label}:{reason})", "notice", self.room)
+        return GroupPost(author, f"→ {to}: {text} ({label}:{reason})", "notice", dest)
 
     async def pump_once(self) -> int:
         """把待发的消息推给 adapter,返回条数。"""

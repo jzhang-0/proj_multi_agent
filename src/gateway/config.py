@@ -25,6 +25,18 @@ CONFIG_FILENAME = "gateway.toml"
 DEFAULT_PORT = 8765
 
 
+def _split(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _str_tuple(value: object) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item) for item in value)
+    if isinstance(value, str):
+        return _split(value)
+    return ()
+
+
 @dataclass(frozen=True)
 class GatewayConfig:
     """自建网关的运行参数。"""
@@ -33,6 +45,9 @@ class GatewayConfig:
     port: int = DEFAULT_PORT
     token: str = ""
     room: str = "default"
+    #: 白名单(GATE-004)。`users` 为空表示还没配,网关一律拒绝服务
+    users: tuple[str, ...] = ()
+    rooms: tuple[str, ...] = ()
 
     @classmethod
     def load(cls, path: Path | None = None) -> GatewayConfig:
@@ -45,17 +60,21 @@ class GatewayConfig:
             port=int(raw.get("port", cls.port)),  # type: ignore[arg-type]
             token=str(raw.get("token", "")),
             room=str(raw.get("room", cls.room)),
+            users=_str_tuple(raw.get("users")),
+            rooms=_str_tuple(raw.get("rooms")),
         )
         return config.with_env()
 
     def with_env(self) -> GatewayConfig:
         """环境变量覆盖文件里的值(临时改端口、换 token 时不用动文件)。"""
+        env_users = os.environ.get("GATEWAY_USERS")
         return replace(
             self,
             host=os.environ.get("GATEWAY_HOST", self.host),
             port=int(os.environ.get("GATEWAY_PORT", self.port)),
             token=os.environ.get("GATEWAY_TOKEN", self.token),
             room=os.environ.get("GATEWAY_ROOM", self.room),
+            users=_split(env_users) if env_users is not None else self.users,
         )
 
     def ensure_token(self, path: Path | None = None) -> GatewayConfig:
@@ -68,12 +87,17 @@ class GatewayConfig:
         return config
 
     def as_toml(self) -> str:
+        users = ", ".join(f'"{name}"' for name in self.users)
+        rooms = ", ".join(f'"{name}"' for name in self.rooms)
         return (
             "# 自建 IM 网关配置。token 是访问口令,别提交、别贴群里。\n"
+            "# users 是白名单:为空时网关谁都不服务(GATE-004)。\n"
             f'host = "{self.host}"\n'
             f"port = {self.port}\n"
             f'token = "{self.token}"\n'
             f'room = "{self.room}"\n'
+            f"users = [{users}]\n"
+            f"rooms = [{rooms}]\n"
         )
 
     def url_for(self, address: str) -> str:

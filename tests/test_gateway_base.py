@@ -40,7 +40,16 @@ def paths(tmp_path):
 
 
 def make_gateway(paths, adapter=None):
-    return Gateway(adapter or FakeAdapter(), paths, members=lambda: MEMBERS)
+    # GATE-004 之后白名单默认是空的(谁都不服务),这里测的是路由本身,
+    # 所以显式放行测试用户;安全策略本身在 tests/test_gateway_security.py
+    from gateway.security import SecurityPolicy
+
+    return Gateway(
+        adapter or FakeAdapter(),
+        paths,
+        members=lambda: MEMBERS,
+        security=SecurityPolicy(frozenset({"default", "甲", "乙"}), frozenset({"小明", "小红"})),
+    )
 
 
 def queued(paths):

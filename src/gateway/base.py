@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from bus.audit import AuditLog
+from bus.message import Message
 from bus.paths import BusPaths
 from bus.queue import deposit
 from gateway.router import (
@@ -30,6 +31,7 @@ from gateway.router import (
     is_gateway_recipient,
     route_group_message,
 )
+from gateway.security import PendingStore, SecurityPolicy, danger_in
 
 #: 轮询审计日志的间隔(秒)。群聊不需要总线那种毫秒级,0.2 秒足够跟手
 PUMP_INTERVAL = 0.2
@@ -89,14 +91,20 @@ class Gateway:
     paths: BusPaths
     members: Callable[[], Sequence[str]]
     room: str = "default"
+    #: 白名单(GATE-004)。默认空 users = 谁都不服务
+    security: SecurityPolicy = field(default_factory=SecurityPolicy)
     audit: AuditLog = field(init=False)
+    pending: PendingStore = field(init=False)
     #: 已经转发过的审计条目数,避免重复发进群
     _forwarded: int = field(default=0, init=False)
     #: 每个房间上一个 @ 过的成员:不写 @ 时默认发给它
     _last_target: dict[str, str] = field(default_factory=dict, init=False)
+    #: 本机确认放行后要回群里说一声的通知
+    _approved_notices: list[GroupPost] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         self.audit = AuditLog(self.paths)
+        self.pending = PendingStore(self.paths)
 
     # --- 收群消息 → 入队 bus ---------------------------------------------
 
@@ -109,13 +117,56 @@ class Gateway:
         )
 
     def on_group_message(self, message: GroupMessage) -> Route:
-        """群里来了一条消息:路由、入队。路由失败就原样回群里说清楚。"""
+        """群里来了一条消息:白名单 → 路由 → 危险指令降权 → 入队。
+
+        路由失败或被安全策略挡下都不入队,原样回群里说清楚为什么。
+        """
+        refusal = self.security.refusal(message.room, message.user)
+        if refusal:
+            return Route(error=refusal)
+
         route = self.route(message)
         if route.error or route.message is None:
             return route
+
+        label = danger_in(route.message.text)
+        if label:
+            return Route(error=self._hold_for_confirmation(route.message, label, message))
+
         deposit(route.message, self.paths)
         self._last_target[message.room] = route.message.to
         return route
+
+    def _hold_for_confirmation(self, message: Message, label: str, origin: GroupMessage) -> str:
+        """危险指令不直接入队:落一条待确认,并在本机时间线上叫人。"""
+        request_id = self.pending.add(message, label=label, user=origin.user, room=origin.room)
+        deposit(
+            Message.create(
+                "human",
+                f"[网关] {origin.user}(手机)要 {message.to} 做「{label}」:{message.text} —— "
+                f"确认放行请在本机跑 uv run python -m gateway approve {request_id},"
+                f"不同意就 reject {request_id}",
+                sender="bus",
+                kind="gateway-confirm",
+            ),
+            self.paths,
+        )
+        return (
+            f"这条涉及「{label}」,远程指令不能直接生效,已交本机确认(编号 {request_id});"
+            "本机的人放行后我再转给成员"
+        )
+
+    def release_approved(self) -> list[Message]:
+        """把本机已确认的远程指令真正入队。"""
+        released = []
+        for label, message in self.pending.take_approved():
+            deposit(message, self.paths)
+            self._last_target[self.room] = message.to
+            released.append(message)
+            self._approved_notices.append(
+                GroupPost("bus", f"本机已确认「{label}」,已转给 {message.to}", "notice", self.room)
+            )
+        return released
 
     # --- 订阅 bus → 发回群 -----------------------------------------------
 
@@ -147,7 +198,9 @@ class Gateway:
 
     async def pump_once(self) -> int:
         """把待发的消息推给 adapter,返回条数。"""
-        posts = self.pending_posts()
+        self.release_approved()
+        posts = [*self._approved_notices, *self.pending_posts()]
+        self._approved_notices.clear()
         for post in posts:
             await self.adapter.post(post)
         return len(posts)

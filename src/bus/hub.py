@@ -17,7 +17,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from bus.audit import AuditEvent, AuditLog
-from bus.message import MalformedMessage, Message
+from bus.message import REMOTE_PREFIX, MalformedMessage, Message
 from bus.paths import BusPaths
 from bus.policy import OutboundPolicy, receipt_for
 from bus.queue import archive, deposit, pending, quarantine, read_message
@@ -25,6 +25,15 @@ from bus.sanitize import format_for_injection
 
 #: `human` 是保留名:不投递,只上屏(架构决策 §3)
 HUMAN = "human"
+
+
+def is_screen_only(name: str) -> bool:
+    """这个收件人该不该被注入终端。
+
+    `human` 是人,`im:*` 是 IM 网关代投的远程身份——两者都没有 tmux 会话,
+    投递循环只把它们上屏,由总控台/网关各自呈现。
+    """
+    return name == HUMAN or name.startswith(REMOTE_PREFIX)
 
 #: watchfiles 内部的轮询步长(毫秒),压到最小换低延迟
 WATCH_STEP_MS = 5
@@ -171,7 +180,7 @@ class Hub:
             return self._reject(path, message, verdict.reason)
         self.policy.record(message)
 
-        if message.to == HUMAN:
+        if is_screen_only(message.to):
             archive(path, self.paths)
             return DeliveryResult(path, DeliveryOutcome.SHOWN, message)
 

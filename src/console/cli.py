@@ -3,6 +3,7 @@
 `amux` 裸跑起全屏 TUI;`amux --headless` 就是纯 hub 模式
 (直接交给 `bus.headless`,与 `python3 hub.py` 同一份实现,行为不会漂)。
 `amux workspace add|list|rm|current` 管理工作区登记;`amux msg` 从当前目录定位工作区总线。
+`amux --workspace <slug>` 显式绑定工作区(默认从 cwd 向上解析)。
 
 `uv run console` 是同一个入口的别名,历史 Goal 证据里的命令继续可用。
 bus 与 roster 的路径都从本文件位置向上找仓库根(见 `bus.paths.repo_root`),
@@ -14,9 +15,13 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from bus.paths import BusPaths
 from console import __version__
+from workspace.errors import WorkspaceNotFound
+from workspace.model import Workspace
+from workspace.resolve import require_slug, resolve_from_cwd
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,7 +41,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="不起界面,只跑投递循环(等价于 python3 hub.py)",
     )
-    parser.add_argument("--bus-root", default=None, help="bus 运行时根目录(默认仓库根 bus/)")
+    parser.add_argument(
+        "--bus-root",
+        default=None,
+        help="bus 运行时根目录(默认当前工作区或仓库根 bus/)",
+    )
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="名字",
+        help="显式指定工作区 slug(默认从当前目录向上解析)",
+    )
     parser.add_argument(
         "--theme",
         choices=("console-dark", "console-light"),
@@ -69,12 +84,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return msg_main(raw[1:])
     args = build_parser().parse_args(raw)
 
+    try:
+        paths, workspace = bind_runtime(bus_root=args.bus_root, slug=args.workspace)
+    except WorkspaceNotFound as exc:
+        print(f"[amux] {exc}", file=sys.stderr)
+        return 1
+
     if args.headless:
         from bus.headless import main as run_hub
 
-        forwarded = []
-        if args.bus_root is not None:
-            forwarded += ["--bus-root", args.bus_root]
+        forwarded = ["--bus-root", str(paths.root)]
         if args.once:
             forwarded.append("--once")
         return run_hub(forwarded)
@@ -87,5 +106,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     from console.theme import use as use_theme
 
     use_theme(args.theme)
-    ConsoleApp(BusPaths.resolve(args.bus_root), fit_windows=not args.no_fit).run()
+    ConsoleApp(paths, workspace=workspace, fit_windows=not args.no_fit).run()
     return 0
+
+
+def bind_runtime(
+    *,
+    bus_root: str | None = None,
+    slug: str | None = None,
+    cwd: str | Path | None = None,
+) -> tuple[BusPaths, Workspace | None]:
+    """选工作区并定总线根:`--bus-root` > `--workspace` > cwd > 仓库根 bus/。"""
+    workspace = require_slug(slug) if slug else resolve_from_cwd(cwd)
+    if bus_root is not None:
+        return BusPaths.resolve(bus_root), workspace
+    if workspace is not None:
+        return BusPaths.for_workspace(workspace), workspace
+    return BusPaths.resolve(cwd=cwd), None

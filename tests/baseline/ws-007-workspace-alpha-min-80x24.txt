@@ -1,0 +1,24 @@
+ ⭘      总控台 — alpha · /private/var/folders/70/_1qzff897ys_s2jbph2h…
+ ≡ 群聊时间线        │ [总控台] 工作区 alpha  ·
+ 在看                │ /private/var/folders/70/_1qzff897ys_s2jbph2h00j40000gn
+─────────────────────│ /T/qa-visual-napnnr7i/projects/alpha
+ ○ IDLE  claude      │ [总控台] 总线目录
+ 排队0 · 未活动      │ /private/var/folders/70/_1qzff897ys_s2jbph2h00j40000gn
+ ○ IDLE  codex       │ /T/qa-visual-napnnr7i/amux-home/workspaces/alpha/bus
+ 排队0 · 未活动      │ ── 2026-08-17 05:01 ────
+                     │ · claude → human: alpha 专属流量
+                     │ ── 以上 1 条来自 bus/log.jsonl ────
+                     │ [总控台] ↑↓ 选会话(群聊/成员),Esc 回群聊,PgUp/PgDn
+                     │ 翻页;q 或 Ctrl-C 退出
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+▊▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▎
+▊  @名字 说点什么,回车发送                                                     ▎
+▊▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▎
+ q 退出  ? 帮助  esc 回群聊  t 深浅主题  f5 打断  f6 终止  f7 重启  ▏^p palette

@@ -81,12 +81,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--scene", default="default", help="场景名,进文件名")
     parser.add_argument("--size", default="120x30", help="终端尺寸,如 120x30 或 80x24")
     parser.add_argument("--keys", default="", help="截图前发的按键,逗号分隔,如 Down,Tab")
+    parser.add_argument(
+        "--type",
+        default="",
+        help="截图前向当前窗格键入字面文本并回车(用来跑 /workspace 这类命令)",
+    )
     parser.add_argument("--say", default="", help="截图前往总线发一条消息(发件人 human)")
     parser.add_argument("--to", default="human", help="--say 的收件人,默认 human(只上屏)")
     parser.add_argument("--keep", action="store_true", help="截完不关会话,方便继续手动看")
     parser.add_argument(
         "--fixture",
-        choices=("console", "member-cards", "controls", "health"),
+        choices=("console", "member-cards", "controls", "health", "workspaces"),
         default="console",
         help="取证入口;member-cards 同屏展示 CON-005 五态",
     )
@@ -134,6 +139,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "--bus-root",
                 str(bus_root),
             ]
+        elif args.fixture == "workspaces":
+            command = [
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "qa.workspaces",
+                "--root",
+                str(bus_root),
+                "--slug",
+                "alpha",
+            ]
         tmux(
             "new-session",
             "-d",
@@ -161,6 +178,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         for key in (k.strip() for k in args.keys.split(",") if k.strip()):
             tmux("send-keys", "-t", session, key)
             time.sleep(0.3)
+        if args.type:
+            tmux("send-keys", "-t", session, "-l", args.type)
+            time.sleep(0.2)
+            tmux("send-keys", "-t", session, "Enter")
+            time.sleep(0.3)
+            if args.type.startswith("/workspace "):
+                wait_until_drawn(session, args.type.split()[-1])
         time.sleep(1.0)  # 让最后一次重绘落地
 
         target_dir = repo_root() / BASELINE_DIR

@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Callable
+from pathlib import Path
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -55,6 +56,10 @@ from console.widgets import ConversationCard, MemberCard, Timeline
 from roster import RosterError, load_effective_roster
 from roster.lifecycle import Lifecycle
 from tmuxctl import TmuxError
+from workspace.errors import WorkspaceNotFound
+from workspace.model import Workspace
+from workspace.resolve import require_slug
+from workspace.session import NamespacedTmux, SessionNames, bind_tmux
 
 #: 最小可用尺寸(产品定义)
 MIN_SIZE = (80, 24)
@@ -173,8 +178,10 @@ class ConsoleApp(App[None]):
         controller: MemberController | None = None,
         health_monitor: ConsoleHealthMonitor | None = None,
         fit_windows: bool = True,
+        workspace: Workspace | None = None,
     ) -> None:
         super().__init__()
+        self.workspace = workspace
         self.paths = (paths or BusPaths.resolve()).ensure()
         #: 被 /mute 静音的成员;策略在投递前据此拒收
         self.muted: set[str] = set()
@@ -182,14 +189,15 @@ class ConsoleApp(App[None]):
             self.paths, self._on_result, deliver=deliver, policy=MutePolicy(self.muted)
         )
         self.pump_enabled = pump_enabled
-        self.members: tuple[str, ...] = members if members is not None else member_names()
+        roster_cwd = None if workspace is None else workspace.project_root
+        self.members: tuple[str, ...] = (
+            members if members is not None else member_names(cwd=roster_cwd)
+        )
         if member_status is None:
             tmux = None
             if deliver is tmux_deliver:
                 with contextlib.suppress(TmuxError):
-                    from workspace.session import bind_tmux
-
-                    tmux = bind_tmux()
+                    tmux = bind_tmux(names=self._session_names())
             member_status = MemberStatusService(self.members, tmux)
             if deliver is tmux_deliver and tmux is None:
                 for name in self.members:
@@ -197,7 +205,7 @@ class ConsoleApp(App[None]):
         self.member_status = member_status
         if controller is None and deliver is tmux_deliver and member_status.tmux is not None:
             try:
-                roster = load_effective_roster()
+                roster = load_effective_roster(cwd=roster_cwd)
                 controller = MemberController(
                     member_status.tmux,
                     Lifecycle(roster, member_status.tmux),
@@ -229,7 +237,11 @@ class ConsoleApp(App[None]):
         self.fit_windows = fit_windows
         #: 已经给谁调过多大,避免每帧都下发 resize-window
         self._fitted: dict[str, tuple[int, int]] = {}
-        self.commands = CommandRunner(muted=self.muted, on_members_changed=self._schedule_reload)
+        self.commands = CommandRunner(
+            muted=self.muted,
+            on_members_changed=self._schedule_reload,
+            switch_workspace=self._request_workspace,
+        )
 
     # --- 布局 -----------------------------------------------------------
 
@@ -303,7 +315,9 @@ class ConsoleApp(App[None]):
     def on_mount(self) -> None:
         self._register_themes()
         self.theme = theme_tokens().name
+        self._apply_workspace_chrome()
         timeline = self.query_one("#timeline", Timeline)
+        timeline.note(self._workspace_banner())
         timeline.note(f"[总控台] 总线目录 {self.paths.root}")
         timeline.backfill(history(AuditLog(self.paths)))
         timeline.note("[总控台] ↑↓ 选会话(群聊/成员),Esc 回群聊,PgUp/PgDn 翻页;q 或 Ctrl-C 退出")
@@ -357,9 +371,11 @@ class ConsoleApp(App[None]):
             from roster.adopt import SessionAdopter
             from roster.lifecycle import Lifecycle
             from roster.load import load_effective_roster
-            from workspace.session import bind_tmux
 
-            roster, tmux = load_effective_roster(), bind_tmux()
+            roster, tmux = (
+                load_effective_roster(cwd=self._roster_cwd()),
+                bind_tmux(names=self._session_names()),
+            )
             self.commands.lifecycle = Lifecycle(roster, tmux)
             self.commands.adopter = SessionAdopter(roster, tmux)
         except Exception as exc:
@@ -395,6 +411,94 @@ class ConsoleApp(App[None]):
         self.query_one("#compose", ComposeInput).members = self.members
         self._sync_unread()
 
+    def _roster_cwd(self) -> Path | None:
+        return None if self.workspace is None else self.workspace.project_root
+
+    def _session_names(self) -> SessionNames:
+        if self.workspace is None:
+            return SessionNames.identity()
+        return SessionNames(slug=self.workspace.slug)
+
+    def _workspace_subtitle(self) -> str:
+        if self.workspace is None:
+            return "未登记工作区"
+        return f"{self.workspace.slug} · {self.workspace.project_root}"
+
+    def _workspace_banner(self) -> str:
+        if self.workspace is None:
+            return "[总控台] 未登记工作区(cwd 不属于任何已登记项目)"
+        return f"[总控台] 工作区 {self.workspace.slug}  ·  {self.workspace.project_root}"
+
+    def _apply_workspace_chrome(self) -> None:
+        self.sub_title = self._workspace_subtitle()
+
+    def _request_workspace(self, slug: str) -> list[str]:
+        """`/workspace` 的同步入口:查得到就排到下一轮真正换绑。"""
+        try:
+            workspace = require_slug(slug)
+        except WorkspaceNotFound as exc:
+            return [f"/workspace 失败:{exc}"]
+        if self.workspace is not None and self.workspace.slug == slug:
+            return [f"已经在工作区 {slug}"]
+        self.call_later(self._bind_workspace, workspace)
+        return [f"[workspace] 切换到 {slug}  →  {workspace.project_root}"]
+
+    def _rebind_tmux(self, names: SessionNames) -> None:
+        current = self.member_status.tmux
+        if current is None:
+            return
+        inner = current._inner if isinstance(current, NamespacedTmux) else current
+        bound = NamespacedTmux(inner, names)
+        self.member_status.tmux = bound
+        if self.health_monitor is not None:
+            self.health_monitor.tmux = bound
+        if self.controller is not None:
+            from tmuxctl import ProcessController
+
+            self.controller.tmux = bound
+            self.controller.process = ProcessController(bound)
+        snapshotter = self.snapshotter
+        if snapshotter is not None and hasattr(snapshotter, "_tmux"):
+            snapshotter._tmux = bound
+
+    async def _bind_workspace(self, workspace: Workspace) -> None:
+        """把这一台 console 换绑到另一个工作区:总线、成员栏、时间线、标题一起换。"""
+        self.workspace = workspace
+        self.paths = BusPaths.for_workspace(workspace).ensure()
+        self.pump.rebind(self.paths)
+        if self.health_monitor is not None:
+            self.health_monitor.paths = self.paths
+        if self.controller is not None:
+            self.controller.audit = AuditLog(self.paths)
+        self._rebind_tmux(self._session_names())
+        self._apply_workspace_chrome()
+        self.members = member_names(cwd=workspace.project_root)
+        self.member_status.track(self.members)
+        if self.health_monitor is not None:
+            self.health_monitor.track(self.members)
+        listing = self.query_one("#members", ListView)
+        await listing.clear()
+        await listing.append(
+            ListItem(
+                ConversationCard(id="card-timeline", classes="conversation-card"),
+                id=TIMELINE_ITEM_ID,
+            )
+        )
+        for name in self.members:
+            await listing.append(self._member_item(name))
+        self.query_one("#compose", ComposeInput).members = self.members
+        self.select_member(None)
+        self.unseen_traffic = 0
+        self._sync_unread()
+        timeline = self.query_one("#timeline", Timeline)
+        timeline.reset()
+        timeline.note(self._workspace_banner())
+        timeline.note(f"[总控台] 总线目录 {self.paths.root}")
+        timeline.backfill(history(AuditLog(self.paths)))
+        self._connect_roster()
+        self.refresh_member_cards()
+        self.query_one("#members", ListView).focus()
+
     # --- 成员详情:终端画面镜像 -------------------------------------------
 
     def _start_mirror(self) -> None:
@@ -402,12 +506,11 @@ class ConsoleApp(App[None]):
         if self.snapshotter is None:
             try:
                 from tmuxctl import PaneSnapshotter
-                from workspace.session import bind_tmux
 
                 # 缓存窗口必须小于刷新间隔:两者相等时定时器每隔一拍就吃到
                 # 缓存,实测画面更新间隔会翻倍到 200ms(CON-010 量出来的)
                 self.snapshotter = PaneSnapshotter(
-                    bind_tmux(), min_interval=MIRROR_INTERVAL / 2
+                    bind_tmux(names=self._session_names()), min_interval=MIRROR_INTERVAL / 2
                 )
             except Exception as exc:  # tmux 不在或版本不够:详情栏降级成提示
                 self.query_one("#timeline", Timeline).note(f"[总控台] 详情栏不可用:{exc}")

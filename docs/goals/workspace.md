@@ -55,8 +55,10 @@
   - 前置:WS-005。
   - 验证:`uv run ruff check . && uv run pytest tests/test_roster_protocol.py tests/test_roster_profiles.py tests/test_bus_ask_reply.py tests/test_tmuxctl_inject.py tests/test_bus_sanitize.py -q`
   - 证据:`AGENTS.md` 群聊协议发消息改为 `amux msg`(任意目录投进当前工作区总线);`render_member_greeting` 注入「你现在在工作区 {slug},项目根是 {root}。」;`check_single_source` 要求协议含 `amux msg` 并拒绝「在仓库根运行 ./msg」;`sanitize` 注入指引与 `.claude/settings.json` 同步。`tests/test_roster_protocol.py` 覆盖开场白工作区行与漂移检查。2026-08-17 相关 68 passed,ruff 干净。`./msg` 仍是仓库根薄入口。
-- [ ] **WS-007** — 控制台工作区维度:`amux` 按 cwd 自动选工作区,`--workspace <名字>` 显式指定;标题栏显示当前工作区与项目根;成员栏只列本工作区成员,时间线只收本工作区流量;`/workspace <名字>` 切换绑定;`/help` 与 `?` 帮助面板同步。切换后按 QA-004 流程截图自验证。
+- [x] **WS-007** — 控制台工作区维度:`amux` 按 cwd 自动选工作区,`--workspace <名字>` 显式指定;标题栏显示当前工作区与项目根;成员栏只列本工作区成员,时间线只收本工作区流量;`/workspace <名字>` 切换绑定;`/help` 与 `?` 帮助面板同步。切换后按 QA-004 流程截图自验证。
   - 前置:WS-002、WS-003、WS-004。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_console.py tests/test_console_commands.py tests/test_console_keyboard.py tests/test_console_app.py tests/test_engineering_skeleton.py -q`;看画面:`uv run python -m qa.visual --goal WS-007 --scene workspace-alpha --size 120x30 --fixture workspaces` 与 `--scene workspace-beta --keys Tab,Tab --type "/workspace beta"`、`--scene workspace-help --keys '?'`、`--scene workspace-alpha-min --size 80x24`
+  - 证据:`bind_runtime` 按 `--bus-root` > `--workspace` > cwd 选区;`ConsoleApp` 标题栏 `slug · 项目根`,成员栏走该区 `amux.toml`,`/workspace` 换绑总线/成员/时间线。截取物 `tests/baseline/ws-007-workspace-alpha-120x30.txt`:标题 `总控台 — alpha · …`,左栏只有 claude/codex,时间线只有「alpha 专属流量」。`tests/baseline/ws-007-workspace-beta-120x30.txt`:切换后标题变 `beta`,左栏只剩 cursor,时间线换成「beta 专属流量」、alpha 那条消失。`tests/baseline/ws-007-workspace-help-120x30.txt`:`?` 面板「斜杠命令补全,含 /workspace」。`tests/baseline/ws-007-workspace-alpha-min-80x24.txt`:80×24 下列表、时间线、输入框仍可用。2026-08-17 相关 37 passed,ruff 干净。
 - [ ] **WS-008** — 网关按工作区路由:IM 进来的消息带工作区归属并路由到对应总线;白名单按工作区配置;GATE-004 的来源标记、清洗、限频、危险指令本机二次确认在多工作区下全部继续生效(远程指令弱于本机指令这条不能被绕过)。
   - 前置:WS-003、GATE-004。
 - [ ] **WS-009** — 资源守护与清理:并发工作区数与成员总数上限可配、超限时拒绝拉起并给明确提示;`amux workspace rm` 关掉该工作区全部会话并清理状态目录(不碰用户的项目文件);孤儿会话(状态目录已删但 tmux 会话还在)的发现与回收。

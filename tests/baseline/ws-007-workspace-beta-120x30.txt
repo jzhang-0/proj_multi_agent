@@ -1,0 +1,30 @@
+ ⭘      总控台 — beta · /private/var/folders/70/_1qzff897ys_s2jbph2h00j40000gn/T/qa-visual-555jtzrn/projects/…
+ ≡ 群聊时间线        │ [总控台] 工作区 beta  ·
+ 在看                │ /private/var/folders/70/_1qzff897ys_s2jbph2h00j40000gn/T/qa-visual-555jtzrn/projects/beta
+─────────────────────│ [总控台] 总线目录
+ ○ IDLE  cursor      │ /private/var/folders/70/_1qzff897ys_s2jbph2h00j40000gn/T/qa-visual-555jtzrn/amux-home/workspac
+ 排队0 · 未活动      │ es/beta/bus
+                     │ ── 2026-08-17 05:01 ────
+                     │ · cursor → human: beta 专属流量
+                     │ ── 以上 1 条来自 bus/log.jsonl ────
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+                     │
+▊▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▎
+▊  @名字 说点什么,回车发送                                                                                             ▎
+▊▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▎
+ q 退出  ? 帮助  esc 回群聊  t 深浅主题  f5 打断  f6 终止  f7 重启  f8 接管                                 ▏^p palette

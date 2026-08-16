@@ -34,7 +34,7 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
         "发言与命令",
         (
             Shortcut("@ 成员", "指定收件人（走群聊总线）；Tab / ↑↓ 补全"),
-            Shortcut("/ 命令", "补全 /up /down /restart /adopt /mute /help"),
+            Shortcut("/ 命令", "斜杠命令补全,含 /workspace"),
             Shortcut("Enter", "接受补全，再按一次发送或执行"),
             Shortcut("成员会话里直接打字", "不带 @ 就是直接键入该成员终端，等于在它窗口里敲"),
         ),

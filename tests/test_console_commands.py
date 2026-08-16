@@ -1,4 +1,4 @@
-"""CON-008:`/` 命令面板——六条命令、补全、错误提示、静音真的挡消息。"""
+"""CON-008:`/` 命令面板——七条命令、补全、错误提示、静音真的挡消息。"""
 
 import asyncio
 
@@ -99,7 +99,7 @@ def test_help_lists_every_command_aligned_by_display_width():
     assert len(starts) == 1, f"帮助的说明列没对齐:{starts}"
 
 
-# --- 六条命令 -----------------------------------------------------------
+# --- 七条命令 -----------------------------------------------------------
 
 
 @pytest.mark.parametrize("action", ["up", "down", "restart"])

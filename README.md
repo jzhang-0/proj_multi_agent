@@ -33,7 +33,7 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-`amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都进同一个界面——bus 运行时目录和 `roster.toml` 目前仍按源码位置向上找仓库根定位。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
+`amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都按当前目录所属工作区进界面(`--workspace <slug>` 显式指定)。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
 
 工作区登记(状态在 `~/.amux`,不往用户项目里写目录):
 
@@ -43,6 +43,7 @@ amux workspace list
 amux workspace current        # 从当前目录向上找所属工作区;找不到就报错
 amux workspace rm <slug>      # 取消登记,不碰项目文件
 amux msg claude 写一个fizzbuzz  # 从当前目录定位工作区总线;./msg 仍是仓库根薄入口
+amux --workspace alpha          # 显式绑定工作区(界面里 /workspace beta 再切)
 ```
 
 项目根可以放可选的 `amux.toml`(启用哪些成员、额外 env);没有也能跑。测试用 `AMUX_HOME` 把状态指到临时目录。

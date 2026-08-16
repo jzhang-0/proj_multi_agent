@@ -125,6 +125,13 @@ class Timeline(RichLog):
             self._wrote_blind = True
         self.write(renderable, scroll_end=stick)
 
+    def reset(self) -> None:
+        """切工作区时丢掉上一区的时间线,从空白开始回填。"""
+        self.clear()
+        self._group = None
+        self._history = []
+        self._wrote_blind = False
+
     def note(self, text: str) -> None:
         """总控台自己说的话(不是总线流量)。"""
         self._history.append(text)

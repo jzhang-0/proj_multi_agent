@@ -37,6 +37,42 @@ def _str_tuple(value: object) -> tuple[str, ...]:
     return ()
 
 
+def _workspace_gates(value: object) -> tuple[WorkspaceGate, ...]:
+    if not isinstance(value, dict):
+        return ()
+    items: list[WorkspaceGate] = []
+    for slug, spec in value.items():
+        users: tuple[str, ...] = ()
+        rooms: tuple[str, ...] = ()
+        if isinstance(spec, dict):
+            users = _str_tuple(spec.get("users"))
+            rooms = _str_tuple(spec.get("rooms"))
+        items.append(WorkspaceGate(slug=str(slug), users=users, rooms=rooms))
+    return tuple(items)
+
+
+def _workspaces_toml(items: tuple[WorkspaceGate, ...]) -> str:
+    if not items:
+        return ""
+    lines = []
+    for item in items:
+        users = ", ".join(f'"{name}"' for name in item.users)
+        rooms = ", ".join(f'"{name}"' for name in item.rooms)
+        lines.append(f"\n[workspaces.{item.slug}]")
+        lines.append(f"users = [{users}]")
+        lines.append(f"rooms = [{rooms}]")
+    return "\n".join(lines) + "\n"
+
+
+@dataclass(frozen=True)
+class WorkspaceGate:
+    """一个工作区自己的网关白名单。`users`/`rooms` 空表示沿用全局。"""
+
+    slug: str
+    users: tuple[str, ...] = ()
+    rooms: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class GatewayConfig:
     """自建网关的运行参数。"""
@@ -48,6 +84,8 @@ class GatewayConfig:
     #: 白名单(GATE-004)。`users` 为空表示还没配,网关一律拒绝服务
     users: tuple[str, ...] = ()
     rooms: tuple[str, ...] = ()
+    #: 按工作区覆盖的白名单(WS-008)。没有表就用上面的全局名单
+    workspaces: tuple[WorkspaceGate, ...] = ()
 
     @classmethod
     def load(cls, path: Path | None = None) -> GatewayConfig:
@@ -62,8 +100,15 @@ class GatewayConfig:
             room=str(raw.get("room", cls.room)),
             users=_str_tuple(raw.get("users")),
             rooms=_str_tuple(raw.get("rooms")),
+            workspaces=_workspace_gates(raw.get("workspaces")),
         )
         return config.with_env()
+
+    def workspace_spec(self, slug: str) -> WorkspaceGate | None:
+        for item in self.workspaces:
+            if item.slug == slug:
+                return item
+        return None
 
     def with_env(self) -> GatewayConfig:
         """环境变量覆盖文件里的值(临时改端口、换 token 时不用动文件)。"""
@@ -92,12 +137,14 @@ class GatewayConfig:
         return (
             "# 自建 IM 网关配置。token 是访问口令,别提交、别贴群里。\n"
             "# users 是白名单:为空时网关谁都不服务(GATE-004)。\n"
+            "# [workspaces.<slug>] 可为每个工作区单独写 users / rooms(WS-008)。\n"
             f'host = "{self.host}"\n'
             f"port = {self.port}\n"
             f'token = "{self.token}"\n'
             f'room = "{self.room}"\n'
             f"users = [{users}]\n"
             f"rooms = [{rooms}]\n"
+            f"{_workspaces_toml(self.workspaces)}"
         )
 
     def url_for(self, address: str) -> str:

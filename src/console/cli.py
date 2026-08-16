@@ -2,7 +2,7 @@
 
 `amux` 裸跑起全屏 TUI;`amux --headless` 就是纯 hub 模式
 (直接交给 `bus.headless`,与 `python3 hub.py` 同一份实现,行为不会漂)。
-`amux workspace add|list|rm|current` 管理工作区登记;`amux msg` 从当前目录定位工作区总线。
+`amux workspace add|list|rm|current|gc` 管理工作区登记;`amux msg` 从当前目录定位工作区总线。
 `amux --workspace <slug>` 显式绑定工作区(默认从 cwd 向上解析)。
 
 `uv run console` 是同一个入口的别名,历史 Goal 证据里的命令继续可用。
@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="amux",
         description="本机多 AI 群聊与指挥中心",
-        epilog="工作区: amux workspace add|list|rm|current; 发消息: amux msg <名字> <内容>",
+        epilog="工作区: amux workspace add|list|rm|current|gc; 发消息: amux msg <名字> <内容>",
     )
     parser.add_argument(
         "--version",

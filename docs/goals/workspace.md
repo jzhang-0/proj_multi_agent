@@ -64,6 +64,7 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_gateway_workspace.py tests/test_gateway_security.py tests/test_gateway_base.py tests/test_gateway_local.py -q`
   - 证据:`gateway.workspaces.WorkspaceBinder` 按房间名/slug 投进 `BusPaths.for_workspace`;消息 `extra.workspace` 留下归属;`gateway.toml` 的 `[workspaces.<slug>]` 分开放 users/rooms。GATE-004 在多区下仍在:发件人 `im:`,`sanitize`、限频、危险指令挂在**该区** pending,自称 human 也不能绕过。`tests/test_gateway_workspace.py` 覆盖两区不串队列、按区白名单、确认放行仍带 `im:`。2026-08-17 相关 50 passed,ruff 干净。
 - [ ] **WS-009** — 资源守护与清理:并发工作区数与成员总数上限可配、超限时拒绝拉起并给明确提示;`amux workspace rm` 关掉该工作区全部会话并清理状态目录(不碰用户的项目文件);孤儿会话(状态目录已删但 tmux 会话还在)的发现与回收。
+  - 处理登记:cursor,2026-08-17 05:20 +0800,`ws-009-cursor`
   - 前置:WS-002。
 - [ ] **WS-010** — 迁移与旧入口兼容:仓库根现有 `bus/` 数据按 human 拍板结果处理;`uv run console` / `roster` / `hub.py` / `start.sh` 四个旧入口在单工作区下行为一字不变(契约测试钉死);从旧布局升级的一次性迁移命令与回退方式各写一条。
   - 前置:WS-003。

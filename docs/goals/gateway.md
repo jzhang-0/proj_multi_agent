@@ -12,8 +12,8 @@
   - 证据:`src/gateway/local.py`(`LocalChatAdapter`:标准库 `ThreadingHTTPServer`,`GET /` 发页面、`GET /api/messages?since=&token=` 长轮询、`POST /api/send` 收消息;内存里留 500 条历史供补齐)、`src/gateway/page.py`(手机端单文件页面,零外部资源)、`src/gateway/config.py`(**凭证配置**:`gateway.toml` + `GATEWAY_TOKEN/PORT/HOST/ROOM` 环境变量覆盖,第一次跑随机生成 token 并落盘,`gateway.toml` 已 gitignore)、`src/gateway/__main__.py`(打印手机可用的局域网地址);**断线重连**做在游标续传上:客户端记 `cursor`,重连带上就补齐断线期间的消息,页面侧 1→5 秒退避重试、回前台立刻重连;`tests/test_gateway_local.py` 10 passed(口令双向校验、空消息拒收、页面无外部依赖、断线后按游标补齐两条、长轮询来消息即返回、历史有界、token 生成与持久化、环境变量覆盖),全量回归 328 passed。
   - 真机路径实测:2026-08-16 起在 127.0.0.1:8799,`POST /api/send {"user":"小明","text":"@claude 手机上派个活"}` → 队列里出现 `{"to":"claude","from":"im:小明","text":"手机上派个活",…}`;`GET /api/messages` 回 `im:小明: → claude: 手机上派个活`,单 bot 署名与游标都对。
 - [ ] **GATE-003** — 端到端:手机群里 @ 成员派活、成员间协作、结果回到群里,全程不碰电脑实测一遍。
+  - 处理登记:codex,2026-08-16 14:07 +0800,`gate-003-codex`。
   - 前置:GATE-002、ROS-003。
-  - 进行中:**未开工**,阻塞在 GATE-002;另一半前置 ROS-003 已完成。
 - [ ] **GATE-004** — 网关安全:只服务白名单群与白名单用户;来自 IM 的消息标记来源(`from` 带 `im:` 前缀或等价机制)并同样过清洗与限频;危险操作指令即使来自 IM 的 human 也要求本机二次确认(远程指令弱于本机指令)。
   - 处理登记:claude,2026-08-16 08:10 +0800,`gate-004-claude`。
   - 前置:GATE-002。

@@ -12,7 +12,7 @@ from urllib.request import urlopen
 
 from bus import BusPaths
 
-RUN_TAG = "GATE003-20260816-A"
+RUN_TAG = "GATE003-20260816-B"
 EVIDENCE = Path("tests/evidence/gate-003-phone.json")
 
 

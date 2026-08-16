@@ -67,7 +67,9 @@
   - 前置:WS-002。
   - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_guard.py tests/test_workspace.py tests/test_roster_lifecycle.py tests/test_workspace_session.py -q`
   - 证据:按 2026-08-17 拍板,`~/.amux/limits.toml` 的 `warn_workspaces`/`warn_members` 超限**只告警不拒绝**(Goal 原文写拒绝,以拍板为准)。`amux workspace rm` 先杀 `<成员>@<slug>` 再删状态目录,项目文件不动;`amux workspace gc` 回收已无登记的孤儿会话。`tests/test_workspace_guard.py` 覆盖告警仍可 add/up、rm 只关本区会话、gc 不误杀仍在登记的区。2026-08-17 相关 41 passed,ruff 干净。
-- [ ] **WS-010** — 迁移与旧入口兼容:仓库根现有 `bus/` 数据按 human 拍板结果处理;`uv run console` / `roster` / `hub.py` / `start.sh` 四个旧入口在单工作区下行为一字不变(契约测试钉死);从旧布局升级的一次性迁移命令与回退方式各写一条。
+- [x] **WS-010** — 迁移与旧入口兼容:仓库根现有 `bus/` 数据按 human 拍板结果处理;`uv run console` / `roster` / `hub.py` / `start.sh` 四个旧入口在单工作区下行为一字不变(契约测试钉死);从旧布局升级的一次性迁移命令与回退方式各写一条。
   - 前置:WS-003。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_migrate.py tests/test_workspace.py tests/test_v0_contract.py tests/test_engineering_skeleton.py tests/test_roster_load.py -q`
+  - 证据:按 2026-08-17 拍板,`amux workspace migrate` 把仓库根 `bus/` **拷进** `~/.amux/workspaces/<slug>/bus/`,源目录先留着并提示核对后可删;目标已有数据拒绝覆盖,除非 `--force`。回退是 `amux workspace migrate --rollback`,把工作区总线拷回仓库根 `bus/`,两边都不自动删。`BusPaths.resolve` 迁完从项目 cwd 读到新位置;显式 `--bus-root` 仍最高优先;未登记仍回落仓库根 `bus/`。四个旧入口契约钉在同文件:`uv run console --headless --once --bus-root`、`hub.py --once --bus-root`、`start.sh` 仍是 `python -m roster` 薄入口、`roster` 的 `start.sh [stop|<名字>]` 用法不变。架构 §5 与 README 各写了迁移/回退一条。`tests/test_workspace_migrate.py` 覆盖以上枚举。2026-08-17 相关 52 passed,ruff 干净。
 
 质量收口在 [质量卷](quality.md) 的 QA-006。

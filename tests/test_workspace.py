@@ -267,4 +267,4 @@ def test_amux_help_mentions_workspace() -> None:
     from console.cli import build_parser
 
     help_text = build_parser().format_help()
-    assert "workspace add|list|rm|current|gc" in help_text
+    assert "workspace add|list|rm|current|gc|migrate" in help_text

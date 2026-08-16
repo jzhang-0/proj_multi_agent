@@ -25,6 +25,7 @@
 2. **批 2:ROS**。收口于 `uv run roster up` 拉起全部真实成员并全员报到。
 3. **批 3:CON**。收口于截图自验证(见 QA-004)+ 硬指标实测。
 4. **批 4:GATE**。前置是人对 IM 平台拍板,没拍板前不开工。
+5. **批 5:WS(多工作区)**。2026-08-17 human 拍板要做。收口于 **QA-006**:两个真实项目各起一组成员同时活着、消息不串台。开工前先拿到 [工作区卷](workspace.md)「需要 human 拍板的」那四项答复。
 
 批 1 没收口前不要开批 3(console 依赖 bus/tmuxctl 的接口)。
 
@@ -76,6 +77,7 @@ TUI 类 Goal(CON 卷)必须**自己看画面**再判断:把 console 跑在 tmux 
 | 成员名册与生命周期(ROS) | tmux 控制层 |
 | 控制台 TUI(CON) | 消息总线、tmux 控制层、成员名册 |
 | IM 网关(GATE) | 消息总线;IM 平台人未拍板前不开工 |
+| 工作区(WS) | 消息总线、tmux 控制层、成员名册、控制台;slug 规则等四项人未拍板前不开工 |
 | 质量与工程(QA) | 各被测领域 |
 
 ## 分卷索引
@@ -84,6 +86,7 @@ TUI 类 Goal(CON 卷)必须**自己看画面**再判断:把 console 跑在 tmux 
 - [tmux 控制层](tmux.md)
 - [成员名册与生命周期](roster.md)
 - [控制台 TUI](console.md)
+- [工作区](workspace.md)
 - [IM 网关(远期)](gateway.md)
 - [质量与工程](quality.md)
 - [Goal ID 变更记录](changes.md)

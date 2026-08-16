@@ -14,7 +14,7 @@ import sys
 from collections.abc import Sequence
 
 from roster.lifecycle import Lifecycle, render
-from roster.load import load_roster
+from roster.load import load_effective_roster
 from roster.paths import repo_root
 from roster.schema import RosterError
 from workspace.session import bind_tmux
@@ -36,7 +36,7 @@ def _exec_hub() -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     try:
-        roster = load_roster()
+        roster = load_effective_roster()
     except RosterError as exc:
         print(f"[roster] {exc}", file=sys.stderr)
         return 1

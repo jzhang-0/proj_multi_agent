@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from bus import BusPaths
 from bus.queue import pending, read_message
 from console.theme import STATUS_GLYPHS, status_presentation
-from roster.load import load_roster
+from roster.load import load_effective_roster
 from roster.schema import RosterError
 from tmuxctl import ActivityMonitor, ActivityTracker, PaneOutputStream, Tmux
 
@@ -220,7 +220,7 @@ class MemberStatusService:
 def member_names() -> tuple[str, ...]:
     """名册里启用的成员名,顺序与 `roster.toml` 一致。"""
     try:
-        roster = load_roster()
+        roster = load_effective_roster()
     except (RosterError, OSError):
         return ()
     return tuple(member.name for member in roster.enabled_members())

@@ -60,6 +60,11 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 
 - **slug**:默认取项目目录名;两个项目同名时自动 `name-2`、`name-3`。显式 `--slug` 撞名则报错不覆盖。`:` 和 `.` 禁止出现在 slug 里(tmux 会静默吃掉,见工作区 Goal 卷「已知陷阱」)。
 - **解析**:从任意 cwd 向上走,命中已登记的项目根即为所属工作区;嵌套时取最近的那一个。找不到就明确报错,提示 `amux workspace add`,不回落到 amux 自己的仓库根。
-- **项目侧 `amux.toml`**:可选。声明启用哪些成员、额外 env;文件不存在即用默认(全体默认成员、无额外 env)。amux 不在用户项目里创建这个文件。
-- **CLI**:`amux workspace add|list|rm|current`。`rm` 只删 `~/.amux` 里的登记和状态目录,不碰用户项目文件。
+- **项目侧 `amux.toml`**:可选。amux 不在用户项目里创建这个文件。合并规则:
+  1. 全局名册永远是 amux 仓库根 `roster.toml`(四个成员的启动命令与参数)。
+  2. 没有 `amux.toml` = 启用名册里所有 `enabled=true` 的成员,不追加 env。
+  3. `enabled = ["claude", "codex"]` 只启用列出的成员;名册里其余改为停用。名单出现未知名字则报错。
+  4. `[env]` 覆盖到每个成员的 env,项目侧同名键赢。
+- **成员 cwd**:`Lifecycle` / `HealthSupervisor` 默认落到当前工作区项目根(未登记则仍是 amux 仓库根)。
+- **CLI**:`amux workspace add|list|rm|current`;`amux msg` 从 cwd 定位工作区总线。`rm` 只删 `~/.amux` 里的登记和状态目录,不碰用户项目文件。
 - 同一成员允许同时在多个工作区各跑一份(产品定义已拍板)。并发上限不设硬封顶,只告警(WS-009)。

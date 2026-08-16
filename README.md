@@ -42,6 +42,7 @@ amux workspace add [路径]     # 把项目登记为工作区;同名目录自动
 amux workspace list
 amux workspace current        # 从当前目录向上找所属工作区;找不到就报错
 amux workspace rm <slug>      # 取消登记,不碰项目文件
+amux msg claude 写一个fizzbuzz  # 从当前目录定位工作区总线;./msg 仍是仓库根薄入口
 ```
 
 项目根可以放可选的 `amux.toml`(启用哪些成员、额外 env);没有也能跑。测试用 `AMUX_HOME` 把状态指到临时目录。

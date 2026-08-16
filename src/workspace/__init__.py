@@ -6,7 +6,7 @@ from workspace.config import ProjectConfig, load_project_config
 from workspace.errors import SlugError, WorkspaceError, WorkspaceNotFound
 from workspace.model import Workspace
 from workspace.paths import ENV_AMUX_HOME, amux_home
-from workspace.resolve import require_from_cwd, resolve_from_cwd
+from workspace.resolve import project_root_for_members, require_from_cwd, resolve_from_cwd
 from workspace.session import (
     NamespacedTmux,
     SessionNameError,
@@ -36,6 +36,7 @@ __all__ = [
     "is_sessionless",
     "load_project_config",
     "member_for",
+    "project_root_for_members",
     "require_from_cwd",
     "resolve_from_cwd",
     "session_for",

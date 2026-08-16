@@ -43,10 +43,14 @@
   - 前置:WS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_bus.py tests/test_bus_core.py tests/test_bus_audit.py tests/test_v0_contract.py -q`
   - 证据:`BusPaths.resolve` 优先级显式 > `BUS_ROOT` > `~/.amux/workspaces/<slug>/bus` > 仓库根 `bus/`;`for_workspace` 把队列/死信/ask/审计全部放进该工作区状态目录;`AuditLog` 在有 slug 时写入 `workspace` 字段。`tests/test_workspace_bus.py` 覆盖两工作区不串队列、覆盖优先级、审计归属。2026-08-17 相关 60 passed,ruff 干净。
-- [ ] **WS-004** — 成员落到工作区目录:接上已存在的 `cwd` 接缝,`Lifecycle`/`HealthSupervisor` 构造时传入工作区项目根,成员进程 cwd = 该项目根(用 `lsof -a -p <pid> -d cwd` 实测取证,不看代码推断);名册分层——全局默认名册(四个成员的启动参数)+ 项目 `amux.toml` 覆盖(启用哪些、额外 env),合并规则写进文档。
+- [x] **WS-004** — 成员落到工作区目录:接上已存在的 `cwd` 接缝,`Lifecycle`/`HealthSupervisor` 构造时传入工作区项目根,成员进程 cwd = 该项目根(用 `lsof -a -p <pid> -d cwd` 实测取证,不看代码推断);名册分层——全局默认名册(四个成员的启动参数)+ 项目 `amux.toml` 覆盖(启用哪些、额外 env),合并规则写进文档。
   - 前置:WS-001、WS-002。
-- [ ] **WS-005** — `msg` 全局化:`amux msg <名字> <内容>` 从当前目录向上定位工作区并投进对应总线;`--ask` / `--reply` / 四字段 JSON / `human` 保留名语义一字不变(BUS-009 的契约测试必须继续通过);amux 仓库根的 `./msg` 保留为薄入口。**与 WS-004 同批合入**,否则成员起在别的目录却发不出消息。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_members.py tests/test_roster_lifecycle.py tests/test_roster_health.py tests/test_roster_load.py -q`
+  - 证据:`Lifecycle`/`HealthSupervisor` 默认 `cwd=project_root_for_members()`;`load_effective_roster` 按架构 §5 合并全局 `roster.toml` 与项目 `amux.toml`。`tests/test_workspace_members.py` 用 `lsof -a -p <pid> -d cwd` 确认 pane 进程 cwd 是项目根,不是 amux 仓库。与 WS-005 同批合入。
+- [x] **WS-005** — `msg` 全局化:`amux msg <名字> <内容>` 从当前目录向上定位工作区并投进对应总线;`--ask` / `--reply` / 四字段 JSON / `human` 保留名语义一字不变(BUS-009 的契约测试必须继续通过);amux 仓库根的 `./msg` 保留为薄入口。**与 WS-004 同批合入**,否则成员起在别的目录却发不出消息。
   - 前置:WS-001、WS-003。
+  - 验证:`uv run pytest tests/test_workspace_members.py tests/test_v0_contract.py tests/test_bus_ask_reply.py -q`
+  - 证据:`console.cli` 把 `amux msg` 转给 `bus.cli`;`BusPaths.resolve` 从 cwd 进该工作区总线。`./msg` 仍是仓库根薄入口。BUS-009 契约测试继续通过。2026-08-17 相关 75 passed,ruff 干净。
 - [ ] **WS-006** — 群规与开场白同步:`AGENTS.md`「群聊协议」里的 `./msg` 改为全局命令形态;开场白里告诉成员它在哪个工作区、项目根在哪;ROS-006 的单一事实来源一致性检查跟着更新,防两处漂移。
   - 前置:WS-005。
 - [ ] **WS-007** — 控制台工作区维度:`amux` 按 cwd 自动选工作区,`--workspace <名字>` 显式指定;标题栏显示当前工作区与项目根;成员栏只列本工作区成员,时间线只收本工作区流量;`/workspace <名字>` 切换绑定;`/help` 与 `?` 帮助面板同步。切换后按 QA-004 流程截图自验证。

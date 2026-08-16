@@ -39,3 +39,17 @@ def require_from_cwd(
             "把项目登记进来: amux workspace add"
         )
     return found
+
+
+def project_root_for_members(
+    cwd: str | Path | None = None,
+    *,
+    store: Store | None = None,
+) -> Path:
+    """成员进程该落在的目录:已登记工作区用项目根,否则 amux 仓库根。"""
+    found = resolve_from_cwd(cwd, store=store)
+    if found is not None:
+        return found.project_root
+    from roster.paths import repo_root
+
+    return repo_root()

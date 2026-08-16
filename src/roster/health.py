@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from roster.paths import repo_root
 from roster.schema import Member, Roster, RosterError
 from roster.start import member_env, start_member, window_command
 from tmuxctl import CrashEvent, CrashKind, CrashMonitor, Tmux
+from workspace.resolve import project_root_for_members
 
 MAX_CONSECUTIVE_FAILURES = 3
 
@@ -55,7 +55,7 @@ class HealthSupervisor:
             raise ValueError("retry_delay 不能为负数")
         self.roster = roster
         self.tmux = tmux
-        self.cwd = cwd or repo_root()
+        self.cwd = cwd if cwd is not None else project_root_for_members()
         self.retry_delay = retry_delay
         self._monitor_factory = monitor_factory
         self._on_update = on_update

@@ -18,6 +18,7 @@ from pathlib import Path
 from roster.schema import Member, Roster, RosterError
 from roster.start import start_member, stop_member
 from tmuxctl import Tmux
+from workspace.resolve import project_root_for_members
 from workspace.session import session_for
 
 
@@ -47,7 +48,7 @@ class Lifecycle:
     def __init__(self, roster: Roster, tmux: Tmux, *, cwd: Path | None = None) -> None:
         self.roster = roster
         self.tmux = tmux
-        self.cwd = cwd
+        self.cwd = cwd if cwd is not None else project_root_for_members()
 
     # --- 选成员 ---------------------------------------------------------
 

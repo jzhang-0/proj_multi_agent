@@ -2,7 +2,7 @@
 
 from roster.adopt import SessionAdopter, SessionCandidate, TemporaryMember
 from roster.health import HealthState, HealthSupervisor, HealthUpdate
-from roster.load import load_roster
+from roster.load import load_effective_roster, load_roster
 from roster.protocol import (
     ProtocolSourceError,
     check_single_source,
@@ -26,6 +26,7 @@ __all__ = [
     "TemporaryMember",
     "check_single_source",
     "extract_chat_protocol",
+    "load_effective_roster",
     "load_roster",
     "load_chat_protocol",
     "member_env",

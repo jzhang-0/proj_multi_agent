@@ -52,7 +52,7 @@ from console.theme import THEMES, Tokens
 from console.theme import tokens as theme_tokens
 from console.timeline import TimelineEntry, history
 from console.widgets import ConversationCard, MemberCard, Timeline
-from roster import RosterError, load_roster
+from roster import RosterError, load_effective_roster
 from roster.lifecycle import Lifecycle
 from tmuxctl import TmuxError
 
@@ -197,7 +197,7 @@ class ConsoleApp(App[None]):
         self.member_status = member_status
         if controller is None and deliver is tmux_deliver and member_status.tmux is not None:
             try:
-                roster = load_roster()
+                roster = load_effective_roster()
                 controller = MemberController(
                     member_status.tmux,
                     Lifecycle(roster, member_status.tmux),
@@ -356,10 +356,10 @@ class ConsoleApp(App[None]):
         try:
             from roster.adopt import SessionAdopter
             from roster.lifecycle import Lifecycle
-            from roster.load import load_roster
+            from roster.load import load_effective_roster
             from workspace.session import bind_tmux
 
-            roster, tmux = load_roster(), bind_tmux()
+            roster, tmux = load_effective_roster(), bind_tmux()
             self.commands.lifecycle = Lifecycle(roster, tmux)
             self.commands.adopter = SessionAdopter(roster, tmux)
         except Exception as exc:

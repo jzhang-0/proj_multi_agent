@@ -1,7 +1,11 @@
 """总控台命令行。
 
-`uv run console` 起全屏 TUI;`uv run console --headless` 就是纯 hub 模式
+`amux` 裸跑起全屏 TUI;`amux --headless` 就是纯 hub 模式
 (直接交给 `bus.headless`,与 `python3 hub.py` 同一份实现,行为不会漂)。
+
+`uv run console` 是同一个入口的别名,历史 Goal 证据里的命令继续可用。
+bus 与 roster 的路径都从本文件位置向上找仓库根(见 `bus.paths.repo_root`),
+所以装成全局命令后在任何目录下跑,指向的都是同一份运行时数据。
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from console import __version__
 def build_parser() -> argparse.ArgumentParser:
     """构造总控台命令行解析器。"""
     parser = argparse.ArgumentParser(
-        prog="console",
+        prog="amux",
         description="本机多 AI 群聊与指挥中心",
     )
     parser.add_argument(

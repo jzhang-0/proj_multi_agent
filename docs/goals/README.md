@@ -4,7 +4,7 @@
 
 ## 总目标
 
-把全部 Goal 实现到 `[x]`,得到一个可用 `uv run console` 启动、达到 [产品定义](../product/product.md) 硬指标、四个真实成员(claude/codex/cursor/agy)协作实测通过的总控台。
+把全部 Goal 实现到 `[x]`,得到一个可用全局命令 `amux` 启动、达到 [产品定义](../product/product.md) 硬指标、四个真实成员(claude/codex/cursor/agy)协作实测通过的总控台。
 
 **终止条件**:全部 Goal 为 `[x]` 且各自带 `验证` 与 `证据` 两行;剩余任何 `[ ]` 必须带 `进行中` 说明阻塞原因。不允许以「主要功能已完成」结束。
 

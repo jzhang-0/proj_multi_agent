@@ -75,11 +75,17 @@ class Lifecycle:
             return LifecycleResult(member.name, Action.UP, False, "已在运行,跳过")
         start_member(member, self.tmux, cwd=self.cwd)
         session = session_for(self.tmux, member.name)
+        from workspace.limits import warn_member_count
+
+        warning = warn_member_count(self.tmux)
+        detail = f"已启动 (查看: tmux attach -t {session})"
+        if warning:
+            detail = f"{detail} [{warning}]"
         return LifecycleResult(
             member.name,
             Action.UP,
             True,
-            f"已启动 (查看: tmux attach -t {session})",
+            detail,
         )
 
     def down_member(self, member: Member) -> LifecycleResult:

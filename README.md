@@ -41,7 +41,8 @@ uv run ruff check .
 amux workspace add [路径]     # 把项目登记为工作区;同名目录自动 slug-2
 amux workspace list
 amux workspace current        # 从当前目录向上找所属工作区;找不到就报错
-amux workspace rm <slug>      # 取消登记,不碰项目文件
+amux workspace rm <slug>      # 关掉该区会话并取消登记,不碰项目文件
+amux workspace gc             # 回收已无登记但仍挂着的成员会话
 amux msg claude 写一个fizzbuzz  # 从当前目录定位工作区总线;./msg 仍是仓库根薄入口
 amux --workspace alpha          # 显式绑定工作区(界面里 /workspace beta 再切)
 ```

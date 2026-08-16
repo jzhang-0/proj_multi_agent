@@ -48,12 +48,36 @@ def render_member_greeting(
     *,
     intro_template: str = "",
     protocol: str | None = None,
+    workspace_slug: str | None = None,
+    project_root: str | Path | None = None,
 ) -> str:
-    """把成员身份和权威协议组合成启动时传给 CLI 的开场白。"""
+    """把成员身份、所在工作区和权威协议组合成启动时传给 CLI 的开场白。"""
     intro = intro_template.replace("{NAME}", name).replace("{name}", name).strip()
-    identity = f"你是本机 AI 群的成员 {name}。以下内容直接来自 AGENTS.md,必须遵守:"
+    identity = f"你是本机 AI 群的成员 {name}。"
+    location = _workspace_location(workspace_slug=workspace_slug, project_root=project_root)
+    if location:
+        identity += location
+    identity += "以下内容直接来自 AGENTS.md,必须遵守:"
     parts = [intro, identity, protocol or load_chat_protocol()]
     return "\n\n".join(part for part in parts if part)
+
+
+def _workspace_location(
+    *,
+    workspace_slug: str | None,
+    project_root: str | Path | None,
+) -> str:
+    slug, root = workspace_slug, project_root
+    if slug is None or root is None:
+        from workspace.resolve import resolve_from_cwd
+
+        found = resolve_from_cwd()
+        if found is not None:
+            slug = slug or found.slug
+            root = root or found.project_root
+    if slug is None or root is None:
+        return ""
+    return f"你现在在工作区 {slug},项目根是 {root}。"
 
 
 def check_single_source(
@@ -61,8 +85,12 @@ def check_single_source(
     agents_path: str | Path | None = None,
     roster_path: str | Path | None = None,
 ) -> None:
-    """检查仓库静态名册没有另存一份开场白/协议文本。"""
-    load_chat_protocol(agents_path)
+    """检查仓库静态名册没有另存一份开场白/协议文本,且协议已改用 amux msg。"""
+    protocol = load_chat_protocol(agents_path)
+    if "amux msg" not in protocol:
+        raise ProtocolSourceError("群聊协议必须使用全局命令 amux msg")
+    if "在仓库根运行 `./msg" in protocol:
+        raise ProtocolSourceError("群聊协议不得再要求在仓库根运行 ./msg")
     target = Path(roster_path) if roster_path is not None else repo_root() / "roster.toml"
     try:
         raw = tomllib.loads(target.read_text(encoding="utf-8"))

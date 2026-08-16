@@ -57,7 +57,7 @@ def test_repository_roster_and_agents_pass_single_source_check() -> None:
 
 def test_checker_rejects_protocol_copy_in_roster(tmp_path: Path) -> None:
     agents = tmp_path / "AGENTS.md"
-    agents.write_text("## 群聊协议\n\n唯一规则。\n", encoding="utf-8")
+    agents.write_text("## 群聊协议\n\n发消息用 amux msg。\n", encoding="utf-8")
     roster = tmp_path / "roster.toml"
     roster.write_text(
         """default_greeting_template = "另一份规则"
@@ -102,3 +102,23 @@ def test_optional_member_intro_cannot_replace_protocol() -> None:
     )
     assert greeting.startswith("你好 codex")
     assert "## 群聊协议\n\n权威规则。" in greeting
+
+
+def test_greeting_includes_workspace_and_project_root() -> None:
+    greeting = render_member_greeting(
+        "claude",
+        protocol="## 群聊协议\n\n用 amux msg。",
+        workspace_slug="demo",
+        project_root="/tmp/demo",
+    )
+    assert "你现在在工作区 demo,项目根是 /tmp/demo。" in greeting
+    assert "用 amux msg。" in greeting
+
+
+def test_single_source_requires_amux_msg(tmp_path: Path) -> None:
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text("## 群聊协议\n\n在仓库根运行 `./msg` 发消息。\n", encoding="utf-8")
+    roster = tmp_path / "roster.toml"
+    roster.write_text('[[members]]\nname = "bot"\ncommand = "cat"\n', encoding="utf-8")
+    with pytest.raises(ProtocolSourceError, match="amux msg"):
+        check_single_source(agents_path=agents, roster_path=roster)

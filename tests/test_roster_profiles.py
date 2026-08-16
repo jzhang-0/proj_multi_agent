@@ -44,3 +44,4 @@ def test_claude_project_allowlist_permits_msg() -> None:
     settings = json.loads((repo_root() / ".claude" / "settings.json").read_text(encoding="utf-8"))
     allow = settings["permissions"]["allow"]
     assert any(rule.startswith("Bash(./msg") for rule in allow)
+    assert any(rule.startswith("Bash(amux msg") for rule in allow)

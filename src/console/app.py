@@ -54,7 +54,7 @@ from console.timeline import TimelineEntry, history
 from console.widgets import ConversationCard, MemberCard, Timeline
 from roster import RosterError, load_roster
 from roster.lifecycle import Lifecycle
-from tmuxctl import Tmux, TmuxError
+from tmuxctl import TmuxError
 
 #: 最小可用尺寸(产品定义)
 MIN_SIZE = (80, 24)
@@ -187,7 +187,9 @@ class ConsoleApp(App[None]):
             tmux = None
             if deliver is tmux_deliver:
                 with contextlib.suppress(TmuxError):
-                    tmux = Tmux()
+                    from workspace.session import bind_tmux
+
+                    tmux = bind_tmux()
             member_status = MemberStatusService(self.members, tmux)
             if deliver is tmux_deliver and tmux is None:
                 for name in self.members:
@@ -355,9 +357,9 @@ class ConsoleApp(App[None]):
             from roster.adopt import SessionAdopter
             from roster.lifecycle import Lifecycle
             from roster.load import load_roster
-            from tmuxctl import Tmux
+            from workspace.session import bind_tmux
 
-            roster, tmux = load_roster(), Tmux()
+            roster, tmux = load_roster(), bind_tmux()
             self.commands.lifecycle = Lifecycle(roster, tmux)
             self.commands.adopter = SessionAdopter(roster, tmux)
         except Exception as exc:
@@ -399,11 +401,14 @@ class ConsoleApp(App[None]):
         """接上快照器并起刷新定时器(默认先暂停,选中成员才跑)。"""
         if self.snapshotter is None:
             try:
-                from tmuxctl import PaneSnapshotter, Tmux
+                from tmuxctl import PaneSnapshotter
+                from workspace.session import bind_tmux
 
                 # 缓存窗口必须小于刷新间隔:两者相等时定时器每隔一拍就吃到
                 # 缓存,实测画面更新间隔会翻倍到 200ms(CON-010 量出来的)
-                self.snapshotter = PaneSnapshotter(Tmux(), min_interval=MIRROR_INTERVAL / 2)
+                self.snapshotter = PaneSnapshotter(
+                    bind_tmux(), min_interval=MIRROR_INTERVAL / 2
+                )
             except Exception as exc:  # tmux 不在或版本不够:详情栏降级成提示
                 self.query_one("#timeline", Timeline).note(f"[总控台] 详情栏不可用:{exc}")
                 return

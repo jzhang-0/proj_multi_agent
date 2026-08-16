@@ -15,7 +15,7 @@ class RosterError(ValueError):
 
 @dataclass(frozen=True)
 class Member:
-    """一个成员的声明。`name` 等于 tmux 会话名。"""
+    """一个成员的声明。`name` 是总线短名;tmux 会话名由 `workspace.session` 映射。"""
 
     name: str
     command: str
@@ -94,11 +94,22 @@ def _optional_env(raw: Mapping[str, Any]) -> dict[str, str]:
 
 
 def validate_member_name(name: str) -> str:
-    """校验可同时作为总线收件人和 tmux 会话名的成员名。"""
+    """校验可同时作为总线收件人和 tmux 会话名主体的成员名。"""
     if name in RESERVED_NAMES:
         raise RosterError(f"成员名 {name!r} 是保留名,不能进名册")
-    if any(ch in name for ch in ":\n\t "):
-        raise RosterError(f"成员名 {name!r} 不能含空格或冒号(必须可做 tmux 会话名)")
+    if ":" in name:
+        raise RosterError(
+            f"成员名 {name!r} 含非法字符 ':'(tmux 会把它当成 session:window 分隔符,"
+            "可能静默命中已有会话)"
+        )
+    if "." in name:
+        raise RosterError(
+            f"成员名 {name!r} 含非法字符 '.'(tmux 会把它静默改写成 '_')"
+        )
+    if "@" in name:
+        raise RosterError(f"成员名 {name!r} 不能含 '@'(会话名格式是 成员@工作区)")
+    if any(ch in name for ch in "\n\t "):
+        raise RosterError(f"成员名 {name!r} 不能含空格或换行(必须可做 tmux 会话名)")
     return name
 
 

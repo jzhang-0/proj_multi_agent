@@ -16,6 +16,7 @@ from textual.widgets import Button, Static
 from bus.audit import AuditLog
 from roster.lifecycle import Lifecycle
 from tmuxctl import ProcessController, Tmux
+from workspace.session import session_for
 
 
 @dataclass(frozen=True)
@@ -134,7 +135,8 @@ class MemberController:
                 return self._record(
                     ControlFeedback("takeover", target, False, "目标会话不存在")
                 )
-            argv = self.tmux.command_argv("attach-session", "-t", f"={target}")
+            session = session_for(self.tmux, target)
+            argv = self.tmux.command_argv("attach-session", "-t", f"={session}")
             result = self.runner(argv, check=False)
             changed = result.returncode == 0
             detail = (

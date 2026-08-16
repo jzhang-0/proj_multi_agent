@@ -35,8 +35,10 @@
   - 前置:无(本卷根 Goal)。
   - 验证:`uv run ruff check . && uv run pytest tests/test_workspace.py tests/test_console_app.py tests/test_engineering_skeleton.py -q`
   - 证据:`src/workspace/`(`Workspace` 三元组、`Store` 把源数据放 `~/.amux/workspaces/<slug>/workspace.toml`、反查写 `paths.toml`、`AMUX_HOME` 可注入);slug 取目录名、撞了 `name-2`/`name-3`,含 `:`/`.` 明确报错;`resolve_from_cwd` 向上走取最近登记根,找不到提示 `amux workspace add` 且不回落 amux 仓库;`load_project_config` 缺文件即默认;`amux workspace add|list|rm|current` 经 `console.cli` 分发,`rm` 不碰项目文件。`tests/test_workspace.py` 覆盖以上枚举;2026-08-17 `29 passed`,ruff 干净。旧入口 `--headless`/`--version` 回归仍过。
-- [ ] **WS-002** — 会话命名空间:成员名 ↔ tmux 会话名的双向映射收口到单一模块,格式 `<成员>@<slug>`;`human`/`bus`/`im:*` 不参与拼接;现有 32 处直接把成员名当会话名用的调用点全部改走映射;非法字符(`:`、`.`)在 slug 生成与成员名校验两处都拦掉并给明确报错。
+- [x] **WS-002** — 会话命名空间:成员名 ↔ tmux 会话名的双向映射收口到单一模块,格式 `<成员>@<slug>`;`human`/`bus`/`im:*` 不参与拼接;现有 32 处直接把成员名当会话名用的调用点全部改走映射;非法字符(`:`、`.`)在 slug 生成与成员名校验两处都拦掉并给明确报错。
   - 前置:WS-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_session.py tests/test_roster_load.py tests/test_roster_lifecycle.py tests/test_console_health.py tests/test_console_control.py -q`
+  - 证据:`src/workspace/session.py`(`SessionNames` 双向映射、`NamespacedTmux` 把成员短名翻译成 `<成员>@<slug>`、pane id 不翻译、已带后缀不二次拼接;`human`/`bus`/`im:*` 抛 `SessionNameError`);生产路径 `bind_tmux()` 收口 hub/roster/console 三处 `Tmux()` 构造。slug 侧 WS-001 已拦 `:`/`.`,成员名 `validate_member_name` 同样拦并说明 tmux 静默行为。守卫测试禁止这三处再直接 `Tmux()`。2026-08-17 相关测试 90 passed,ruff 干净。未登记工作区时映射恒等,单工作区旧会话名先不改。
 - [ ] **WS-003** — 总线按工作区隔离:`BusPaths` 增加工作区维度(队列、processed、死信、asks、replies、`log.jsonl` 全部隔离);`--bus-root` / `BUS_ROOT` 保留为显式覆盖且优先级最高;跨工作区不串消息的回归测试;审计日志里记录工作区归属。
   - 前置:WS-001。
 - [ ] **WS-004** — 成员落到工作区目录:接上已存在的 `cwd` 接缝,`Lifecycle`/`HealthSupervisor` 构造时传入工作区项目根,成员进程 cwd = 该项目根(用 `lsof -a -p <pid> -d cwd` 实测取证,不看代码推断);名册分层——全局默认名册(四个成员的启动参数)+ 项目 `amux.toml` 覆盖(启用哪些、额外 env),合并规则写进文档。

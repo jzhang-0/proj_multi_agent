@@ -17,7 +17,7 @@ from roster.lifecycle import Lifecycle, render
 from roster.load import load_roster
 from roster.paths import repo_root
 from roster.schema import RosterError
-from tmuxctl import Tmux
+from workspace.session import bind_tmux
 
 ACTIONS = ("up", "down", "restart")
 
@@ -45,7 +45,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(USAGE, file=sys.stderr)
         return 1
 
-    lifecycle = Lifecycle(roster, Tmux())
+    lifecycle = Lifecycle(roster, bind_tmux())
     try:
         if args and args[0] in ACTIONS:
             action = getattr(lifecycle, args[0])

@@ -104,6 +104,12 @@ name = "a"
 command = "true"
 enabled = "yes"
 """,
+        """
+default_greeting_template = "x {name}"
+[[members]]
+name = "bad.bot"
+command = "true"
+""",
     ],
 )
 def test_invalid_roster_rejected(body: str) -> None:

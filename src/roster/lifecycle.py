@@ -18,6 +18,7 @@ from pathlib import Path
 from roster.schema import Member, Roster, RosterError
 from roster.start import start_member, stop_member
 from tmuxctl import Tmux
+from workspace.session import session_for
 
 
 class Action(StrEnum):
@@ -72,11 +73,12 @@ class Lifecycle:
         if self.tmux.has_session(member.name):
             return LifecycleResult(member.name, Action.UP, False, "已在运行,跳过")
         start_member(member, self.tmux, cwd=self.cwd)
+        session = session_for(self.tmux, member.name)
         return LifecycleResult(
             member.name,
             Action.UP,
             True,
-            f"已启动 (查看: tmux attach -t {member.name})",
+            f"已启动 (查看: tmux attach -t {session})",
         )
 
     def down_member(self, member: Member) -> LifecycleResult:

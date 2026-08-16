@@ -7,6 +7,7 @@ from typing import Protocol
 
 from roster.schema import Roster, RosterError, validate_member_name
 from tmuxctl import PaneInfo, TmuxCommandError, is_missing_target_error
+from workspace.session import member_for, session_for
 
 
 class SessionSource(Protocol):
@@ -62,10 +63,13 @@ class SessionAdopter:
             grouped.setdefault(pane.session_name, []).append(pane)
 
         candidates: dict[str, SessionCandidate] = {}
-        for name, session_panes in grouped.items():
+        for raw_name, session_panes in grouped.items():
+            name = member_for(self.tmux, raw_name)
             try:
                 validate_member_name(name)
             except RosterError:
+                continue
+            if session_for(self.tmux, name) != raw_name:
                 continue
             ordered = sorted(session_panes, key=lambda pane: (pane.window_index, pane.pane_index))
             candidates[name] = SessionCandidate(

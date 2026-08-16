@@ -8,6 +8,7 @@ from pathlib import Path
 from roster.paths import repo_root
 from roster.schema import Member, Roster
 from tmuxctl import Tmux
+from workspace.session import session_for
 
 
 def window_command(member: Member) -> str:
@@ -24,6 +25,7 @@ def member_env(member: Member) -> dict[str, str]:
 
 def start_member(member: Member, tmux: Tmux, *, cwd: Path | None = None) -> str:
     """拉起一名成员。已在跑则跳过。返回说明字符串。"""
+    session = session_for(tmux, member.name)
     if tmux.has_session(member.name):
         return f"[start] {member.name} 已在运行,跳过"
     tmux.new_session(
@@ -33,7 +35,7 @@ def start_member(member: Member, tmux: Tmux, *, cwd: Path | None = None) -> str:
         cwd=str(cwd or repo_root()),
         env=member_env(member),
     )
-    return f"[start] {member.name} 已启动 (查看: tmux attach -t {member.name})"
+    return f"[start] {member.name} 已启动 (查看: tmux attach -t {session})"
 
 
 def stop_member(member: Member, tmux: Tmux) -> str:

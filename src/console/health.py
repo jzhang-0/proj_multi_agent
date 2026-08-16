@@ -12,6 +12,7 @@ from typing import Protocol
 
 from bus import BusPaths
 from tmuxctl import PaneInfo, TmuxCommandError
+from workspace.session import session_for
 
 
 class FaultKind(StrEnum):
@@ -119,7 +120,7 @@ class ConsoleHealthMonitor:
 
         sessions = {pane.session_name for pane in panes}
         for name in self.names:
-            if name not in sessions:
+            if session_for(self.tmux, name) not in sessions:
                 fault = Fault(FaultKind.MEMBER_SESSION, name, "成员 tmux 会话消失")
                 faults[fault.key] = fault
         return faults

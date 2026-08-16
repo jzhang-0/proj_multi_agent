@@ -93,9 +93,9 @@ def _tmux_client():
     """懒加载的 tmux 客户端(tmuxctl 是拼 tmux 命令的唯一出口,架构 §1)。"""
     global _TMUX_CLIENT
     if _TMUX_CLIENT is None:
-        from tmuxctl import Tmux
+        from workspace.session import bind_tmux
 
-        _TMUX_CLIENT = Tmux()
+        _TMUX_CLIENT = bind_tmux()
     return _TMUX_CLIENT
 
 

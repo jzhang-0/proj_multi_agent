@@ -41,6 +41,16 @@ def require_from_cwd(
     return found
 
 
+def require_slug(slug: str, *, store: Store | None = None) -> Workspace:
+    """按 slug 取已登记工作区,没有就报错。"""
+    found = (store or Store.default()).get(slug)
+    if found is None:
+        raise WorkspaceNotFound(
+            f"没有叫 {slug!r} 的工作区。用 amux workspace list 看已登记的"
+        )
+    return found
+
+
 def project_root_for_members(
     cwd: str | Path | None = None,
     *,

@@ -34,6 +34,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("restart", "<名字>", "关掉再拉起"),
     CommandSpec("adopt", "<会话>", "把名册外的 tmux 会话收编为临时成员"),
     CommandSpec("mute", "<名字>", "临时拒收该成员的消息,再来一次取消"),
+    CommandSpec("workspace", "<名字>", "切换绑定到该工作区"),
     CommandSpec("help", "", "列出全部命令"),
 )
 
@@ -83,11 +84,13 @@ class CommandRunner:
         adopter: object | None = None,
         muted: set[str] | None = None,
         on_members_changed: Callable[[], None] | None = None,
+        switch_workspace: Callable[[str], list[str]] | None = None,
     ) -> None:
         self.lifecycle = lifecycle
         self.adopter = adopter
         self.muted: set[str] = muted if muted is not None else set()
         self.on_members_changed = on_members_changed
+        self.switch_workspace = switch_workspace
 
     def run(self, line: str) -> list[str]:
         name, args = parse_command(line)
@@ -138,6 +141,11 @@ class CommandRunner:
             return [f"[mute] {name} 取消静音,消息恢复投递"]
         self.muted.add(name)
         return [f"[mute] {name} 已静音,它发出的消息会被拒收(再 /mute {name} 取消)"]
+
+    def _do_workspace(self, name: str, *extra: str) -> list[str]:
+        if self.switch_workspace is None:
+            return ["/workspace 不可用:没接上工作区登记"]
+        return self.switch_workspace(name)
 
     def _do_help(self, *extra: str) -> list[str]:
         return ["可用命令:", *help_lines()]

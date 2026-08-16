@@ -66,5 +66,5 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
   3. `enabled = ["claude", "codex"]` 只启用列出的成员;名册里其余改为停用。名单出现未知名字则报错。
   4. `[env]` 覆盖到每个成员的 env,项目侧同名键赢。
 - **成员 cwd**:`Lifecycle` / `HealthSupervisor` 默认落到当前工作区项目根(未登记则仍是 amux 仓库根)。
-- **CLI**:`amux workspace add|list|rm|current`;`amux msg` 从 cwd 定位工作区总线。`rm` 只删 `~/.amux` 里的登记和状态目录,不碰用户项目文件。
+- **CLI**:`amux workspace add|list|rm|current`;`amux` 按 cwd 自动选工作区,`--workspace <slug>` 显式指定;`amux msg` 从 cwd 定位工作区总线。控制台标题栏显示当前 slug 与项目根,`/workspace <名字>` 切换绑定(成员栏与时间线跟着换)。`rm` 只删 `~/.amux` 里的登记和状态目录,不碰用户项目文件。
 - 同一成员允许同时在多个工作区各跑一份(产品定义已拍板)。并发上限不设硬封顶,只告警(WS-009)。

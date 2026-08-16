@@ -84,3 +84,18 @@ class BusPump:
 
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    def rebind(self, paths: BusPaths) -> None:
+        """换一条总线:停旧循环,挂到新根上再按原开关状态拉起。"""
+        running = self.is_running()
+        if running:
+            self.stop()
+        self.paths = paths
+        self.hub = Hub(
+            paths,
+            deliver=self.hub.deliver,
+            on_result=self.hub.on_result,
+            policy=self.hub.policy,
+        )
+        if running:
+            self.start()

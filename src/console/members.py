@@ -11,6 +11,7 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from bus import BusPaths
 from bus.queue import pending, read_message
@@ -217,10 +218,10 @@ class MemberStatusService:
             task.cancel()
 
 
-def member_names() -> tuple[str, ...]:
-    """名册里启用的成员名,顺序与 `roster.toml` 一致。"""
+def member_names(*, cwd: str | Path | None = None) -> tuple[str, ...]:
+    """名册里启用的成员名,顺序与 `roster.toml` 一致;可按工作区项目根覆盖。"""
     try:
-        roster = load_effective_roster()
+        roster = load_effective_roster(cwd=cwd)
     except (RosterError, OSError):
         return ()
     return tuple(member.name for member in roster.enabled_members())

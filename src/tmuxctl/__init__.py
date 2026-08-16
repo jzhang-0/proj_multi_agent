@@ -14,7 +14,14 @@ from tmuxctl.errors import (
     TmuxTimeoutError,
     TmuxVersionError,
 )
-from tmuxctl.inject import InjectOutcome, KeyInjector, inject_text, last_line_uncommitted
+from tmuxctl.inject import (
+    InjectOutcome,
+    KeyInjector,
+    SubmitOutcome,
+    cursor_line_holds,
+    inject_text,
+    last_line_uncommitted,
+)
 from tmuxctl.lifecycle import CrashEvent, CrashKind, CrashMonitor
 from tmuxctl.output import PaneOutputStream, decode_control_data, subscribe_pane
 from tmuxctl.process import (
@@ -51,6 +58,7 @@ __all__ = [
     "ProcessInfo",
     "ProcessTree",
     "SNAPSHOT_INTERVAL_SECONDS",
+    "SubmitOutcome",
     "Tmux",
     "TmuxCommandError",
     "TmuxError",
@@ -61,6 +69,7 @@ __all__ = [
     "inject_text",
     "is_missing_target_error",
     "build_process_tree",
+    "cursor_line_holds",
     "decode_control_data",
     "last_line_uncommitted",
     "probe",

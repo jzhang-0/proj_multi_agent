@@ -62,16 +62,23 @@ def run_smoke() -> SmokeReport:
         if not tmux.has_session(session):
             return SmokeReport(False, None, "假成员窗格没有拉起来", token)
 
-        injector = KeyInjector(tmux, max_wait_s=0.2, poll_s=0.05)
+        injector = KeyInjector(tmux)
+        lines: dict[str, str] = {}
 
         def deliver(message: Message) -> bool:
             if not tmux.has_session(message.to):
                 return False
-            injector.text(message.to, format_line(message), submit=True)
+            line = format_line(message)
+            lines[message.to] = line
+            injector.deliver(message.to, line)
             return True
 
+        def confirm(target: str) -> bool:
+            line = lines.pop(target, None)
+            return True if line is None else injector.ensure_submitted(target, line).submitted
+
         paths = BusPaths.resolve(root).ensure()
-        hub = Hub(paths, deliver=deliver)
+        hub = Hub(paths, deliver=deliver, confirm=confirm)
         worker = threading.Thread(target=hub.run, kwargs={"stop": stop.is_set}, daemon=True)
         worker.start()
         if not _wait_until(lambda: hub.mode is not None, HUB_READY_DEADLINE_S):

@@ -10,6 +10,7 @@
   - 前置:TMX-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_tmuxctl_inject.py tests/test_tmuxctl.py -q`
   - 证据:`src/tmuxctl/inject.py`(`KeyInjector.text/enter/escape/interrupt`);`tests/test_tmuxctl_inject.py` 覆盖末行启发式(含 capture-pane 空行补齐)、空闲直注、等待后注入、超时 Enter 隔离、控制键跳过检测;隔离 socket 下 bash 半行 `echo HELLO` 再注入 `echo WORLD` 不出现 `HELLOecho`。
+  - 补记(2026-08-16,GATE-003 实测暴露):末行启发式对**成员 CLI** 没有判别力——cursor / codex / agy 底部都常驻状态栏,末行永远"不像提示符",于是每次投递都白等一轮 capture-pane 再敲一记隔离 Enter,成员正忙时那一记是乱按。投递路径因此改走 `KeyInjector.deliver()`(文本 + Enter 同一次 tmux 调用)+ `ensure_submitted()`(事后确认,只在光标停在自己那行字上时才补 Enter)。`text()` 保留原语义给 shell 窗格用。
 - [x] **TMX-003** — 输出流订阅:基于 control mode(`tmux -C` 常驻子进程)订阅指定窗格的 `%output` 事件,提供 async 迭代器接口;control mode 不可用时回退 `pipe-pane` 到 FIFO。
   - 前置:TMX-001。
   - 验证:`uv run pytest tests/test_tmuxctl_output.py tests/test_tmuxctl_snapshot.py tests/test_tmuxctl_process.py tests/test_tmuxctl_lifecycle.py tests/test_tmuxctl.py -q && uv run ruff check .`

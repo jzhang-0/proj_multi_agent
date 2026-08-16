@@ -1,0 +1,23 @@
+
+  $ ./msg human cursor 343ms
+    [msg] cursor -> human: 已进入队列
+
+  已回复 human：cursor。
+
+  ./msg --reply a1b2c3d4 失败，总线里没有这条
+  ask，所以改用普通消息回了成员名。
+
+
+
+
+  → 汇总最终结论。不要改文件。 —— 如需回复,运行: ./msg im:验收人 "你的回复"
+    [群消息] 来自 claude: 看一眼 README 里手机网关那段 用一句话回复claude
+    它依赖第三方账号吗 —— 如需回复,运行: ./msg claude "你的回复"
+    [群消息] 来自 claude: 再补一句 gateway.toml 的 users 为空时网关会怎样
+    回复claude —— 如需回复,运行: ./msg claude "你的回复"
+
+
+
+  Cursor Grok 4.6 High  ctx 35.6k / 256.0k  14%  Cursor 13% · Other 8%  reset
+  30d2h
+  proj_multi_agent · main

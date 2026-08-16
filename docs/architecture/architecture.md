@@ -24,7 +24,7 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 | 语言 | Python ≥ 3.11 | 与现有总线同语言;四个协作 AI 都熟练 |
 | 运行环境 | `uv` 管理的项目 venv(`uv sync` / `uv run`) | 系统 python 是 3.8(miniconda),不满足要求;不污染系统环境 |
 | TUI | Textual | 满足"漂亮 + 低延迟"且纯 Python;富组件、深浅色、CSS 式主题 |
-| 消息存储 | 文件队列(`bus/queue/` 一消息一文件,原子改名)+ `bus/processed/` 归档 + `bus/dead/` 死信 + `bus/log.jsonl` 审计(80 字符预览,全文另存 `bus/bodies/`,10MB 轮转);根目录可注入(`BUS_ROOT`) | 语言无关、可 tail、崩溃可恢复;规模(单机、几个成员)远够 |
+| 消息存储 | 文件队列(`bus/queue/` 一消息一文件,原子改名)+ `bus/processed/` 归档 + `bus/dead/` 死信 + `bus/log.jsonl` 审计(80 字符预览,全文另存 `bus/bodies/`,10MB 轮转);根目录可注入(`BUS_ROOT` 或显式参数,优先级最高)。已登记工作区的默认根是 `~/.amux/workspaces/<slug>/bus/`,互不串台;未登记时回落仓库根 `bus/` | 语言无关、可 tail、崩溃可恢复;规模(单机、几个成员)远够 |
 | 文件事件 | `watchfiles`,不可用时回退 0.2s 轮询 | 达成投递延迟预算 |
 | tmux | ≥ 3.2,control mode(`tmux -C`)做输出流,普通命令做注入/控制 | 见 tmux Goal 卷 |
 | 测试 / Lint | pytest / ruff | 轻量,见 quality 卷 |
@@ -55,6 +55,7 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
   paths.toml                      # 绝对路径 → slug 反查
   workspaces/<slug>/
     workspace.toml                # 项目根路径(源数据)
+    bus/                          # 该工作区的队列、审计、ask/reply(WS-003)
 ```
 
 - **slug**:默认取项目目录名;两个项目同名时自动 `name-2`、`name-3`。显式 `--slug` 撞名则报错不覆盖。`:` 和 `.` 禁止出现在 slug 里(tmux 会静默吃掉,见工作区 Goal 卷「已知陷阱」)。

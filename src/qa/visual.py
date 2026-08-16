@@ -27,6 +27,7 @@ from pathlib import Path
 
 from bus.message import Message
 from bus.paths import BusPaths
+from bus.paths import repo_root as bus_repo_root
 from bus.queue import deposit
 
 #: 截图前等界面画完的上限(秒)
@@ -40,7 +41,7 @@ BASELINE_DIR = Path("tests") / "baseline"
 
 
 def repo_root() -> Path:
-    return BusPaths.resolve().root.parent
+    return bus_repo_root()
 
 
 def tmux(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

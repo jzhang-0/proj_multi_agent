@@ -13,9 +13,9 @@ import pytest
 
 from bus import DeliveryOutcome, Hub, Message, pending, read_message
 from bus.message import REQUIRED_FIELDS
-from bus.paths import BusPaths
+from bus.paths import BusPaths, repo_root
 
-REPO_ROOT = BusPaths.resolve().root.parent
+REPO_ROOT = repo_root()
 MSG = REPO_ROOT / "msg"
 HUB = REPO_ROOT / "hub.py"
 

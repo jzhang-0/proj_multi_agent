@@ -39,8 +39,10 @@
   - 前置:WS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_session.py tests/test_roster_load.py tests/test_roster_lifecycle.py tests/test_console_health.py tests/test_console_control.py -q`
   - 证据:`src/workspace/session.py`(`SessionNames` 双向映射、`NamespacedTmux` 把成员短名翻译成 `<成员>@<slug>`、pane id 不翻译、已带后缀不二次拼接;`human`/`bus`/`im:*` 抛 `SessionNameError`);生产路径 `bind_tmux()` 收口 hub/roster/console 三处 `Tmux()` 构造。slug 侧 WS-001 已拦 `:`/`.`,成员名 `validate_member_name` 同样拦并说明 tmux 静默行为。守卫测试禁止这三处再直接 `Tmux()`。2026-08-17 相关测试 90 passed,ruff 干净。未登记工作区时映射恒等,单工作区旧会话名先不改。
-- [ ] **WS-003** — 总线按工作区隔离:`BusPaths` 增加工作区维度(队列、processed、死信、asks、replies、`log.jsonl` 全部隔离);`--bus-root` / `BUS_ROOT` 保留为显式覆盖且优先级最高;跨工作区不串消息的回归测试;审计日志里记录工作区归属。
+- [x] **WS-003** — 总线按工作区隔离:`BusPaths` 增加工作区维度(队列、processed、死信、asks、replies、`log.jsonl` 全部隔离);`--bus-root` / `BUS_ROOT` 保留为显式覆盖且优先级最高;跨工作区不串消息的回归测试;审计日志里记录工作区归属。
   - 前置:WS-001。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_bus.py tests/test_bus_core.py tests/test_bus_audit.py tests/test_v0_contract.py -q`
+  - 证据:`BusPaths.resolve` 优先级显式 > `BUS_ROOT` > `~/.amux/workspaces/<slug>/bus` > 仓库根 `bus/`;`for_workspace` 把队列/死信/ask/审计全部放进该工作区状态目录;`AuditLog` 在有 slug 时写入 `workspace` 字段。`tests/test_workspace_bus.py` 覆盖两工作区不串队列、覆盖优先级、审计归属。2026-08-17 相关 60 passed,ruff 干净。
 - [ ] **WS-004** — 成员落到工作区目录:接上已存在的 `cwd` 接缝,`Lifecycle`/`HealthSupervisor` 构造时传入工作区项目根,成员进程 cwd = 该项目根(用 `lsof -a -p <pid> -d cwd` 实测取证,不看代码推断);名册分层——全局默认名册(四个成员的启动参数)+ 项目 `amux.toml` 覆盖(启用哪些、额外 env),合并规则写进文档。
   - 前置:WS-001、WS-002。
 - [ ] **WS-005** — `msg` 全局化:`amux msg <名字> <内容>` 从当前目录向上定位工作区并投进对应总线;`--ask` / `--reply` / 四字段 JSON / `human` 保留名语义一字不变(BUS-009 的契约测试必须继续通过);amux 仓库根的 `./msg` 保留为薄入口。**与 WS-004 同批合入**,否则成员起在别的目录却发不出消息。

@@ -122,7 +122,7 @@ class AuditLog:
         if reason:
             entry["reason"] = reason
 
-        return self._append(entry)
+        return self._stamp(entry)
 
     def record_malformed(self, path: Path, reason: str) -> dict[str, Any]:
         """畸形消息连 `Message` 都构不出来,只能按文件名记一条。"""
@@ -135,7 +135,7 @@ class AuditLog:
             "preview": preview_of(path.name),
             "reason": reason,
         }
-        return self._append(entry)
+        return self._stamp(entry)
 
     def record_control(
         self,
@@ -158,6 +158,11 @@ class AuditLog:
         }
         if detail:
             entry["reason"] = sanitize(detail)
+        return self._stamp(entry)
+
+    def _stamp(self, entry: dict[str, Any]) -> dict[str, Any]:
+        if self.paths.workspace is not None:
+            entry["workspace"] = self.paths.workspace
         return self._append(entry)
 
     def entries(self, limit: int | None = None) -> list[dict[str, Any]]:

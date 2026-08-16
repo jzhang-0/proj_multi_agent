@@ -154,6 +154,58 @@ def test_deliver_exception_does_not_break_loop(tmp_path):
     assert pending(paths) == []
 
 
+def test_submission_is_confirmed_once_per_recipient(tmp_path):
+    """一轮投递之后按收件人确认提交,不是每条消息都去抓一次画面。"""
+    paths = make_paths(tmp_path)
+    for text in ("第一条", "第二条"):
+        deposit(Message.create("codex", text, sender="claude"), paths)
+    deposit(Message.create("cursor", "另一个收件人", sender="claude"), paths)
+    deposit(Message.create("human", "只上屏", sender="claude"), paths)
+
+    confirmed = []
+
+    def confirm(target):
+        confirmed.append(target)
+        return True
+
+    hub = Hub(paths, deliver=lambda message: True, confirm=confirm)
+    hub.drain_once()
+    hub.wait_for_confirms()
+
+    assert confirmed == ["codex", "cursor"]
+
+
+def test_unconfirmed_submission_is_audited(tmp_path):
+    """补完 Enter 还卡在输入框:投递结果照常返回,但审计里要留下这一笔。"""
+    paths = make_paths(tmp_path)
+    deposit(Message.create("codex", "卡在输入框的一条", sender="claude"), paths)
+
+    hub = Hub(paths, deliver=lambda message: True, confirm=lambda target: False)
+    results = hub.drain_once()
+    hub.wait_for_confirms()
+
+    assert [r.outcome for r in results] == [DeliveryOutcome.DELIVERED]
+    events = [
+        json.loads(line) for line in paths.log.read_text(encoding="utf-8").strip().splitlines()
+    ]
+    stuck = [e for e in events if e["event"] == "deliver-failed"]
+    assert len(stuck) == 1
+    assert "卡在输入框" in stuck[0]["reason"]
+
+
+def test_confirm_failure_does_not_break_loop(tmp_path):
+    paths = make_paths(tmp_path)
+    deposit(Message.create("codex", "确认会抛异常", sender="claude"), paths)
+
+    def boom(target):
+        raise RuntimeError("tmux 挂了")
+
+    hub = Hub(paths, deliver=lambda message: True, confirm=boom)
+    results = hub.drain_once()
+    hub.wait_for_confirms()
+    assert [r.outcome for r in results] == [DeliveryOutcome.DELIVERED]
+
+
 def test_human_message_is_shown_not_delivered(tmp_path):
     paths = make_paths(tmp_path)
     deposit(Message.create("human", "汇报一下", sender="claude"), paths)

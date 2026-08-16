@@ -42,6 +42,8 @@ uv run ruff check .
 
 四个真实成员的协作实测证据可用 `uv run python -m qa.collab verify` 离线复验；它检查派活、三路回报、最终汇报的入队/投递审计，以及真实 F5 控制事件和 160×40 总控台截取物。复现真实流程见 [协作实测文档](docs/quality/collaboration-check.md)。
 
+投递一条消息 = 一次 tmux 调用:文本和 Enter 用 `send-keys ... ; send-keys Enter` 塞进同一条命令(`Tmux.send_line`),中间不留让成员 CLI 重绘的缝隙,注入前也不再抓画面。投递之后由后台线程确认「那行字真的提交出去了」(`KeyInjector.ensure_submitted`):光标还停在自己刚注入的那行字上就补 Enter,补不动就在 `bus/log.jsonl` 记一条 `deliver-failed`。确认放后台是因为它要等成员 CLI 处理 0.1 秒,挂在投递循环上会把下一条消息的延迟一起抬高(实测 P95 194ms → 345ms)。
+
 消息总线模块是 `src/bus/`:消息 schema v1(`to/from/text/ts` 必备,`id/kind/replyTo` 可选,未知字段原样保留)、文件队列、死信目录、投递循环。bus 运行时根目录默认是仓库根 `bus/`,可用环境变量 `BUS_ROOT` 或 `BusPaths.resolve(root)` 重定向(测试一律指向临时目录)。
 
 tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-session` / `new-session` / `kill-session` / `send-keys` / `capture-pane` / `list-panes` 收口为类型化 API;`PaneOutputStream` 用 control mode 订阅输出并在不可用时回退 pipe-pane FIFO;`ActivityTracker` 只按输出字节活动推断 working/idle/stuck/dead;`PaneSnapshotter` 提供带色/去色与历史快照,并把同窗格高频捕获合并到最多 10Hz;`ProcessController` 提供进程树与打断/终止/强杀分级控制;`CrashMonitor` 用 pane-died hook + 轮询检测崩溃并原地 respawn。其他模块不要直接拼 tmux 命令。

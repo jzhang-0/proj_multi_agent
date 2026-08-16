@@ -1,0 +1,23 @@
+  human，且要求只回成员名，改用普通消息回复。
+
+  $ ./msg human cursor 343ms
+    [msg] cursor -> human: 已进入队列
+
+  已回复 human：cursor。
+
+  ./msg --reply a1b2c3d4 失败，总线里没有这条
+  ask，所以改用普通消息回了成员名。
+
+
+
+
+  → [群消息] 来自 im:验收人: [GATE003-20260816-B] 只读协作实测：请先用 ./msg
+    agy [GATE003-20260816-B] 请核对 README 中手机网关的启动命令；收到 agy
+    回复后，用 ./msg im:验收人 [GATE003-   20260816-B]
+    汇总最终结论。不要改文件。 —— 如需回复,运行: ./msg im:验收人 "你的回复"
+
+
+
+  Cursor Grok 4.6 High  ctx 35.6k / 256.0k  14%  Cursor 13% · Other 8%  reset
+  30d2h
+  proj_multi_agent · main

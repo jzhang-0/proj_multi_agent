@@ -140,6 +140,35 @@ class Tmux:
         args.extend(keys)
         self._run(*args)
 
+    def send_line(self, target: str, text: str) -> None:
+        """一次 tmux 调用完成「字面文本 + Enter」。
+
+        投递路径上每多一次 tmux 进程启动就多几十毫秒(机器上并发跑着几个 AI
+        CLI 时更贵),所以把两条 send-keys 用 `;` 串成一次调用。
+        """
+        self._run(
+            "send-keys", "-t", target, "-l", "--", text, ";", "send-keys", "-t", target, "Enter"
+        )
+
+    def capture_with_cursor(self, target: str) -> tuple[str, int]:
+        """一次调用同时拿到画面和光标所在行(0 基,相对可见区顶端)。
+
+        光标行是判断「输入框里还压着没提交的字」的关键:提交成功后输入框会
+        清空,光标就不在那行字上了。
+        """
+        out = self._run(
+            "capture-pane", "-p", "-t", target, ";", "display-message", "-p", "-t", target,
+            "#{cursor_y}",
+        ).stdout
+        lines = out.splitlines()
+        if not lines:
+            return "", 0
+        try:
+            cursor_y = int(lines[-1].strip())
+        except ValueError:
+            return "\n".join(lines), 0
+        return "\n".join(lines[:-1]), cursor_y
+
     def capture_pane(
         self,
         target: str,

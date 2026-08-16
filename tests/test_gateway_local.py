@@ -64,6 +64,12 @@ def test_page_is_served_without_external_dependencies(adapter):
         assert marker not in body.replace("http://127.0.0.1", ""), marker
 
 
+def test_setup_inputs_do_not_grow_to_fill_the_phone_screen(adapter):
+    _, body = get(adapter, "/")
+    assert "\n  input { flex:1;" not in body
+    assert "form input { flex:1; }" in body
+
+
 def test_token_is_required_for_both_directions(adapter):
     code, payload = post(adapter, {"user": "小明", "text": "@claude 干活", "token": "错的"})
     assert code == 401 and "口令" in payload["error"]

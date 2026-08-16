@@ -33,7 +33,8 @@ PAGE_HTML = """<!doctype html>
          border-top:1px solid var(--line);
          padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
   input, button { font:inherit; border-radius:10px; border:1px solid var(--line); }
-  input { flex:1; padding:10px 12px; background:#0d0d0d; color:var(--text); }
+  input { padding:10px 12px; background:#0d0d0d; color:var(--text); }
+  form input { flex:1; }
   button { padding:10px 16px; background:#005f87; color:#fff; border:none; }
   #setup { position:fixed; inset:0; background:var(--bg); display:none;
            flex-direction:column; justify-content:center; gap:12px; padding:24px; }

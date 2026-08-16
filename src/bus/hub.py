@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import contextlib
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -81,17 +82,11 @@ _OUTCOME_EVENTS = {
 }
 
 
-#: 注入前等"半行未提交输入"最多等多久(秒)。TMX-002 的默认值是给人看的
-#: 交互场景准备的;投递路径上有 P95 < 200ms 的预算,等太久直接超支,所以
-#: 压到 25ms(最多多抓一次画面):等不到就按 TMX-002 的规则先敲 Enter
-#: 换行隔离再注入。实测每多等 25ms,单条投递延迟就整体抬高同样多。
-DELIVER_MAX_WAIT_S = 0.025
-
-#: 忙碌检测的轮询间隔(秒)。每轮都是一次 capture-pane,别调太密
-DELIVER_POLL_S = 0.025
-
 #: tmux 客户端只建一次:每次构造都会去探一遍版本,投递路径上不该重复付这个钱
 _TMUX_CLIENT: object | None = None
+
+#: 已注入、还没确认提交的那行字(收件人 → 文本)。同一收件人只留最后一条
+_PENDING_SUBMITS: dict[str, str] = {}
 
 
 def _tmux_client():
@@ -112,21 +107,42 @@ def format_line(message: Message) -> str:
 def tmux_deliver(message: Message) -> bool:
     """把消息"打字"进同名 tmux 会话并回车。
 
-    注入交给 TMX-002 的 `KeyInjector`:它自己做"末行有没有没提交的半行字"
-    的判断,该等就等、等不到就先换行隔离。这里不再自己拼 tmux 命令,也不再
-    额外抓两次画面——投递延迟的预算(P95 < 200ms)经不起多余的进程启动。
+    注入交给 TMX-002 的 `KeyInjector.deliver()`:一次 tmux 调用发完文本和
+    Enter。投递路径上每多一次 tmux 进程启动就多几十毫秒(P95 < 200ms 的预算
+    经不起),所以注入前不再抓画面,提交是否真的生效改由 `confirm_submitted()`
+    在这一轮投递之后确认。
     """
     from tmuxctl import KeyInjector, TmuxCommandError, TmuxError
 
+    line = format_line(message)
     try:
         tmux = _tmux_client()
-        injector = KeyInjector(tmux, max_wait_s=DELIVER_MAX_WAIT_S, poll_s=DELIVER_POLL_S)
-        injector.text(message.to, format_line(message))
+        KeyInjector(tmux).deliver(message.to, line)
     except TmuxCommandError:
         return False  # 会话不在(或窗格没了):算投递失败,不是崩溃
     except TmuxError:
         return False
+    _PENDING_SUBMITS[message.to] = line
     return True
+
+
+def confirm_submitted(target: str) -> bool:
+    """确认上一条注入 `target` 的消息真的提交出去了,没有就补 Enter。
+
+    GATE-003 实测暴露的缺陷:成员 CLI 正在收尾上一轮时,文本进了输入框但那
+    一下 Enter 没生效,消息就卡在输入框里等人手动回车。这一步不在投递延迟的
+    预算里——它跑在一轮投递之后,不占"入队 → 注入终端"的时间。
+    """
+    line = _PENDING_SUBMITS.pop(target, None)
+    if line is None:
+        return True
+    from tmuxctl import KeyInjector, TmuxError
+
+    try:
+        tmux = _tmux_client()
+        return KeyInjector(tmux).ensure_submitted(target, line).submitted
+    except TmuxError:
+        return False
 
 
 class Hub:
@@ -140,13 +156,17 @@ class Hub:
         poll_interval: float = FALLBACK_POLL_SECONDS,
         policy: OutboundPolicy | None = None,
         audit: AuditLog | None = None,
+        confirm: Callable[[str], bool] | None = confirm_submitted,
     ) -> None:
         self.paths = paths.ensure()
         self.audit = audit if audit is not None else AuditLog(self.paths)
         self.deliver = deliver
+        self.confirm = confirm
         self.on_result = on_result
         self.poll_interval = poll_interval
         self.policy = policy if policy is not None else OutboundPolicy()
+        #: 最近一轮的提交确认线程(见 `_confirm_submits`)
+        self._confirm_thread: threading.Thread | None = None
         #: 实际跑起来用的是 watch 还是 poll,起循环后才有值
         self.mode: str | None = None
 
@@ -203,6 +223,51 @@ class Hub:
         with contextlib.suppress(OSError):
             self.audit.record(event, result.message, result.detail)
 
+    def _confirm_worker(self, pairs: list[tuple[str, Message]]) -> None:
+        """逐个收件人确认「注入的那行字真的提交出去了」,确认不了记一笔审计。"""
+        assert self.confirm is not None
+        for target, message in pairs:
+            try:
+                ok = self.confirm(target)
+            except Exception:  # 确认出岔子不能中断循环
+                ok = False
+            if ok:
+                continue
+            with contextlib.suppress(OSError):
+                self.audit.record(AuditEvent.DELIVER_FAILED, message, "注入后补 Enter 仍卡在输入框")
+
+    def _confirm_submits(self, results: list[DeliveryResult]) -> None:
+        """把这一轮的提交确认交给后台线程。
+
+        确认要给成员 CLI 一点处理时间(~0.1 秒)再抓画面,挂在投递循环上会把
+        下一条消息的投递延迟一起抬高(实测 P95 194ms → 345ms)。指纹只认自己
+        注入的那行字,所以后台线程即使和新的注入撞上,也不会替别人乱敲 Enter。
+        确认结果不改这一轮已经报给调用方的投递结果。
+        """
+        if self.confirm is None:
+            return
+        latest: dict[str, Message] = {}
+        for result in results:
+            if result.outcome is not DeliveryOutcome.DELIVERED or result.message is None:
+                continue
+            latest[result.message.to] = result.message
+        if not latest:
+            return
+        thread = threading.Thread(
+            target=self._confirm_worker,
+            args=(list(latest.items()),),
+            name="bus-confirm",
+            daemon=True,
+        )
+        self._confirm_thread = thread
+        thread.start()
+
+    def wait_for_confirms(self, timeout: float = 5.0) -> None:
+        """等后台确认线程收工(测试和一次性收口用;循环本身不等它)。"""
+        thread = self._confirm_thread
+        if thread is not None:
+            thread.join(timeout)
+
     def drain_once(self) -> list[DeliveryResult]:
         """处理当前队列里的全部消息,返回逐条结果。"""
         results = []
@@ -213,6 +278,7 @@ class Hub:
             self._audit(result)
             if self.on_result is not None:
                 self.on_result(result)
+        self._confirm_submits(results)
         return results
 
     def run(self, stop: Callable[[], bool] | None = None, watch: bool = True) -> None:

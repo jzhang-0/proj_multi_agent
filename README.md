@@ -27,12 +27,15 @@ tmux attach -t codex   # 围观某个成员(Ctrl-b d 退出)
 
 ```bash
 uv sync
-uv run console
+./install-amux.sh      # 把 amux 装成全局命令(只装这一个;uninstall 卸载)
+amux                   # 任意目录裸跑,进总控台
 uv run pytest -q
 uv run ruff check .
 ```
 
-`uv run console` 起全屏 TUI(内嵌总线投递循环,`q` / Ctrl-C 干净退出,不影响任何成员会话);`uv run console --headless` 等价于纯 hub 模式(和 `python3 hub.py` 同一份实现)。界面是「会话列表 + 一块主画面」:左边窄列表第一项是群聊(带未读数),后面每个成员一项;选中谁,右边主画面就显示谁——群聊显示时间线,成员显示它的终端画面镜像(Esc/F2 回群聊)。打开成员会话时会把它的 tmux 窗口调成主画面大小,让画面铺满(`--no-fit` 关掉;F8 接管前自动把尺寸还给 tmux)。成员画面用 PgUp/PgDn 或滚轮直接往上翻它自己的回滚区,不必先 Tab 过去。输入框在底部通栏,**在成员会话里不带 `@` 的一行直接键入该成员的终端**(等于在它自己窗口里敲,动作进审计日志),`@名字` 开头仍然走群聊总线。系统 Python 版本不满足要求时也不要绕过 `uv run`。
+`amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都进同一个界面——bus 运行时目录和 `roster.toml` 是按源码位置向上找仓库根定位的,不看当前目录。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
+
+`amux` 起全屏 TUI(内嵌总线投递循环,`q` / Ctrl-C 干净退出,不影响任何成员会话);`amux --headless` 等价于纯 hub 模式(和 `python3 hub.py` 同一份实现)。界面是「会话列表 + 一块主画面」:左边窄列表第一项是群聊(带未读数),后面每个成员一项;选中谁,右边主画面就显示谁——群聊显示时间线,成员显示它的终端画面镜像(Esc/F2 回群聊)。打开成员会话时会把它的 tmux 窗口调成主画面大小,让画面铺满(`--no-fit` 关掉;F8 接管前自动把尺寸还给 tmux)。成员画面用 PgUp/PgDn 或滚轮直接往上翻它自己的回滚区,不必先 Tab 过去。输入框在底部通栏,**在成员会话里不带 `@` 的一行直接键入该成员的终端**(等于在它自己窗口里敲,动作进审计日志),`@名字` 开头仍然走群聊总线。系统 Python 版本不满足要求时也不要绕过 `uv run`。
 
 硬指标实测:`uv run python -m qa.perf`(产品定义四条延迟预算一次跑完:入队→注入终端、消息→时间线上屏、详情画面刷新、键入回显,打印分布并按预算判定,退出码 0/1)。
 
@@ -96,6 +99,7 @@ uv run python -m gateway reject <编号>    # 不同意,直接丢弃
 | `pyproject.toml` / `uv.lock` | Python、依赖、pytest、ruff 与命令入口配置 |
 | `src/` / `tests/` | 应用源码与自动化测试(`src/bus`、`src/console`、`src/tmuxctl`、`src/qa`、`src/roster`) |
 | `hub.py` `msg` `start.sh` | v0 总线入口(`start.sh` 现读 `roster.toml`) |
+| `install-amux.sh` | 把 `amux` 装成全局命令的薄 shim(`uninstall` 卸载) |
 | `roster.toml` | 成员名册(名字、启动命令、启用与否、自动恢复配置) |
 | `bus/` | 运行时数据(gitignore) |
 | `reference/pi-extensions/` | 参考实现:pi 的 talk 扩展(只读,防环策略的出处) |

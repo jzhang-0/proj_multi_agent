@@ -14,6 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
+# amux 是对外正名;console 保留为别名,历史 Goal 证据里的 `uv run console` 不能失效。
+amux = "console.cli:main"
 console = "console.cli:main"
 roster = "roster.__main__:main"
 

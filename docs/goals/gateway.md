@@ -14,7 +14,9 @@
 - [ ] **GATE-003** — 端到端:手机群里 @ 成员派活、成员间协作、结果回到群里,全程不碰电脑实测一遍。
   - 处理登记:codex,2026-08-16 14:07 +0800,`gate-003-codex`。
   - 前置:GATE-002、ROS-003。
-- [ ] **GATE-004** — 网关安全:只服务白名单群与白名单用户;来自 IM 的消息标记来源(`from` 带 `im:` 前缀或等价机制)并同样过清洗与限频;危险操作指令即使来自 IM 的 human 也要求本机二次确认(远程指令弱于本机指令)。
-  - 处理登记:claude,2026-08-16 08:10 +0800,`gate-004-claude`。
+- [x] **GATE-004** — 网关安全:只服务白名单群与白名单用户;来自 IM 的消息标记来源(`from` 带 `im:` 前缀或等价机制)并同样过清洗与限频;危险操作指令即使来自 IM 的 human 也要求本机二次确认(远程指令弱于本机指令)。
   - 前置:GATE-002。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_gateway_security.py -q`;本机侧:`uv run python -m gateway pending|approve <编号>|reject <编号>`
+  - 证据:`src/gateway/security.py` 三件事——① `SecurityPolicy` 白名单房间与用户,**空 users 一律拒绝**并明说去哪儿加(口令只证明"知道口令",不证明"该被服务");② 来源标记沿用 `im:` 前缀,因此它不是 `human`,清洗(BUS-005)与限频(BUS-003)照常生效;③ `danger_in` 识别 push / 删文件 / 装软件 / 出仓库 / sudo 私钥五类危险指令,命中就不入队,改由 `PendingStore` **落盘**挂起(确认命令是另一个进程,状态必须在盘上),同时给本机 `human` 发一条带编号的提醒,本机 `approve` 后网关下一轮才真正转给成员、并回群里说一声。`src/gateway/base.py` 按 白名单 → 路由 → 危险降权 → 入队 的顺序串起来;`src/gateway/config.py` 加 `users`/`rooms`(支持 `GATEWAY_USERS`);`__main__` 加 `pending/approve/reject` 子命令。`tests/test_gateway_security.py` 17 passed(白名单用户/房间/空名单、来源标记 + 第 9 条被限频拒收、转义序列被清洗、五类危险指令识别与正常指令不误伤、挂起不入队、放行后身份不变、拒绝即丢弃、**自称 human 也不能绕过**、挂起可审计、跨进程持久化),全量回归 345 passed。
+  - 顺带:默认拒绝是新的默认值,GATE-001 的路由测试原本依赖"没配白名单也放行",已改成显式放行测试用户;架构 §4 与 README 已写明"远程指令弱于本机指令"的落地方式。
   - 备注:本机侧的地基已经就绪:清洗(BUS-005)、限频与熔断(BUS-003/004)对任何发件人一视同仁,危险操作的「只认 human 直接指令」写在 [AGENTS.md 群聊协议](../../AGENTS.md#群聊协议)里;网关落地时在其之上再加白名单与远程指令降权。

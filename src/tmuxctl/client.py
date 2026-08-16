@@ -187,6 +187,22 @@ class Tmux:
             args.extend(["-E", str(end)])
         return self._run(*args).stdout
 
+    def fit_window(self, target: str, width: int, height: int) -> None:
+        """把窗口尺寸钉成指定大小。
+
+        必须先把 `window-size` 改成 `manual`:它默认是 `latest`,会拿最近一个
+        客户端的尺寸盖掉 `resize-window`(qa.visual 的 `--size` 就这么失效过)。
+        两条命令用 `;` 串成一次调用,省一次 tmux 进程启动。
+        """
+        self._run(
+            "set-option", "-t", target, "window-size", "manual",
+            ";", "resize-window", "-t", target, "-x", str(width), "-y", str(height),
+        )
+
+    def release_window_size(self, target: str) -> None:
+        """把窗口尺寸交还给 tmux 自己(attach 之前要还,否则贴不合客户端)。"""
+        self._run("set-option", "-t", target, "-u", "window-size", check=False)
+
     def display_message(self, target: str, format_string: str) -> str:
         """读取一个 tmux format,不向用户界面显示。"""
         return self._run("display-message", "-p", "-t", target, format_string).stdout

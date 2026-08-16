@@ -213,7 +213,8 @@ def test_adopt_rebuilds_the_member_column(paths):
             assert app.members == (*MEMBERS, "alice")
             listing = app.query_one("#members", ListView)
             assert [str(item.id) for item in listing.children] == [
-                f"member-{name}" for name in app.members
+                "conv-timeline",
+                *(f"member-{name}" for name in app.members),
             ]
             assert compose.members == app.members  # 补全里也能 @ 到它
 

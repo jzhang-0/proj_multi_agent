@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -27,6 +28,10 @@ class ControlFeedback:
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
+#: 直连输入时文本与 Enter 之间的间隔(秒)。太短会被 CLI 当成粘贴,
+#: 那一下 Enter 就只在输入框里换行(cursor-agent 实测)。
+SUBMIT_GAP_S = 0.15
+
 
 class MemberController:
     """复用 TMX-005 与 ROS-003，并为每个动作落审计。"""
@@ -39,12 +44,14 @@ class MemberController:
         *,
         process: ProcessController | None = None,
         runner: Runner = subprocess.run,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self.tmux = tmux
         self.lifecycle = lifecycle
         self.audit = audit
         self.process = process or ProcessController(tmux)
         self.runner = runner
+        self._sleep = sleeper
 
     def _record(self, feedback: ControlFeedback) -> ControlFeedback:
         self.audit.record_control(
@@ -66,6 +73,31 @@ class MemberController:
     def record_failure(self, action: str, target: str, exc: Exception) -> None:
         """记录控制动作在进入具体控制器前就失败的情况。"""
         self._failed(action, target, exc)
+
+    def type_text(self, target: str, text: str) -> ControlFeedback:
+        """把一行字直接键入成员终端并回车(总控台里的"单独说话")。
+
+        不套 `[群消息] 来自 human:` 前缀——这是人在它自己的窗口里敲的一行,
+        不是群聊流量。审计里记成 `type` 动作。
+
+        **Enter 必须和文本分开发,中间留一口气**:文本和 Enter 挤在同一次 tmux
+        调用里时,cursor-agent 这类 CLI 会把它当成一次粘贴,里面的换行只在输入
+        框里换行、不提交(2026-08-16 实测:它的输入框里压着一条 14:58 的群消息
+        和后来键入的 `11111`,补一个单独的 Enter 两条一起就提交了)。
+        """
+        from tmuxctl import KeyInjector
+
+        try:
+            self.tmux.send_keys(target, text, literal=True)
+            self._sleep(SUBMIT_GAP_S)
+            self.tmux.send_keys(target, "Enter")
+            # 再确认一次:光标还压在这行字上就补 Enter(claude/codex 这类判得出来)
+            outcome = KeyInjector(self.tmux).ensure_submitted(target, text)
+            detail = text if outcome.submitted else f"{text}(可能没提交,已补 Enter)"
+            return self._record(ControlFeedback("type", target, outcome.submitted, detail))
+        except Exception as exc:
+            self._failed("type", target, exc)
+            raise
 
     def interrupt(self, target: str) -> ControlFeedback:
         try:

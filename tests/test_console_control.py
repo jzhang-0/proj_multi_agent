@@ -103,6 +103,42 @@ def test_controller_delegates_all_actions_and_audits_them(tmp_path: Path) -> Non
     assert all(entry["changed"] is True for entry in entries)
 
 
+def test_typed_text_and_its_enter_are_two_calls_with_a_gap(tmp_path: Path) -> None:
+    """文本和 Enter 挤在一次 tmux 调用里,cursor-agent 会当成粘贴——只换行不提交。
+
+    2026-08-16 实测:它的输入框里压着一条 14:58 的群消息和后来键入的 `11111`,
+    补一个单独的 Enter 两条一起提交了。所以这里钉住"分两次发 + 中间等一下"。
+    """
+    paths = BusPaths.resolve(tmp_path / "bus").ensure()
+
+    class RecordingTmux(FakeTmux):
+        def __init__(self):
+            super().__init__()
+            self.calls: list[tuple] = []
+
+        def send_keys(self, target, *keys, literal=False):
+            self.calls.append(("send_keys", target, keys, literal))
+
+        def capture_with_cursor(self, target):
+            self.calls.append(("capture", target))
+            return "提示符 ❯", 0  # 光标不在那行字上 → 判定已提交
+
+    tmux = RecordingTmux()
+    slept: list[float] = []
+    controller = MemberController(
+        tmux, FakeLifecycle(), AuditLog(paths), sleeper=slept.append
+    )
+
+    feedback = controller.type_text("cursor", "继续做 GATE-004")
+
+    assert feedback.changed
+    assert tmux.calls[0] == ("send_keys", "cursor", ("继续做 GATE-004",), True)
+    assert tmux.calls[1] == ("send_keys", "cursor", ("Enter",), False)
+    assert slept and slept[0] >= 0.1  # 两次之间真的等了一下
+    entry = AuditLog(paths).entries()[-1]
+    assert entry["action"] == "type" and entry["to"] == "cursor"
+
+
 def test_missing_takeover_target_and_controller_error_are_audited(tmp_path: Path) -> None:
     paths = BusPaths.resolve(tmp_path / "bus").ensure()
     controller, _, _, runs = make_controller(paths, exists=False)
@@ -179,7 +215,7 @@ def test_keyboard_actions_require_selection_and_confirm_dangerous_operations(tmp
             assert "先在成员栏选择" in timeline_text(app)
             assert controller.calls == []
 
-            await pilot.press("down")
+            await pilot.press("down")  # 会话列表:群聊下面第一个成员
             await pilot.press("f5")
             assert controller.calls == [("interrupt", "codex")]
 

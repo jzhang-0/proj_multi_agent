@@ -41,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="仅 --headless:清一次队列就退出",
     )
+    parser.add_argument(
+        "--no-fit",
+        action="store_true",
+        help="不要把成员 tmux 窗口调成主画面大小(默认会调,好让画面铺满)",
+    )
     return parser
 
 
@@ -66,5 +71,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     from console.theme import use as use_theme
 
     use_theme(args.theme)
-    ConsoleApp(BusPaths.resolve(args.bus_root)).run()
+    ConsoleApp(BusPaths.resolve(args.bus_root), fit_windows=not args.no_fit).run()
     return 0

@@ -40,25 +40,30 @@ def test_focus_cycles_forward_and_backward_through_all_work_areas(tmp_path: Path
 
     async def scenario() -> None:
         async with app.run_test(size=(120, 30)) as pilot:
+            # 一起来焦点在会话列表,主画面是群聊时间线
             assert isinstance(app.focused, ListView)
-            await pilot.press("down")  # 选成员后详情才参与循环
-            assert app.detail_visible
+            assert not app.detail_visible
 
             forward = []
-            for _ in range(4):
+            for _ in range(3):
                 await pilot.press("tab")
                 forward.append(type(app.focused))
-            assert forward == [Timeline, ComposeInput, Mirror, ListView]
+            assert forward == [Timeline, ComposeInput, ListView]
 
             backward = []
-            for _ in range(4):
+            for _ in range(3):
                 await pilot.press("shift+tab")
                 backward.append(type(app.focused))
-            assert backward == [Mirror, ComposeInput, Timeline, ListView]
+            assert backward == [ComposeInput, Timeline, ListView]
+
+            # 选中成员后主画面换成它的终端画面,循环里的主画面也跟着换
+            await pilot.press("down")
+            await pilot.pause()
+            assert app.detail_visible
+            await pilot.press("tab")
+            assert isinstance(app.focused, Mirror)
 
             # 详情的键盘路径不只是“能聚焦”，实际可翻回滚区。
-            await pilot.press("shift+tab")
-            assert isinstance(app.focused, Mirror)
             await pilot.press("pageup")
             assert app.query_one("#detail", Mirror).history_offset == HISTORY_STEP
 

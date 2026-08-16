@@ -139,6 +139,62 @@ def test_message_without_at_goes_to_the_last_target(paths):
     run_async(scenario)
 
 
+def test_inside_a_member_conversation_plain_text_is_typed_into_its_terminal(paths):
+    """选中成员时不带 @ 的一行直接键入它的终端;`@名字` 仍然走群聊总线。"""
+
+    class RecordingController:
+        def __init__(self):
+            self.typed = []
+
+        def type_text(self, target, text):
+            from console.control import ControlFeedback
+
+            self.typed.append((target, text))
+            return ControlFeedback("type", target, True, text)
+
+    sent = []
+    controller = RecordingController()
+    app = ConsoleApp(
+        paths,
+        deliver=lambda message: sent.append(message) or True,
+        members=MEMBERS,
+        controller=controller,
+    )
+
+    async def scenario():
+        async with app.run_test(size=(120, 30)) as pilot:
+            compose = app.query_one("#compose", ComposeInput)
+            app.select_member("codex")
+            await pilot.pause()
+            assert "直连 codex 的终端" in compose.placeholder
+
+            compose.focus()
+            compose.value = "继续做 GATE-004"
+            await pilot.press("enter")
+            # 注入在工作线程里跑(文本和 Enter 之间要留一口气)
+            assert await wait_for(pilot, lambda: controller.typed)
+            assert controller.typed == [("codex", "继续做 GATE-004")]
+            assert sent == []  # 没上总线
+            assert compose.value == ""
+
+            # 想发群聊就写 @:直连不吃这一条
+            compose.value = "@cursor 这条走群聊"
+            await pilot.press("enter")
+            assert await wait_for(pilot, lambda: len(sent) == 1)
+            assert (sent[0].to, sent[0].text) == ("cursor", "这条走群聊")
+            assert controller.typed == [("codex", "继续做 GATE-004")]
+
+            # 回群聊会话后,不带 @ 的一行又回到"发给上一个对话对象"
+            app.select_member(None)
+            await pilot.pause()
+            compose.value = "回群聊说一句"
+            await pilot.press("enter")
+            assert await wait_for(pilot, lambda: len(sent) == 2)
+            assert (sent[1].to, sent[1].text) == ("cursor", "回群聊说一句")
+
+    run_async(scenario)
+
+
 def test_without_any_target_it_says_so_instead_of_guessing(paths):
     sent = []
     app = make_app(paths, sent)

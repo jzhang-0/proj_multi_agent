@@ -146,6 +146,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             str(repo_root()),
             shlex.join(command),
         )
+        # `window-size latest`(tmux 默认)会拿服务器上最近那个客户端的尺寸盖掉
+        # `-x/-y`,截出来就不是 --size 说的那个尺寸(实测 120x30 被撑成 229x58)。
+        # 这个会话不给人看,直接改成手动定尺寸。
+        tmux("set-option", "-t", session, "window-size", "manual", check=False)
+        tmux("resize-window", "-t", session, "-x", str(width), "-y", str(height), check=False)
         if not wait_until_drawn(session, "总控台"):
             print("[visual] 等不到界面画出来,截图作废")
             return 1

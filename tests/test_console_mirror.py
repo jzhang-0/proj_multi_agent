@@ -80,15 +80,15 @@ def test_no_capture_while_the_detail_is_hidden(paths):
 
     async def scenario():
         async with app.run_test(size=(120, 30)) as pilot:
-            # 没选中成员:详情栏折叠,一次都不该去问 tmux
+            # 停在群聊会话上:主画面是时间线,一次都不该去问 tmux
             await pilot.pause(MIRROR_INTERVAL * 4)
             assert pane.calls == []
 
             app.select_member("claude")
             assert await wait_for(pilot, lambda: bool(pane.calls))
 
-            # 窄屏让位后也要停:记下当前次数,等几个刷新周期不许再涨
-            await pilot.resize_terminal(80, 24)
+            # 切回群聊后也要停:记下当前次数,等几个刷新周期不许再涨
+            app.select_member(None)
             await pilot.pause()
             parked = len(pane.calls)
             await pilot.pause(MIRROR_INTERVAL * 4)

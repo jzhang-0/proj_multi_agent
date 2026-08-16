@@ -23,19 +23,20 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
     (
         "导航与焦点",
         (
-            Shortcut("Tab / Shift+Tab", "在成员栏、时间线、输入框和详情间循环"),
-            Shortcut("↑ / ↓", "选成员；输入时选候选项或翻发言历史"),
-            Shortcut("PgUp / PgDn", "翻时间线；焦点在详情时翻成员回滚区"),
+            Shortcut("Tab / Shift+Tab", "在会话列表、主画面和输入框间循环"),
+            Shortcut("↑ / ↓", "选会话（群聊/成员）；输入时选候选项或翻发言历史"),
+            Shortcut("Esc / F2", "回到群聊时间线"),
+            Shortcut("PgUp / PgDn", "翻时间线；看成员画面时翻它的回滚区"),
             Shortcut("Home / End", "跳到当前区域最早 / 最新位置"),
-            Shortcut("Esc", "收起详情或取消当前面板"),
         ),
     ),
     (
         "发言与命令",
         (
-            Shortcut("@ 成员", "指定收件人；Tab / ↑↓ 补全"),
+            Shortcut("@ 成员", "指定收件人（走群聊总线）；Tab / ↑↓ 补全"),
             Shortcut("/ 命令", "补全 /up /down /restart /adopt /mute /help"),
             Shortcut("Enter", "接受补全，再按一次发送或执行"),
+            Shortcut("成员会话里直接打字", "不带 @ 就是直接键入该成员终端，等于在它窗口里敲"),
         ),
     ),
     (

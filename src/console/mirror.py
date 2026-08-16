@@ -13,11 +13,15 @@
 from __future__ import annotations
 
 from rich.text import Text
+from textual import events
 from textual.binding import Binding
 from textual.widgets import Static
 
-#: 往回翻一次跨多少行
+#: 往回翻一次跨多少行(PgUp/PgDn)
 HISTORY_STEP = 10
+
+#: 滚轮一格跨多少行;和 PgUp 一样跨十行的话手一抖就飞出去了
+WHEEL_STEP = 3
 
 #: 最多往回翻多少行(tmux 默认回滚区通常 2000 行)
 HISTORY_LIMIT = 2000
@@ -48,8 +52,14 @@ class Mirror(Static):
         return -self.history_offset if self.history_offset else None
 
     def show_screen(self, ansi_text: str) -> None:
-        """把带 ANSI 的画面渲染上去(颜色照搬成员终端里的样子)。"""
-        rendered = Text.from_ansi(ansi_text)
+        """把带 ANSI 的画面渲染上去(颜色照搬成员终端里的样子)。
+
+        **一行就是一行,不许换行**:抓来的是终端网格,成员那边已经排好版了。
+        再让 Rich 按我们这边的宽度重排一次,长行就会折成两行、后半截还带一大
+        段缩进,看着像凭空多出来的重复行(实测 agy 的中文行和带 emoji 的状态栏
+        都这么裂过)。宽度不够就裁掉右边,别动版式。
+        """
+        rendered = Text.from_ansi(ansi_text, no_wrap=True, overflow="crop")
         self.screen_text = rendered.plain
         self.update(rendered)
 
@@ -58,11 +68,24 @@ class Mirror(Static):
         self.screen_text = text
         self.update(text)
 
+    def scroll_history(self, lines: int) -> None:
+        """往回翻 `lines` 行(负数往回走向当前画面)。"""
+        self.history_offset = max(0, min(HISTORY_LIMIT, self.history_offset + lines))
+
     def action_history_up(self) -> None:
-        self.history_offset = min(HISTORY_LIMIT, self.history_offset + HISTORY_STEP)
+        self.scroll_history(HISTORY_STEP)
 
     def action_history_down(self) -> None:
-        self.history_offset = max(0, self.history_offset - HISTORY_STEP)
+        self.scroll_history(-HISTORY_STEP)
+
+    # 滚轮:不用先 Tab 到画面上,鼠标滚上去就能往回看
+    def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
+        self.scroll_history(WHEEL_STEP)
+        event.stop()
+
+    def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
+        self.scroll_history(-WHEEL_STEP)
+        event.stop()
 
     def action_history_top(self) -> None:
         self.history_offset = HISTORY_LIMIT

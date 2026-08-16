@@ -33,7 +33,7 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-`amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都按当前目录所属工作区进界面(`--workspace <slug>` 显式指定)。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
+`amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都把**当前目录**当工作区(未登记会自动登记;`--workspace <slug>` 显式指定)。新工作区默认没有成员,用 `amux member add claude` 按需加。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
 
 工作区登记(状态在 `~/.amux`,不往用户项目里写目录):
 
@@ -45,11 +45,14 @@ amux workspace rm <slug>      # 关掉该区会话并取消登记,不碰项目�
 amux workspace gc             # 回收已无登记但仍挂着的成员会话
 amux workspace migrate        # 把仓库根 bus/ 拷进工作区总线;源目录先留着
 amux workspace migrate --rollback  # 把工作区总线拷回仓库根 bus/
+amux member add claude        # 启用一个预设;自定义: amux member add bot --command cat
+amux member rm claude
+amux member list
 amux msg claude 写一个fizzbuzz  # 从当前目录定位工作区总线;./msg 仍是仓库根薄入口
 amux --workspace alpha          # 显式绑定工作区(界面里 /workspace beta 再切)
 ```
 
-项目根可以放可选的 `amux.toml`(启用哪些成员、额外 env);没有也能跑。测试用 `AMUX_HOME` 把状态指到临时目录。
+项目根可以放可选的 `amux.toml`(钉死启用哪些成员、额外 env);没有则看工作区 `members.toml`,再没有就是空名册。测试用 `AMUX_HOME` 把状态指到临时目录。
 
 `amux` 起全屏 TUI(内嵌总线投递循环,`q` / Ctrl-C 干净退出,不影响任何成员会话);`amux --headless` 等价于纯 hub 模式(和 `python3 hub.py` 同一份实现)。界面是「会话列表 + 一块主画面」:左边窄列表第一项是群聊(带未读数),后面每个成员一项;选中谁,右边主画面就显示谁——群聊显示时间线,成员显示它的终端画面镜像(Esc/F2 回群聊)。打开成员会话时会把它的 tmux 窗口调成主画面大小,让画面铺满(`--no-fit` 关掉;F8 接管前自动把尺寸还给 tmux)。成员画面用 PgUp/PgDn 或滚轮直接往上翻它自己的回滚区,不必先 Tab 过去。输入框在底部通栏,**在成员会话里不带 `@` 的一行直接键入该成员的终端**(等于在它自己窗口里敲,动作进审计日志),`@名字` 开头仍然走群聊总线。系统 Python 版本不满足要求时也不要绕过 `uv run`。
 

@@ -2,12 +2,11 @@
 
 `amux` 裸跑起全屏 TUI;`amux --headless` 就是纯 hub 模式
 (直接交给 `bus.headless`,与 `python3 hub.py` 同一份实现,行为不会漂)。
-`amux workspace add|list|rm|current|gc|migrate` 管理工作区登记;`amux msg` 从当前目录定位工作区总线。
-`amux --workspace <slug>` 显式绑定工作区(默认从 cwd 向上解析)。
+`amux workspace add|list|rm|current|gc|migrate` 管理工作区登记;
+`amux member add|rm|list` 增减当前工作区成员;`amux msg` 从当前目录定位工作区总线。
+`amux --workspace <slug>` 显式绑定工作区(默认从 cwd 向上解析;未登记则自动登记当前目录)。
 
 `uv run console` 是同一个入口的别名,历史 Goal 证据里的命令继续可用。
-bus 与 roster 的路径都从本文件位置向上找仓库根(见 `bus.paths.repo_root`),
-所以装成全局命令后在任何目录下跑,指向的都是同一份运行时数据。
 """
 
 from __future__ import annotations
@@ -19,9 +18,9 @@ from pathlib import Path
 
 from bus.paths import BusPaths
 from console import __version__
-from workspace.errors import WorkspaceNotFound
+from workspace.errors import SlugError, WorkspaceError, WorkspaceNotFound
 from workspace.model import Workspace
-from workspace.resolve import require_slug, resolve_from_cwd
+from workspace.resolve import ensure_from_cwd, require_slug, resolve_from_cwd
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="本机多 AI 群聊与指挥中心",
         epilog=(
             "工作区: amux workspace add|list|rm|current|gc|migrate; "
+            "成员: amux member add|rm|list; "
             "发消息: amux msg <名字> <内容>"
         ),
     )
@@ -81,15 +81,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         from workspace.cli import main as workspace_main
 
         return workspace_main(raw[1:])
+    if raw and raw[0] == "member":
+        from workspace.member_cli import main as member_main
+
+        return member_main(raw[1:])
     if raw and raw[0] == "msg":
         from bus.cli import main as msg_main
 
+        try:
+            if "--bus-root" not in raw:
+                ensure_from_cwd()
+        except (WorkspaceError, SlugError, OSError) as exc:
+            print(f"[amux] {exc}", file=sys.stderr)
+            return 1
         return msg_main(raw[1:])
     args = build_parser().parse_args(raw)
 
     try:
         paths, workspace = bind_runtime(bus_root=args.bus_root, slug=args.workspace)
-    except WorkspaceNotFound as exc:
+    except (WorkspaceNotFound, WorkspaceError, SlugError) as exc:
         print(f"[amux] {exc}", file=sys.stderr)
         return 1
 
@@ -119,10 +129,14 @@ def bind_runtime(
     slug: str | None = None,
     cwd: str | Path | None = None,
 ) -> tuple[BusPaths, Workspace | None]:
-    """选工作区并定总线根:`--bus-root` > `--workspace` > cwd > 仓库根 bus/。"""
-    workspace = require_slug(slug) if slug else resolve_from_cwd(cwd)
+    """选工作区并定总线根:`--bus-root` > `--workspace` > 当前目录(未登记则自动登记)。"""
+    if slug:
+        workspace: Workspace | None = require_slug(slug)
+    elif bus_root is not None:
+        workspace = resolve_from_cwd(cwd)
+    else:
+        workspace = ensure_from_cwd(cwd)
     if bus_root is not None:
         return BusPaths.resolve(bus_root), workspace
-    if workspace is not None:
-        return BusPaths.for_workspace(workspace), workspace
-    return BusPaths.resolve(cwd=cwd), None
+    assert workspace is not None
+    return BusPaths.for_workspace(workspace), workspace

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from workspace.errors import WorkspaceNotFound
+from workspace.errors import SlugError, WorkspaceNotFound
 from workspace.model import Workspace
 from workspace.store import Store
 
@@ -23,6 +23,26 @@ def resolve_from_cwd(
         if found is not None:
             return found
     return None
+
+
+def ensure_from_cwd(
+    cwd: str | Path | None = None,
+    *,
+    store: Store | None = None,
+) -> Workspace:
+    """已登记则返回;否则把当前目录登记为工作区,不再回落 amux 仓库。"""
+    registry = store or Store.default()
+    found = resolve_from_cwd(cwd, store=registry)
+    if found is not None:
+        return found
+    here = Path(cwd).expanduser().resolve() if cwd is not None else Path.cwd()
+    try:
+        workspace, _created = registry.add(here)
+    except SlugError:
+        from workspace.slug import implicit_slug
+
+        workspace, _created = registry.add(here, slug=implicit_slug(here.name))
+    return workspace
 
 
 def require_from_cwd(

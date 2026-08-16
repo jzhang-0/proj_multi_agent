@@ -1,0 +1,3 @@
+# 本仓库自己的协作成员。amux 不会把这份名单套到别的项目上;
+# 其他目录敲 amux 默认空名册,用 amux member add 自己加。
+enabled = ["claude", "codex", "cursor", "agy"]

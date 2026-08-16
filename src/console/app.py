@@ -240,7 +240,11 @@ class ConsoleApp(App[None]):
         self.commands = CommandRunner(
             muted=self.muted,
             on_members_changed=self._schedule_reload,
+            on_roster_changed=self._schedule_roster_reload,
             switch_workspace=self._request_workspace,
+            add_member=self._request_member_add,
+            remove_member=self._request_member_rm,
+            list_members=self._request_member_list,
         )
 
     # --- 布局 -----------------------------------------------------------
@@ -383,18 +387,24 @@ class ConsoleApp(App[None]):
 
     def _schedule_reload(self) -> None:
         """命令处理是同步的,重建成员栏要等组件真的移除,所以排到下一轮。"""
-        self.call_later(self._reload_members)
+        self.call_later(self._reload_members, False)
 
-    async def _reload_members(self) -> None:
-        """名册变了(`/adopt`)之后重建成员栏和补全候选。
+    def _schedule_roster_reload(self) -> None:
+        self.call_later(self._reload_members, True)
+
+    async def _reload_members(self, reconnect: bool = False) -> None:
+        """名册变了(`/adopt` / `/member`)之后重建成员栏和补全候选。
 
         `clear()` 是异步的:不等它做完就 append,会撞上"同 ID 已存在"并把
         成员栏清空(实测踩过)。
         """
+        if reconnect:
+            self._connect_roster()
+        names = member_names(cwd=self._roster_cwd())
         adopter = self.commands.adopter
-        if adopter is None:
-            return
-        self.members = tuple(adopter.member_names())
+        if adopter is not None:
+            names = tuple(adopter.member_names())
+        self.members = names
         self.member_status.track(self.members)
         if self.health_monitor is not None:
             self.health_monitor.track(self.members)
@@ -442,6 +452,31 @@ class ConsoleApp(App[None]):
             return [f"已经在工作区 {slug}"]
         self.call_later(self._bind_workspace, workspace)
         return [f"[workspace] 切换到 {slug}  →  {workspace.project_root}"]
+
+    def _request_member_add(self, name: str) -> list[str]:
+        if self.workspace is None:
+            return ["/member 不可用:当前没有工作区"]
+        from roster.load import load_roster
+        from workspace.members import add_member
+
+        member, created = add_member(self.workspace, name, presets=load_roster())
+        verb = "已加入" if created else "已在名单里"
+        return [f"[member] {verb} {member.name}"]
+
+    def _request_member_rm(self, name: str) -> list[str]:
+        if self.workspace is None:
+            return ["/member 不可用:当前没有工作区"]
+        from roster.load import load_roster
+        from workspace.members import remove_member
+
+        member = remove_member(self.workspace, name, presets=load_roster())
+        return [f"[member] 已拿掉 {member.name}"]
+
+    def _request_member_list(self) -> list[str]:
+        names = member_names(cwd=self._roster_cwd())
+        if not names:
+            return ["本工作区还没有成员。/member add claude 加一个"]
+        return ["本工作区成员: " + ", ".join(names)]
 
     def _rebind_tmux(self, names: SessionNames) -> None:
         current = self.member_status.tmux

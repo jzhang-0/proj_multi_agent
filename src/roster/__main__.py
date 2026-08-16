@@ -17,6 +17,7 @@ from roster.lifecycle import Lifecycle, render
 from roster.load import load_effective_roster
 from roster.paths import repo_root
 from roster.schema import RosterError
+from workspace.resolve import ensure_from_cwd
 from workspace.session import bind_tmux
 
 ACTIONS = ("up", "down", "restart")
@@ -35,14 +36,15 @@ def _exec_hub() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    try:
-        roster = load_effective_roster()
-    except RosterError as exc:
-        print(f"[roster] {exc}", file=sys.stderr)
-        return 1
-
     if len(args) > 2 or (args and args[0] not in ACTIONS and len(args) > 1):
         print(USAGE, file=sys.stderr)
+        return 1
+
+    try:
+        ensure_from_cwd()
+        roster = load_effective_roster()
+    except (RosterError, OSError) as exc:
+        print(f"[roster] {exc}", file=sys.stderr)
         return 1
 
     lifecycle = Lifecycle(roster, bind_tmux())

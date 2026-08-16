@@ -59,12 +59,12 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 ```
 
 - **slug**:默认取项目目录名;两个项目同名时自动 `name-2`、`name-3`。显式 `--slug` 撞名则报错不覆盖。`:` 和 `.` 禁止出现在 slug 里(tmux 会静默吃掉,见工作区 Goal 卷「已知陷阱」)。
-- **解析**:从任意 cwd 向上走,命中已登记的项目根即为所属工作区;嵌套时取最近的那一个。找不到就明确报错,提示 `amux workspace add`,不回落到 amux 自己的仓库根。
+- **解析**:从任意 cwd 向上走,命中已登记的项目根即为所属工作区;嵌套时取最近的那一个。未登记时,`amux` / `amux msg` / `amux member` 自动把**当前目录**登记为工作区,不再回落 amux 自己的仓库根。显式 `amux workspace add` 仍要求目录名能当 slug,否则 `--slug`;裸跑自动登记时非法目录名会被收成合法 slug(挤不出来就用 `ws`)。
 - **项目侧 `amux.toml`**:可选。amux 不在用户项目里创建这个文件。合并规则:
-  1. 全局名册永远是 amux 仓库根 `roster.toml`(四个成员的启动命令与参数)。
-  2. 没有 `amux.toml` = 启用名册里所有 `enabled=true` 的成员,不追加 env。
-  3. `enabled = ["claude", "codex"]` 只启用列出的成员;名册里其余改为停用。名单出现未知名字则报错。
-  4. `[env]` 覆盖到每个成员的 env,项目侧同名键赢。
-- **成员 cwd**:`Lifecycle` / `HealthSupervisor` 默认落到当前工作区项目根(未登记则仍是 amux 仓库根)。
-- **CLI**:`amux workspace add|list|rm|current|gc|migrate`;`amux` 按 cwd 自动选工作区,`--workspace <slug>` 显式指定;`amux msg` 从 cwd 定位工作区总线。控制台标题栏显示当前 slug 与项目根,`/workspace <名字>` 切换绑定(成员栏与时间线跟着换)。IM 网关按房间名(或 `workspace` 字段)把消息投进对应工作区总线,白名单可按 `[workspaces.<slug>]` 分开放。`rm` 先关掉该区 `<成员>@<slug>` 会话再删状态目录,不碰用户项目文件;`gc` 回收已经没了登记的孤儿会话。并发上限写在 `~/.amux/limits.toml`,超限只告警不拒绝。从旧布局升级:`amux workspace migrate` 把仓库根 `bus/` 拷进 `~/.amux/workspaces/<slug>/bus/`,源目录先留着,核对后可删;回退是 `amux workspace migrate --rollback`,把工作区总线拷回仓库根 `bus/`。两条都是拷贝,谁都不自动删对方。`uv run console` / `roster` / `hub.py` / `start.sh` 在单工作区下用法不变;显式 `--bus-root` 永远最高优先,未登记时仍回落仓库根 `bus/`。
+  1. 仓库根 `roster.toml` 是预设目录(四个 CLI 的启动命令与参数),**不自动启用**。
+  2. 工作区成员名单在 `~/.amux/workspaces/<slug>/members.toml`,默认没有这份文件 = 空名册。`amux member add|rm|list` 与界面 `/member add|rm|list` 改它。
+  3. 没有 members.toml 时,项目根 `amux.toml` 的 `enabled` 仍可钉一份名单;名单出现未知名字则报错。
+  4. `[env]` 覆盖到每个启用成员的 env,项目侧同名键赢。
+- **成员 cwd**:`Lifecycle` / `HealthSupervisor` 默认落到当前工作区项目根。
+- **CLI**:`amux workspace add|list|rm|current|gc|migrate`;`amux member add|rm|list`;`amux` 按 cwd 自动选工作区(未登记则登记当前目录),`--workspace <slug>` 显式指定;`amux msg` 从 cwd 定位工作区总线。控制台标题栏显示当前 slug 与项目根,`/workspace <名字>` 切换绑定(成员栏与时间线跟着换)。IM 网关按房间名(或 `workspace` 字段)把消息投进对应工作区总线,白名单可按 `[workspaces.<slug>]` 分开放。`rm` 先关掉该区 `<成员>@<slug>` 会话再删状态目录,不碰用户项目文件;`gc` 回收已经没了登记的孤儿会话。并发上限写在 `~/.amux/limits.toml`,超限只告警不拒绝。从旧布局升级:`amux workspace migrate` 把仓库根 `bus/` 拷进 `~/.amux/workspaces/<slug>/bus/`,源目录先留着,核对后可删;回退是 `amux workspace migrate --rollback`,把工作区总线拷回仓库根 `bus/`。两条都是拷贝,谁都不自动删对方。`uv run console` / `roster` / `hub.py` / `start.sh` 在单工作区下用法不变;显式 `--bus-root` 永远最高优先,未登记时仍回落仓库根 `bus/`。
 - 同一成员允许同时在多个工作区各跑一份(产品定义已拍板)。并发上限不设硬封顶,只告警(WS-009)。

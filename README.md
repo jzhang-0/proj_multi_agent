@@ -43,6 +43,8 @@ amux workspace list
 amux workspace current        # 从当前目录向上找所属工作区;找不到就报错
 amux workspace rm <slug>      # 关掉该区会话并取消登记,不碰项目文件
 amux workspace gc             # 回收已无登记但仍挂着的成员会话
+amux workspace migrate        # 把仓库根 bus/ 拷进工作区总线;源目录先留着
+amux workspace migrate --rollback  # 把工作区总线拷回仓库根 bus/
 amux msg claude 写一个fizzbuzz  # 从当前目录定位工作区总线;./msg 仍是仓库根薄入口
 amux --workspace alpha          # 显式绑定工作区(界面里 /workspace beta 再切)
 ```

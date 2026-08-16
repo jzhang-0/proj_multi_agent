@@ -1,4 +1,4 @@
-"""`amux workspace add|list|rm|current|gc`。"""
+"""`amux workspace add|list|rm|current|gc|migrate`。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from workspace.store import Store
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="amux workspace",
-        description="登记、列出、删除或查看当前工作区。状态在 ~/.amux,不写进用户项目。",
+        description="登记、列出、删除、查看或迁移当前工作区。状态在 ~/.amux,不写进用户项目。",
     )
     sub = parser.add_subparsers(dest="action", required=True)
     add_p = sub.add_parser("add", help="把一个项目目录登记为工作区")
@@ -33,6 +33,21 @@ def build_parser() -> argparse.ArgumentParser:
     rm_p.add_argument("slug", help="要删除的 slug")
     sub.add_parser("current", help="显示当前目录所属工作区")
     sub.add_parser("gc", help="回收已无登记但仍挂着的成员会话")
+    migrate_p = sub.add_parser(
+        "migrate",
+        help="把仓库根 bus/ 拷进工作区总线(源目录先留着)",
+    )
+    migrate_p.add_argument("path", nargs="?", default=None, help="项目根(默认当前目录)")
+    migrate_p.add_argument(
+        "--rollback",
+        action="store_true",
+        help="把工作区总线拷回仓库根 bus/",
+    )
+    migrate_p.add_argument(
+        "--force",
+        action="store_true",
+        help="目标已有数据时仍覆盖拷贝",
+    )
     return parser
 
 
@@ -61,10 +76,12 @@ def main(
             return _cmd_current(registry, here, output)
         if args.action == "gc":
             return _cmd_gc(registry, output)
+        if args.action == "migrate":
+            return _cmd_migrate(args, registry, here, output)
     except (WorkspaceError, OSError) as exc:
         print(f"[workspace] {exc}", file=errors)
         return 1
-    print("用法: amux workspace add|list|rm|current|gc", file=errors)
+    print("用法: amux workspace add|list|rm|current|gc|migrate", file=errors)
     return 2
 
 
@@ -136,6 +153,19 @@ def _try_kill_workspace(slug: str) -> list[str]:
         return kill_workspace_sessions(bind_tmux(), slug)
     except Exception:
         return []
+
+
+def _cmd_migrate(
+    args: argparse.Namespace, store: Store, cwd: Path, output: TextIO
+) -> int:
+    from workspace.migrate import migrate
+
+    target = Path(args.path) if args.path else cwd
+    print(
+        migrate(target, store=store, rollback=args.rollback, force=args.force),
+        file=output,
+    )
+    return 0
 
 
 def _cmd_current(store: Store, cwd: Path, output: TextIO) -> int:

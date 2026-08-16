@@ -69,6 +69,14 @@ uv run roster down          # 全部关掉(含已停用成员的残留会话)
 
 各成员免弹窗参数与残留弹窗写在 `roster.toml` 注释里;claude 的 `./msg` 白名单在 `.claude/settings.json`。
 
+## 手机接入(自建 IM 网关)
+
+```bash
+uv run python -m gateway        # 打印带口令的地址,手机同 WiFi 打开就是群聊页
+```
+
+第一次跑会在 `gateway.toml` 里生成访问口令(该文件已 gitignore,别提交)。页面只用标准库提供,不依赖任何第三方账号;消息进出都经 `bus/queue`,清洗、限频、熔断照常生效。手机上的人在总线里的身份是 `im:<名字>`,成员回给他的消息由网关代投回群。
+
 ## 仓库结构
 
 | 路径 | 内容 |

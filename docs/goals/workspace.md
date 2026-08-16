@@ -13,10 +13,12 @@
 
 ## 需要 human 拍板的(动工前问,别自己定)
 
-- **slug 生成规则**:取目录名(短、可读,但两个项目同名会撞)还是路径哈希(不撞,但难读)?撞了怎么办——报错让人起名,还是自动加后缀?
-- **同一个成员能否同时在多个工作区跑**:这是账号额度和内存的问题,不是技术问题。四个 CLI 各开三份 = 十二个进程。
-- **上限值**:并发工作区数、成员总数各封顶多少。
-- **老数据**:仓库根现有的 `bus/`(含 `log.jsonl` 审计历史)迁进新布局,还是留在原地作为单工作区特例。
+2026-08-17 human 拍板:
+
+- **slug 生成规则**:取目录名;撞了自动加 `-2`、`-3` 后缀。含 `:` / `.` 等非法字符的目录名不能直接做 slug,要求 `--slug` 另起名。
+- **同一个成员能否同时在多个工作区跑**:允许(与产品定义「claude 可以同时在多个项目里各跑一份」一致)。
+- **上限值**:不设硬上限,只告警(WS-009 落地可配告警,超限不拒绝拉起)。
+- **老数据**:迁进 `~/.amux/workspaces/<slug>/bus/`;仓库根 `bus/` 留到迁移命令验证完再提示可删(WS-010)。
 
 ## 已知陷阱(实测过的,别再踩)
 
@@ -29,8 +31,10 @@
 
 ## Goal
 
-- [ ] **WS-001** — 工作区模型:定义 workspace(项目根路径 + slug + 状态目录);`~/.amux/workspaces/<slug>/` 布局与 `path` 反查记录;从任意 cwd 向上找到所属工作区的解析 API(找不到时的行为要明确);项目侧可选 `amux.toml` 的 schema 与加载(缺失即用默认);`amux workspace add|list|rm|current` 四个子命令。slug 规则按 human 拍板结果实现。
+- [x] **WS-001** — 工作区模型:定义 workspace(项目根路径 + slug + 状态目录);`~/.amux/workspaces/<slug>/` 布局与 `path` 反查记录;从任意 cwd 向上找到所属工作区的解析 API(找不到时的行为要明确);项目侧可选 `amux.toml` 的 schema 与加载(缺失即用默认);`amux workspace add|list|rm|current` 四个子命令。slug 规则按 human 拍板结果实现。
   - 前置:无(本卷根 Goal)。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_workspace.py tests/test_console_app.py tests/test_engineering_skeleton.py -q`
+  - 证据:`src/workspace/`(`Workspace` 三元组、`Store` 把源数据放 `~/.amux/workspaces/<slug>/workspace.toml`、反查写 `paths.toml`、`AMUX_HOME` 可注入);slug 取目录名、撞了 `name-2`/`name-3`,含 `:`/`.` 明确报错;`resolve_from_cwd` 向上走取最近登记根,找不到提示 `amux workspace add` 且不回落 amux 仓库;`load_project_config` 缺文件即默认;`amux workspace add|list|rm|current` 经 `console.cli` 分发,`rm` 不碰项目文件。`tests/test_workspace.py` 覆盖以上枚举;2026-08-17 `29 passed`,ruff 干净。旧入口 `--headless`/`--version` 回归仍过。
 - [ ] **WS-002** — 会话命名空间:成员名 ↔ tmux 会话名的双向映射收口到单一模块,格式 `<成员>@<slug>`;`human`/`bus`/`im:*` 不参与拼接;现有 32 处直接把成员名当会话名用的调用点全部改走映射;非法字符(`:`、`.`)在 slug 生成与成员名校验两处都拦掉并给明确报错。
   - 前置:WS-001。
 - [ ] **WS-003** — 总线按工作区隔离:`BusPaths` 增加工作区维度(队列、processed、死信、asks、replies、`log.jsonl` 全部隔离);`--bus-root` / `BUS_ROOT` 保留为显式覆盖且优先级最高;跨工作区不串消息的回归测试;审计日志里记录工作区归属。

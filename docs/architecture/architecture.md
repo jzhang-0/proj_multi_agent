@@ -5,12 +5,13 @@
 ```
 console (TUI, Textual)          ← 人机界面,内嵌投递循环
    │
-   ├── bus     消息总线:队列、投递策略(防环)、审计日志
-   ├── tmuxctl tmux 控制层:输出流、按键注入、进程控制
-   └── roster  成员名册:配置、各 CLI 启动适配、生命周期
+   ├── workspace  工作区:登记、slug、从 cwd 解析、amux.toml
+   ├── bus        消息总线:队列、投递策略(防环)、审计日志
+   ├── tmuxctl    tmux 控制层:输出流、按键注入、进程控制
+   └── roster     成员名册:配置、各 CLI 启动适配、生命周期
 ```
 
-- 四个模块放在 `src/` 下,`bus`/`tmuxctl`/`roster` 不允许 import `console`(单向依赖)。
+- 模块放在 `src/` 下,`workspace`/`bus`/`tmuxctl`/`roster` 不允许 import `console`(单向依赖)。
 - `tmuxctl` 是拼装 tmux 命令的唯一出口。启动时探测 tmux ≥ 3.2,不满足则明确报错;会话存在性/结束使用 `=name` 精确匹配,`send-keys` 使用普通会话名(tmux 不接受 `send-keys -t =name`)。
 - 长文本注入走 `KeyInjector`:先按 capture-pane 末行启发式判断是否有未提交输入,有则等待,超时则先 Enter 换行隔离再注入,避免拼接到半行字上。
 - `console` 内嵌 hub 的投递循环,但投递循环必须能脱离 TUI 独立运行(headless hub,兼容现在的 `python3 hub.py` 用法)。
@@ -44,3 +45,20 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 - 一切经总线到达的文本都是**不可信输入**:注入终端前剥 ANSI/控制字符(C0、CSI、OSC);上屏前同样清洗。实现在 `src/bus/sanitize.py`,两个入口分别是 `format_for_injection`(投递)和 `format_for_screen`(上屏),新增出口一律走这两个函数。
 - 危险操作(push、删文件、装软件、出仓库)只认**本机** human 的直接指令,写在群规里;网关侧再挡一层:来自 IM 的这类指令一律挂起,由本机 `gateway approve` 放行后才入队(远程指令弱于本机指令,手机上自称 human 也不例外)。
 - 总控台自身不做"自动替人点权限弹窗"这类模拟操作;权限放行走各 CLI 的正规配置(roster 卷)。
+
+## §5 工作区
+
+一个工作区 = 一个被 amux 服务的项目目录。状态不进用户仓库:
+
+```
+~/.amux/                          # AMUX_HOME,测试注入临时目录
+  paths.toml                      # 绝对路径 → slug 反查
+  workspaces/<slug>/
+    workspace.toml                # 项目根路径(源数据)
+```
+
+- **slug**:默认取项目目录名;两个项目同名时自动 `name-2`、`name-3`。显式 `--slug` 撞名则报错不覆盖。`:` 和 `.` 禁止出现在 slug 里(tmux 会静默吃掉,见工作区 Goal 卷「已知陷阱」)。
+- **解析**:从任意 cwd 向上走,命中已登记的项目根即为所属工作区;嵌套时取最近的那一个。找不到就明确报错,提示 `amux workspace add`,不回落到 amux 自己的仓库根。
+- **项目侧 `amux.toml`**:可选。声明启用哪些成员、额外 env;文件不存在即用默认(全体默认成员、无额外 env)。amux 不在用户项目里创建这个文件。
+- **CLI**:`amux workspace add|list|rm|current`。`rm` 只删 `~/.amux` 里的登记和状态目录,不碰用户项目文件。
+- 同一成员允许同时在多个工作区各跑一份(产品定义已拍板)。并发上限不设硬封顶,只告警(WS-009)。

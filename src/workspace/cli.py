@@ -1,0 +1,107 @@
+"""`amux workspace add|list|rm|current`。"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+from typing import TextIO
+
+from workspace.errors import WorkspaceError
+from workspace.resolve import require_from_cwd
+from workspace.store import Store
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="amux workspace",
+        description="登记、列出、删除或查看当前工作区。状态在 ~/.amux,不写进用户项目。",
+    )
+    sub = parser.add_subparsers(dest="action", required=True)
+    add_p = sub.add_parser("add", help="把一个项目目录登记为工作区")
+    add_p.add_argument("path", nargs="?", default=None, help="项目根(默认当前目录)")
+    add_p.add_argument(
+        "--slug",
+        default=None,
+        help="显式指定 slug(默认取目录名;重名自动加 -2、-3)",
+    )
+    sub.add_parser("list", help="列出已登记工作区")
+    rm_p = sub.add_parser("rm", help="取消登记并删除状态目录(不碰项目文件)")
+    rm_p.add_argument("slug", help="要删除的 slug")
+    sub.add_parser("current", help="显示当前目录所属工作区")
+    return parser
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    store: Store | None = None,
+    cwd: Path | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    """执行 workspace 子命令,返回退出码。"""
+    args = build_parser().parse_args(argv)
+    output = stdout or sys.stdout
+    errors = stderr or sys.stderr
+    registry = store or Store.default()
+    here = cwd or Path.cwd()
+    try:
+        if args.action == "add":
+            return _cmd_add(args, registry, here, output)
+        if args.action == "list":
+            return _cmd_list(registry, output)
+        if args.action == "rm":
+            return _cmd_rm(args.slug, registry, output)
+        if args.action == "current":
+            return _cmd_current(registry, here, output)
+    except (WorkspaceError, OSError) as exc:
+        print(f"[workspace] {exc}", file=errors)
+        return 1
+    print("用法: amux workspace add|list|rm|current", file=errors)
+    return 2
+
+
+def _cmd_add(args: argparse.Namespace, store: Store, cwd: Path, output: TextIO) -> int:
+    target = Path(args.path) if args.path else cwd
+    workspace, created = store.add(target, slug=args.slug)
+    verb = "已登记" if created else "已存在"
+    print(
+        f"{verb}工作区 {workspace.slug}  →  {workspace.project_root}",
+        file=output,
+    )
+    if created:
+        print(f"状态目录 {workspace.state_dir}", file=output)
+    return 0
+
+
+def _cmd_list(store: Store, output: TextIO) -> int:
+    items = store.list()
+    if not items:
+        print("还没有工作区。用 amux workspace add 登记一个项目。", file=output)
+        return 0
+    width = max(len(item.slug) for item in items)
+    print(f"{'slug':<{width}}  path", file=output)
+    for item in items:
+        print(f"{item.slug:<{width}}  {item.project_root}", file=output)
+    return 0
+
+
+def _cmd_rm(slug: str, store: Store, output: TextIO) -> int:
+    workspace = store.remove(slug)
+    print(
+        f"已删除工作区 {workspace.slug}(未改动项目文件 {workspace.project_root})",
+        file=output,
+    )
+    return 0
+
+
+def _cmd_current(store: Store, cwd: Path, output: TextIO) -> int:
+    workspace = require_from_cwd(cwd, store=store)
+    print(f"{workspace.slug}  {workspace.project_root}", file=output)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

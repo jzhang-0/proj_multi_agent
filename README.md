@@ -33,7 +33,18 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-`amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都进同一个界面——bus 运行时目录和 `roster.toml` 是按源码位置向上找仓库根定位的,不看当前目录。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
+`amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都进同一个界面——bus 运行时目录和 `roster.toml` 目前仍按源码位置向上找仓库根定位。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
+
+工作区登记(状态在 `~/.amux`,不往用户项目里写目录):
+
+```bash
+amux workspace add [路径]     # 把项目登记为工作区;同名目录自动 slug-2
+amux workspace list
+amux workspace current        # 从当前目录向上找所属工作区;找不到就报错
+amux workspace rm <slug>      # 取消登记,不碰项目文件
+```
+
+项目根可以放可选的 `amux.toml`(启用哪些成员、额外 env);没有也能跑。测试用 `AMUX_HOME` 把状态指到临时目录。
 
 `amux` 起全屏 TUI(内嵌总线投递循环,`q` / Ctrl-C 干净退出,不影响任何成员会话);`amux --headless` 等价于纯 hub 模式(和 `python3 hub.py` 同一份实现)。界面是「会话列表 + 一块主画面」:左边窄列表第一项是群聊(带未读数),后面每个成员一项;选中谁,右边主画面就显示谁——群聊显示时间线,成员显示它的终端画面镜像(Esc/F2 回群聊)。打开成员会话时会把它的 tmux 窗口调成主画面大小,让画面铺满(`--no-fit` 关掉;F8 接管前自动把尺寸还给 tmux)。成员画面用 PgUp/PgDn 或滚轮直接往上翻它自己的回滚区,不必先 Tab 过去。输入框在底部通栏,**在成员会话里不带 `@` 的一行直接键入该成员的终端**(等于在它自己窗口里敲,动作进审计日志),`@名字` 开头仍然走群聊总线。系统 Python 版本不满足要求时也不要绕过 `uv run`。
 

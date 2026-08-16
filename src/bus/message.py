@@ -22,6 +22,10 @@ REQUIRED_FIELDS = ("to", "from", "text", "ts")
 #: 已知可选字段(JSON 里的名字)
 OPTIONAL_FIELDS = ("id", "kind", "replyTo")
 
+#: 远程身份前缀:来自 IM 群的人是 `im:小明`。它不是 `human`,所以照样受
+#: 限频约束;作为收件人时也没有 tmux 会话,由网关代投(见 `bus.hub`)
+REMOTE_PREFIX = "im:"
+
 
 class MalformedMessage(ValueError):
     """消息结构非法。带上原因,投递循环据此写死信说明。"""

@@ -77,3 +77,8 @@
   - 验证:`uv run ruff check .`;`uv run pytest tests/test_console_app.py tests/test_visual_evidence.py -q`(18 passed);全局入口 `AMUX_BIN_DIR=<临时目录>/bin ./install-amux.sh` 后 `cd $HOME && amux --bus-root <临时目录>`。
   - 证据:`pyproject.toml` 的 `[project.scripts]` 加 `amux`,`console` 保留为别名(仓库里十余条历史 Goal 证据行记录的是当时实际跑过的 `uv run console`,不能改成没跑过的命令);`src/console/cli.py` 的 `prog` 改为 `amux`,`--version`/`--help` 都自称 amux,其余参数一字未动。全局化用 `install-amux.sh` 在 `~/.local/bin`(可 `AMUX_BIN_DIR` 覆盖)生成 `exec uv run --project <仓库> amux "$@"` 的薄 shim,`./install-amux.sh uninstall` 卸载——**没用 `uv tool install`**,因为它会把 `console` 和 `roster` 也一并塞进全局 PATH,`console` 这种通用词占全局命名空间正是要避的;shim 每次走 `uv run`,依赖始终跟 `uv.lock` 一致。跨目录能跑不需要额外改代码:`bus.paths.repo_root()` 与 `roster.paths` 本来就是从 `__file__` 向上找仓库根,不看 cwd。
   - 视觉自验证:`tests/baseline/con-013-global-launch-120x30.txt`/`.ansi`——在 **`$HOME`**(完全不在仓库内)用全局 `amux` 裸跑起的 120×30 画面,左栏正确读到 `roster.toml` 的 claude/codex/cursor/agy 四张卡、总线目录横幅显示注入的临时根、输入框与底部键位栏对齐正常;随后 `q` 退出,`tmux ls` 确认四个真实成员会话全部完好未受影响。
+
+- [ ] **CON-014** — 成员直连按键透传:选中成员且输入框获得焦点时,Shift+Tab 作为 tmux `BTab` 发往成员终端;空 Enter 作为独立 `Enter` 发往成员终端。两类动作写审计与时间线;群聊和非输入框焦点的 Tab/Shift+Tab 导航、带文本的直连输入、`@名字` 群聊寻址全部保持不变;帮助和输入提示说明该行为。
+  - 前置:CON-004、CON-007、CON-012。
+  - 处理登记:codex,2026-08-22 +0800,`con-014-codex`。
+  - 进行中:实现受上下文约束的 Shift+Tab 与空 Enter 透传,补审计、键盘回归与视觉取证。

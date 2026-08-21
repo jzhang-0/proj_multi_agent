@@ -57,6 +57,15 @@ class ComposeInput(Input):
             super().__init__()
             self.compose = compose
 
+    class DirectKey(Message):
+        """成员直连态下需要原样转给 tmux 的非文本按键。"""
+
+        def __init__(self, compose: ComposeInput, tmux_key: str, label: str) -> None:
+            super().__init__()
+            self.compose = compose
+            self.tmux_key = tmux_key
+            self.label = label
+
     def __init__(self, members: tuple[str, ...] = (), **kwargs: object) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
         self.members = members
@@ -66,6 +75,8 @@ class ComposeInput(Input):
         self.candidate_index = 0
         #: 当前补的是成员名还是命令名,决定候选行怎么显示
         self.candidate_kind = "member"
+        #: 只在选中成员会话时由 ConsoleApp 打开,不能影响群聊焦点导航。
+        self.direct_mode = False
 
     # --- 补全 -----------------------------------------------------------
 
@@ -146,6 +157,13 @@ class ComposeInput(Input):
     # --- 按键 -----------------------------------------------------------
 
     async def _on_key(self, event: events.Key) -> None:
+        if event.key == "shift+tab" and self.direct_mode:
+            # Textual 默认把 Shift+Tab 当焦点反向循环;在直连输入框里把它
+            # 转成 tmux 的 BTab,以支持 Claude Code 等终端程序的模式切换。
+            self.post_message(self.DirectKey(self, "BTab", "Shift+Tab"))
+            event.prevent_default()
+            event.stop()
+            return
         if event.key == "tab" and self.candidates:
             # 一次 Tab 只做一件事:没选过就先落定第一个,选过就换下一个
             self.accept_candidate()

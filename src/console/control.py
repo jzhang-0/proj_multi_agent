@@ -100,6 +100,17 @@ class MemberController:
             self._failed("type", target, exc)
             raise
 
+    def press_key(self, target: str, key: str) -> ControlFeedback:
+        """向成员终端发送一枚白名单内的非文本按键,并记录审计。"""
+        if key not in {"Enter", "BTab"}:
+            raise ValueError(f"不允许透传的成员按键: {key}")
+        try:
+            self.tmux.send_keys(target, key)
+            return self._record(ControlFeedback("key", target, True, key))
+        except Exception as exc:
+            self._failed("key", target, exc)
+            raise
+
     def interrupt(self, target: str) -> ControlFeedback:
         try:
             result = self.process.interrupt(target)

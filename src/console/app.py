@@ -683,6 +683,12 @@ class ConsoleApp(App[None]):
         if event.input.id == "compose":
             self.send_from_input(event.value)
 
+    def on_compose_input_direct_key(self, event: ComposeInput.DirectKey) -> None:
+        """只在成员直连输入框里处理被 ComposeInput 截获的 Shift+Tab。"""
+        if event.compose.id != "compose" or self.selected_member is None:
+            return
+        self.press_member_key(self.selected_member, event.tmux_key, event.label)
+
     def _sync_suggestions(self) -> None:
         """候选行:只在有候选时占一行,当前候选加方括号。"""
         compose = self.query_one("#compose", ComposeInput)
@@ -702,10 +708,13 @@ class ConsoleApp(App[None]):
         compose = self.query_one("#compose", ComposeInput)
         # 在成员会话里,输入框直接连着那个成员的终端;边框也换个色提醒
         compose.set_class(self.selected_member is not None, "-direct")
+        compose.direct_mode = self.selected_member is not None
         if self.selected_member is not None:
             # 提示里只用等宽字体一定画得出的字符:⌨ 这类符号在不少终端字体里
             # 是缺字形的小方块,画出来反而像界面坏了
-            compose.placeholder = f"直连 {self.selected_member} 的终端,回车键入(@名字 走群聊)"
+            compose.placeholder = (
+                f"直连 {self.selected_member}: Shift+Tab/空Enter 透传(@名字走群聊)"
+            )
         elif self.last_target is None:
             compose.placeholder = "@名字 说点什么,回车发送"
         else:
@@ -765,6 +774,26 @@ class ConsoleApp(App[None]):
                 self._note, f"[直连] · {member}: 补过 Enter,去画面上确认一下是否已提交"
             )
 
+    def press_member_key(self, member: str, tmux_key: str, label: str) -> None:
+        """直连态把空 Enter / Shift+Tab 等按键交给成员终端。"""
+        timeline = self.query_one("#timeline", Timeline)
+        if self.controller is None:
+            timeline.note("[总控台] 直连不可用(没接上 tmux),用 @名字 走群聊")
+            return
+        timeline.note(f"[直连] → human → {member}: 按键 {label}")
+        self.run_worker(
+            lambda: self._key_worker(member, tmux_key), thread=True, group="direct-key"
+        )
+
+    def _key_worker(self, member: str, tmux_key: str) -> None:
+        assert self.controller is not None
+        try:
+            self.controller.press_key(member, tmux_key)
+        except Exception as exc:
+            self.call_from_thread(
+                self._note, f"[直连] ✗ {member}: {type(exc).__name__}: {exc}"
+            )
+
     def _note(self, line: str) -> None:
         self.query_one("#timeline", Timeline).note(line)
 
@@ -781,6 +810,8 @@ class ConsoleApp(App[None]):
             return
         addressed, text = split_address(raw)
         if not text:
+            if addressed is None and self.selected_member is not None and not raw.strip():
+                self.press_member_key(self.selected_member, "Enter", "Enter")
             return
         if addressed is None and self.selected_member is not None:
             self.type_into_member(self.selected_member, raw, text)

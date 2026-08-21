@@ -139,6 +139,31 @@ def test_typed_text_and_its_enter_are_two_calls_with_a_gap(tmp_path: Path) -> No
     assert entry["action"] == "type" and entry["to"] == "cursor"
 
 
+def test_controller_passes_allowed_direct_keys_and_audits_them(tmp_path: Path) -> None:
+    paths = BusPaths.resolve(tmp_path / "bus").ensure()
+
+    class RecordingTmux(FakeTmux):
+        def __init__(self):
+            super().__init__()
+            self.calls: list[tuple] = []
+
+        def send_keys(self, target, *keys, literal=False):
+            self.calls.append((target, keys, literal))
+
+    tmux = RecordingTmux()
+    controller = MemberController(tmux, FakeLifecycle(), AuditLog(paths))
+
+    assert controller.press_key("claude", "BTab").changed
+    assert controller.press_key("claude", "Enter").changed
+    assert tmux.calls == [("claude", ("BTab",), False), ("claude", ("Enter",), False)]
+    assert [(entry["action"], entry["reason"]) for entry in AuditLog(paths).entries()] == [
+        ("key", "BTab"),
+        ("key", "Enter"),
+    ]
+    with pytest.raises(ValueError, match="不允许"):
+        controller.press_key("claude", "C-c")
+
+
 def test_missing_takeover_target_and_controller_error_are_audited(tmp_path: Path) -> None:
     paths = BusPaths.resolve(tmp_path / "bus").ensure()
     controller, _, _, runs = make_controller(paths, exists=False)

@@ -62,7 +62,7 @@ class TeamStore:
         return target
 
 
-_DEFAULT_TEAM = '''# 默认协作团队。模型字段是协作偏好，不是 CLI 启动参数。
+_DEFAULT_TEAM = '''# 默认协作团队。command/args 是已在本机 CLI 上验证过的启动适配。
 # Leader 直接对 human 负责；成员提交证据与评审意见；Leader 可在必要时接管实现。
 id = "fable-core"
 name = "Fable 协作组"
@@ -76,6 +76,8 @@ model = "Claude Fable 5"
 effort = "high"
 speed = "standard"
 responsibility = "面向 human，拆解、分派、验收；必要时接管实现并承担最终责任"
+command = "claude"
+args = ["--model", "fable", "--effort", "high", "--permission-mode", "acceptEdits"]
 
 [[members]]
 id = "sonnet"
@@ -84,6 +86,8 @@ model = "Sonnet"
 effort = "xhigh"
 speed = "standard"
 responsibility = "实现与深入分析，提交可复核的证据"
+command = "claude"
+args = ["--model", "sonnet", "--effort", "xhigh", "--permission-mode", "acceptEdits"]
 
 [[members]]
 id = "opus"
@@ -92,6 +96,8 @@ model = "Opus"
 effort = "high"
 speed = "standard"
 responsibility = "复杂问题分析、方案评审与风险检查"
+command = "claude"
+args = ["--model", "opus", "--effort", "high", "--permission-mode", "acceptEdits"]
 
 [[members]]
 id = "luna"
@@ -100,6 +106,13 @@ model = "Luna"
 effort = "high"
 speed = "fast"
 responsibility = "快速调研、分流、验证与反馈"
+command = "codex"
+args = [
+  "-m", "gpt-5.6-luna",
+  "-c", "model_reasoning_effort=\\\"high\\\"",
+  "-c", "service_tier=\\\"priority\\\"",
+  "-s", "workspace-write", "-a", "on-request",
+]
 
 [[members]]
 id = "sol"
@@ -108,4 +121,11 @@ model = "Sol"
 effort = "xhigh"
 speed = "standard"
 responsibility = "独立实现、交叉验证与高难任务支持"
+command = "codex"
+args = [
+  "-m", "gpt-5.6-sol",
+  "-c", "model_reasoning_effort=\\\"xhigh\\\"",
+  "-c", "service_tier=\\\"default\\\"",
+  "-s", "workspace-write", "-a", "on-request",
+]
 '''

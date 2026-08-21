@@ -35,7 +35,7 @@ def build_parser(*, default_theme: str = "console-dark") -> argparse.ArgumentPar
         epilog=(
             "工作区: amux workspace add|list|rm|current|gc|migrate; "
             "成员: amux member add|rm|list; "
-            "团队: amux team init|list|show|use|current; "
+            "团队: amux team init|list|show|use|current|activate; "
             "配置: amux config init|show; "
             "发消息: amux msg <名字> <内容>"
         ),

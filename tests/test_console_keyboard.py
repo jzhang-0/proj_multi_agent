@@ -112,6 +112,7 @@ def test_help_documents_every_console_binding_and_context_action() -> None:
         "Tab / Shift+Tab",
         "PgUp / PgDn",
         "@ 成员",
+        "直连 Shift+Tab / ↵",
         "斜杠命令补全,含 /workspace",
         "Y 确认 / N 取消",
         "退出 attach 后返回",

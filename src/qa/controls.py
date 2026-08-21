@@ -36,6 +36,9 @@ class DemoController:
     def takeover(self, target: str) -> ControlFeedback:
         return self._feedback("takeover", target)
 
+    def press_key(self, target: str, key: str) -> ControlFeedback:
+        return self._feedback("key", target)
+
     def record_failure(self, action: str, target: str, exc: Exception) -> None:
         return None
 

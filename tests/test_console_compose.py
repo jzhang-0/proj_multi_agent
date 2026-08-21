@@ -166,7 +166,8 @@ def test_inside_a_member_conversation_plain_text_is_typed_into_its_terminal(path
             compose = app.query_one("#compose", ComposeInput)
             app.select_member("codex")
             await pilot.pause()
-            assert "直连 codex 的终端" in compose.placeholder
+            assert "直连 codex" in compose.placeholder
+            assert "Shift+Tab/空Enter" in compose.placeholder
 
             compose.focus()
             compose.value = "继续做 GATE-004"
@@ -191,6 +192,46 @@ def test_inside_a_member_conversation_plain_text_is_typed_into_its_terminal(path
             await pilot.press("enter")
             assert await wait_for(pilot, lambda: len(sent) == 2)
             assert (sent[1].to, sent[1].text) == ("cursor", "回群聊说一句")
+
+    run_async(scenario)
+
+
+def test_direct_member_shortcuts_pass_shift_tab_and_empty_enter_to_the_terminal(paths):
+    """直连输入框既要留住焦点,也要能把 Claude Code 的 BTab 与空回车送出去。"""
+
+    class RecordingController:
+        def __init__(self):
+            self.keys = []
+
+        def press_key(self, target, key):
+            from console.control import ControlFeedback
+
+            self.keys.append((target, key))
+            return ControlFeedback("key", target, True, key)
+
+    controller = RecordingController()
+    app = ConsoleApp(
+        paths,
+        deliver=lambda _message: True,
+        members=("codex",),
+        controller=controller,
+    )
+
+    async def scenario():
+        async with app.run_test(size=(120, 30)) as pilot:
+            compose = app.query_one("#compose", ComposeInput)
+            app.select_member("codex")
+            compose.focus()
+
+            await pilot.press("shift+tab")
+            assert await wait_for(pilot, lambda: controller.keys == [("codex", "BTab")])
+            assert app.focused is compose  # 不再被 Textual 拿去做焦点反向循环
+
+            await pilot.press("enter")
+            assert await wait_for(
+                pilot, lambda: controller.keys == [("codex", "BTab"), ("codex", "Enter")]
+            )
+            assert compose.value == ""
 
     run_async(scenario)
 

@@ -18,12 +18,15 @@ from pathlib import Path
 
 from bus.paths import BusPaths
 from console import __version__
+from roster.schema import RosterError
+from tmuxctl import TmuxError
 from workspace.errors import SlugError, WorkspaceError, WorkspaceNotFound
+from workspace.global_config import load_global_config
 from workspace.model import Workspace
 from workspace.resolve import ensure_from_cwd, require_slug, resolve_from_cwd
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(*, default_theme: str = "console-dark") -> argparse.ArgumentParser:
     """构造总控台命令行解析器。"""
     parser = argparse.ArgumentParser(
         prog="amux",
@@ -31,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "工作区: amux workspace add|list|rm|current|gc|migrate; "
             "成员: amux member add|rm|list; "
+            "配置: amux config init|show; "
             "发消息: amux msg <名字> <内容>"
         ),
     )
@@ -58,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--theme",
         choices=("console-dark", "console-light"),
-        default="console-dark",
+        default=default_theme,
         help="启动主题(界面里按 t 随时切换)",
     )
     parser.add_argument(
@@ -85,6 +89,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from workspace.member_cli import main as member_main
 
         return member_main(raw[1:])
+    if raw and raw[0] == "config":
+        from workspace.global_config import main as config_main
+
+        return config_main(raw[1:])
     if raw and raw[0] == "msg":
         from bus.cli import main as msg_main
 
@@ -95,13 +103,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"[amux] {exc}", file=sys.stderr)
             return 1
         return msg_main(raw[1:])
-    args = build_parser().parse_args(raw)
+    try:
+        global_config = load_global_config()
+    except WorkspaceError as exc:
+        print(f"[amux] {exc}", file=sys.stderr)
+        return 1
+    args = build_parser(default_theme=global_config.theme).parse_args(raw)
 
     try:
         paths, workspace = bind_runtime(bus_root=args.bus_root, slug=args.workspace)
     except (WorkspaceNotFound, WorkspaceError, SlugError) as exc:
         print(f"[amux] {exc}", file=sys.stderr)
         return 1
+
+    if global_config.auto_start_members and workspace is not None:
+        try:
+            _auto_start_members(workspace)
+        except (OSError, RosterError, TmuxError) as exc:
+            print(f"[amux] 自动拉起成员失败: {exc}", file=sys.stderr)
+            return 1
 
     if args.headless:
         from bus.headless import main as run_hub
@@ -140,3 +160,16 @@ def bind_runtime(
         return BusPaths.resolve(bus_root), workspace
     assert workspace is not None
     return BusPaths.for_workspace(workspace), workspace
+
+
+def _auto_start_members(workspace: Workspace) -> None:
+    """全局配置明确要求时,幂等地启动当前工作区的有效成员。"""
+    from roster.lifecycle import Lifecycle
+    from roster.load import load_effective_roster
+    from workspace.session import SessionNames, bind_tmux
+
+    roster = load_effective_roster(cwd=workspace.project_root)
+    if not roster.enabled_members():
+        return
+    tmux = bind_tmux(names=SessionNames(slug=workspace.slug))
+    Lifecycle(roster, tmux, cwd=workspace.project_root).up()

@@ -35,6 +35,15 @@ uv run ruff check .
 
 `amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都把**当前目录**当工作区(未登记会自动登记;`--workspace <slug>` 显式指定)。新工作区默认没有成员,用 `amux member add claude` 按需加。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
 
+若希望任何新工作区默认拥有四个成员、打开 amux 就幂等地拉起它们,只需在任意目录执行一次:
+
+```bash
+amux config init                 # 写 ~/.amux/config.toml,不改用户项目
+amux config show                 # 查看默认成员、自动拉起和主题
+```
+
+这份全局配置包含 `default_members`、`auto_start_members` 和 `theme`;可直接编辑 `~/.amux/config.toml` 调整。工作区已有的 `members.toml` 或项目根 `amux.toml` 的成员配置优先于全局默认;显式 `amux --theme ...` 优先于配置文件。未执行 `amux config init` 时,amux 保持不自动创建配置、也不自动拉起成员的旧行为。
+
 工作区登记(状态在 `~/.amux`,不往用户项目里写目录):
 
 ```bash

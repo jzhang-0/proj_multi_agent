@@ -15,6 +15,7 @@ INDEX_NAME = "paths.toml"
 META_NAME = "workspace.toml"
 PROJECT_CONFIG_NAME = "amux.toml"
 MEMBERS_NAME = "members.toml"
+GLOBAL_CONFIG_NAME = "config.toml"
 
 
 def amux_home() -> Path:

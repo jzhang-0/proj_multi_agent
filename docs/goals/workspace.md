@@ -76,7 +76,8 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_cwd.py tests/test_workspace.py tests/test_workspace_members.py tests/test_workspace_console.py tests/test_console_commands.py tests/test_roster_load.py tests/test_engineering_skeleton.py tests/test_v0_contract.py tests/test_workspace_migrate.py tests/test_console_keyboard.py tests/test_roster_protocol.py -q`
   - 证据:`bind_runtime` 未登记且无 `--bus-root` 时 `ensure_from_cwd` 把当前目录登记为工作区,总线进 `~/.amux/workspaces/<slug>/bus/`,不再回落 amux 仓库;`amux msg` 同样先登记。`roster.toml` 改为预设;`~/.amux/workspaces/<slug>/members.toml` 默认不存在=空名册;`amux member add|rm|list` 与 `/member` 改这份名单;没有 members.toml 时项目 `amux.toml` 的 `enabled` 仍可钉名单(本仓库 `amux.toml` 钉四成员,别的项目不受影响)。`tests/test_workspace_cwd.py` 覆盖自动登记、不回落仓库、默认空、预设/自定义增减、未登记目录 `amux msg` 仍进该区总线。2026-08-17 相关 107 passed,ruff 干净。
 
-- [ ] **WS-012** — 全局 amux 配置:`~/.amux/config.toml`(测试可由 `AMUX_HOME` 重定向)存默认成员、是否自动拉起成员、默认主题;`amux config init|show` 管理和展示;工作区 `members.toml`、项目 `amux.toml` 优先于全局默认,命令行 `--theme` 优先于文件。`amux config init` 显式创建默认四成员且自动拉起的配置,不因裸跑 `amux` 静默写配置或启动成员。
+- [x] **WS-012** — 全局 amux 配置:`~/.amux/config.toml`(测试可由 `AMUX_HOME` 重定向)存默认成员、是否自动拉起成员、默认主题;`amux config init|show` 管理和展示;工作区 `members.toml`、项目 `amux.toml` 优先于全局默认,命令行 `--theme` 优先于文件。`amux config init` 显式创建默认四成员且自动拉起的配置,不因裸跑 `amux` 静默写配置或启动成员。
   - 前置:WS-011。
-  - 处理登记:codex,2026-08-21 +0800,`ws-012-codex`。
-  - 进行中:实现全局配置 schema、读取优先级和初始化命令,随后补自动化测试与文档。
+  - 验证:`uv run ruff check . && uv run pytest tests/test_global_config.py tests/test_workspace_members.py tests/test_workspace_cwd.py tests/test_console_app.py tests/test_engineering_skeleton.py -q`(30 passed);`uv run amux config --help`。
+  - 证据:`src/workspace/global_config.py`(schema、`init|show`、严格校验)、`src/roster/load.py`(本地成员/项目配置/全局默认的优先级)、`src/console/cli.py`(自动拉起与主题默认);`tests/test_global_config.py` 覆盖初始化、schema 错误、优先级、自动拉起与命令行主题覆盖。README 与架构 §5 已同步。
+  - 视觉自验证:2026-08-21 用临时 `AMUX_HOME` 的 `config.toml`(四成员、`auto_start_members=false`、light 主题)在隔离 tmux 里运行 `uv run --project <worktree> amux`,以 `tmux capture-pane -p -e` 实看:标题为自动登记的 `project`,左栏出现 claude/codex/cursor/agy 四张 `DEAD` 卡(未自动拉起符合配置),浅色主题下边框、时间线和输入框完整对齐。

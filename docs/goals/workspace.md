@@ -75,5 +75,3 @@
   - 前置:WS-001、WS-004、WS-007。
   - 验证:`uv run ruff check . && uv run pytest tests/test_workspace_cwd.py tests/test_workspace.py tests/test_workspace_members.py tests/test_workspace_console.py tests/test_console_commands.py tests/test_roster_load.py tests/test_engineering_skeleton.py tests/test_v0_contract.py tests/test_workspace_migrate.py tests/test_console_keyboard.py tests/test_roster_protocol.py -q`
   - 证据:`bind_runtime` 未登记且无 `--bus-root` 时 `ensure_from_cwd` 把当前目录登记为工作区,总线进 `~/.amux/workspaces/<slug>/bus/`,不再回落 amux 仓库;`amux msg` 同样先登记。`roster.toml` 改为预设;`~/.amux/workspaces/<slug>/members.toml` 默认不存在=空名册;`amux member add|rm|list` 与 `/member` 改这份名单;没有 members.toml 时项目 `amux.toml` 的 `enabled` 仍可钉名单(本仓库 `amux.toml` 钉四成员,别的项目不受影响)。`tests/test_workspace_cwd.py` 覆盖自动登记、不回落仓库、默认空、预设/自定义增减、未登记目录 `amux msg` 仍进该区总线。2026-08-17 相关 107 passed,ruff 干净。
-
-质量收口在 [质量卷](quality.md) 的 QA-006。

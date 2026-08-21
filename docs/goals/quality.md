@@ -23,5 +23,3 @@
   - 前置:CON-007、ROS-002、QA-002。
   - 验证:`uv run python -m qa.collab verify`(`message-events=20 controls=1`);`uv run pytest tests/test_qa_collab.py tests/test_visual_evidence.py -q`(13 passed);`uv run ruff check .`。真实流程使用 160×40 `qa005-console`，退出后 `tmux list-sessions -F '#{session_name}\t#{session_created}'` 确认 `claude=1786827034`、`codex/cursor/agy=1786827035` 与启动前一致。
   - 证据:[协作实测流程](../quality/collaboration-check.md);`tests/baseline/qa-005-collaboration-160x40.txt`/`.ansi` 同屏显示四张真实成员卡、`human→claude`派活、Claude 向 Codex/Cursor/Agy 分工、三路回报、Claude 最终汇总与 `[控制] ✓ interrupt cursor`；`tests/evidence/qa-005-audit.jsonl` 存档 20 条带 `QA005-20260816-A` 的标准 `deposit/deliver` 事件和 1 条 `control/interrupt/changed=true`。`src/qa/collab.py` 与 `tests/test_qa_collab.py` 离线钉死 8 条必需有向消息边、四人名称、可见控制反馈及 ANSI 带色取证。
-- [ ] **QA-006** — 多工作区端到端实测:两个真实项目各起一组成员,同时活着;各自派活、组内协作、回报,消息不串台;两组的审计日志各自独立;`amux workspace rm` 清掉其中一组后另一组不受影响。过程记录(截取物 + 两份审计日志片段 + 成员进程 cwd 的 `lsof` 取证)存档作为证据。
-  - 前置:WS-001 至 WS-010 全部 `[x]`。

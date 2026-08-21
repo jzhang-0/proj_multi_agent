@@ -1,6 +1,6 @@
 # proj_multi_agent — 总控台
 
-一台机器上多个 AI CLI(claude / codex / cursor / agy)组成一个"群":互相 @ 协作,人从一个总控台里看到一切、指挥一切。产品形态与硬指标见 [产品定义](docs/product/product.md)。
+一台机器上多个 AI CLI 组成一个由 Leader 负责的协作团队：人直接面向 Leader，成员执行、提交证据和互相评审，所有派工、验收与接管都可回看。群聊只是其中一种沟通渠道。产品形态与硬指标见 [产品定义](docs/product/product.md)。
 
 ## 现状:v0 总线(可用)
 
@@ -35,6 +35,17 @@ uv run ruff check .
 
 `amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都把**当前目录**当工作区(未登记会自动登记;`--workspace <slug>` 显式指定)。新工作区默认没有成员,用 `amux member add claude` 按需加。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
 
+先初始化并绑定默认协作团队：
+
+```bash
+amux team init                 # 写 ~/.amux/teams/fable-core.toml
+amux team show fable-core      # 查看 Fable Leader、成员和职责
+amux team use fable-core       # 绑定到当前工作区
+amux team current              # 确认当前工作区的团队
+```
+
+`fable-core` 固定记录 Claude Fable 5 / high 为 Leader，Sonnet / xhigh、Opus / high、Luna / high-fast、Sol / xhigh 为成员。模型字段是团队协作偏好，**不会**被猜测成某个 CLI 的启动参数；实际启动命令仍按 `roster.toml` 和工作区成员名单配置。TEAM-001 已提供可保存团队和工作区绑定，任务分派、验收与接管账本将在 TEAM-002 落地。
+
 若希望任何新工作区默认拥有四个成员、打开 amux 就幂等地拉起它们,只需在任意目录执行一次:
 
 ```bash
@@ -57,6 +68,9 @@ amux workspace migrate --rollback  # 把工作区总线拷回仓库根 bus/
 amux member add claude        # 启用一个预设;自定义: amux member add bot --command cat
 amux member rm claude
 amux member list
+amux team init                 # 初始化默认 Fable 协作组
+amux team use fable-core       # 当前工作区选用该团队
+amux team current
 amux msg claude 写一个fizzbuzz  # 从当前目录定位工作区总线;./msg 仍是仓库根薄入口
 amux --workspace alpha          # 显式绑定工作区(界面里 /workspace beta 再切)
 ```
@@ -64,6 +78,8 @@ amux --workspace alpha          # 显式绑定工作区(界面里 /workspace bet
 项目根可以放可选的 `amux.toml`(钉死启用哪些成员、额外 env);没有则看工作区 `members.toml`,再没有就是空名册。测试用 `AMUX_HOME` 把状态指到临时目录。
 
 `amux` 起全屏 TUI(内嵌总线投递循环,`q` / Ctrl-C 干净退出,不影响任何成员会话);`amux --headless` 等价于纯 hub 模式(和 `python3 hub.py` 同一份实现)。界面是「会话列表 + 一块主画面」:左边窄列表第一项是群聊(带未读数),后面每个成员一项;选中谁,右边主画面就显示谁——群聊显示时间线,成员显示它的终端画面镜像(Esc/F2 回群聊)。打开成员会话时会把它的 tmux 窗口调成主画面大小,让画面铺满(`--no-fit` 关掉;F8 接管前自动把尺寸还给 tmux)。成员画面用 PgUp/PgDn 或滚轮直接往上翻它自己的回滚区,不必先 Tab 过去。输入框在底部通栏,**在成员会话里不带 `@` 的一行直接键入该成员的终端**(等于在它自己窗口里敲,动作进审计日志),`@名字` 开头仍然走群聊总线。成员直连输入框中 Shift+Tab 会传给成员 CLI,空输入时按 Enter 也会传一个独立回车;其他位置的 Tab/Shift+Tab 仍用于焦点导航。系统 Python 版本不满足要求时也不要绕过 `uv run`。
+
+当前过渡界面仍提供群聊时间线和成员终端镜像；团队档案已可由命令行保存/绑定，任务看板与 Leader 验收流将在 TEAM-002 成为主画面。
 
 硬指标实测:`uv run python -m qa.perf`(产品定义四条延迟预算一次跑完:入队→注入终端、消息→时间线上屏、详情画面刷新、键入回显,打印分布并按预算判定,退出码 0/1)。
 

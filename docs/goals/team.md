@@ -12,11 +12,11 @@
 
 ## Goal
 
-- [ ] **TEAM-001** — 可保存的团队档案：在 `~/.amux/teams/<id>.toml` 保存、校验和读取团队；每个档案必须恰有一位 Leader 和至少一位成员，成员需记录模型、推理强度、速度偏好与职责。`amux team init|list|show|use|current` 可初始化 `fable-core`、查看团队，并把现有团队绑定到当前工作区 `~/.amux/workspaces/<slug>/team.toml`；不存在或无效团队不得覆盖绑定。同步产品、架构、README 与命令帮助。此 Goal 不启动模型、不猜测 CLI 模型参数，亦不把群聊伪装成任务系统。
+- [x] **TEAM-001** — 可保存的团队档案：在 `~/.amux/teams/<id>.toml` 保存、校验和读取团队；每个档案必须恰有一位 Leader 和至少一位成员，成员需记录模型、推理强度、速度偏好与职责。`amux team init|list|show|use|current` 可初始化 `fable-core`、查看团队，并把现有团队绑定到当前工作区 `~/.amux/workspaces/<slug>/team.toml`；不存在或无效团队不得覆盖绑定。同步产品、架构、README 与命令帮助。此 Goal 不启动模型、不猜测 CLI 模型参数，亦不把群聊伪装成任务系统。
   - 前置:WS-012。
-  - 验证:`uv run ruff check . && uv run pytest tests/test_teams.py tests/test_global_config.py tests/test_workspace.py -q`;`uv run amux team --help`。
-  - 处理登记:codex；2026-08-22；分支 `team-001-codex`。
+  - 验证:`uv run ruff check .`;`uv run pytest tests/test_teams.py tests/test_global_config.py tests/test_workspace.py tests/test_console_app.py tests/test_engineering_skeleton.py -q`(41 passed);`uv run amux team --help`。
+  - 证据:`src/team/model.py` 严格校验唯一 Leader、成员与模型/强度/速度/职责；`src/team/store.py` 写入 `fable-core`;`src/team/binding.py` 先校验团队再更新工作区引用；`src/team/cli.py` 提供五个命令；`tests/test_teams.py` 覆盖默认档案、无效团队不覆盖原绑定及命令全链路。另以临时 `AMUX_HOME` 实测 `init → use → current → show`，输出 Fable Leader 和四名成员。
 
 - [ ] **TEAM-002** — 任务账本与责任流：为工作区建立不可覆盖的任务事件流，覆盖 Leader 建任务/拆解/派工、成员进展/阻塞/提交证据、评审通过/退回、Leader 验收/重新分派/接管与向 human 汇报；任务看板和详情页以账本为主，群聊仅显示关联沟通。成员不能最终结项，任何最终完成都能追到负责 Leader。
   - 前置:TEAM-001。
-  - 进行中:等待 TEAM-001 的团队档案和工作区绑定接口。
+  - 进行中:前置 TEAM-001 已完成，待认领。

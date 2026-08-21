@@ -3,7 +3,8 @@
 `amux` 裸跑起全屏 TUI;`amux --headless` 就是纯 hub 模式
 (直接交给 `bus.headless`,与 `python3 hub.py` 同一份实现,行为不会漂)。
 `amux workspace add|list|rm|current|gc|migrate` 管理工作区登记;
-`amux member add|rm|list` 增减当前工作区成员;`amux msg` 从当前目录定位工作区总线。
+`amux member add|rm|list` 增减当前工作区成员;`amux team` 管理协作团队;
+`amux msg` 从当前目录定位工作区总线。
 `amux --workspace <slug>` 显式绑定工作区(默认从 cwd 向上解析;未登记则自动登记当前目录)。
 
 `uv run console` 是同一个入口的别名,历史 Goal 证据里的命令继续可用。
@@ -30,10 +31,11 @@ def build_parser(*, default_theme: str = "console-dark") -> argparse.ArgumentPar
     """构造总控台命令行解析器。"""
     parser = argparse.ArgumentParser(
         prog="amux",
-        description="本机多 AI 群聊与指挥中心",
+        description="本机 AI 协作团队指挥中心",
         epilog=(
             "工作区: amux workspace add|list|rm|current|gc|migrate; "
             "成员: amux member add|rm|list; "
+            "团队: amux team init|list|show|use|current; "
             "配置: amux config init|show; "
             "发消息: amux msg <名字> <内容>"
         ),
@@ -89,6 +91,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from workspace.member_cli import main as member_main
 
         return member_main(raw[1:])
+    if raw and raw[0] == "team":
+        from team.cli import main as team_main
+
+        return team_main(raw[1:])
     if raw and raw[0] == "config":
         from workspace.global_config import main as config_main
 

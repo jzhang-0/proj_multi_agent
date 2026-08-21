@@ -11,10 +11,12 @@ from pathlib import Path
 
 ENV_AMUX_HOME = "AMUX_HOME"
 WORKSPACES_DIR = "workspaces"
+TEAMS_DIR = "teams"
 INDEX_NAME = "paths.toml"
 META_NAME = "workspace.toml"
 PROJECT_CONFIG_NAME = "amux.toml"
 MEMBERS_NAME = "members.toml"
+TEAM_BINDING_NAME = "team.toml"
 GLOBAL_CONFIG_NAME = "config.toml"
 
 

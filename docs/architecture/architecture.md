@@ -5,13 +5,15 @@
 ```
 console (TUI, Textual)          ← 人机界面,内嵌投递循环
    │
+   ├── work       任务账本:责任链、状态机、证据与事件流(TEAM-002)
+   ├── team       团队档案:Leader、成员、模型偏好、工作区绑定
    ├── workspace  工作区:登记、slug、从 cwd 解析、amux.toml
    ├── bus        消息总线:队列、投递策略(防环)、审计日志
    ├── tmuxctl    tmux 控制层:输出流、按键注入、进程控制
    └── roster     成员名册:配置、各 CLI 启动适配、生命周期
 ```
 
-- 模块放在 `src/` 下,`workspace`/`bus`/`tmuxctl`/`roster` 不允许 import `console`(单向依赖)。
+- 模块放在 `src/` 下,`team`/`work`/`workspace`/`bus`/`tmuxctl`/`roster` 不允许 import `console`(单向依赖)。`team` 可以读取 `workspace` 的状态目录，`work` 只能依赖 `team` 与下层模块。
 - `tmuxctl` 是拼装 tmux 命令的唯一出口。启动时探测 tmux ≥ 3.2,不满足则明确报错;会话存在性/结束使用 `=name` 精确匹配,`send-keys` 使用普通会话名(tmux 不接受 `send-keys -t =name`)。
 - 长文本注入走 `KeyInjector`:先按 capture-pane 末行启发式判断是否有未提交输入,有则等待,超时则先 Enter 换行隔离再注入,避免拼接到半行字上。
 - `console` 内嵌 hub 的投递循环,但投递循环必须能脱离 TUI 独立运行(headless hub,兼容现在的 `python3 hub.py` 用法)。
@@ -39,6 +41,8 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 2. **`./msg` 命令行**:`./msg <收件人> <内容...>` 永远可用(仓库根薄入口);成员面向的形态是 `amux msg`(从当前工作区投递)。发件人取 `AGENT_NAME`,缺省 `human`。新参数只能是可选 flag(如 `--ask`)。
 3. **寻址**:工作区内收件人仍是短名(`claude`);tmux 会话名是 `<成员>@<slug>`,双向映射收口在 `workspace.session`(`bind_tmux` 是生产路径唯一入口)。`human` 是保留名,不投递、只上屏;`bus` 是总线自身的署名(防环拒收回执);`im:` 前缀是 IM 网关代投的远程身份(同样只上屏,由网关发回群)。这三者没有 tmux 会话,不参与 slug 拼接,成员不得占用这些名字。
 4. **群规文本**:成员运行时协议维护在 `AGENTS.md` 的「群聊协议」一节,roster 的开场白从它生成,两处不允许漂移(由 ROS-006 钉住)。
+5. **团队档案**:`~/.amux/teams/<id>.toml` 是 Leader、成员、模型偏好和职责的唯一来源；`workspaces/<slug>/team.toml` 只保存所选团队 ID。模型偏好不是 CLI 命令或模型参数，实际 CLI 适配仍由 `roster` 负责。
+6. **任务事件(TEAM-002)**:任务的派工、提交、评审、退回、接管和最终验收必须追加到工作区账本。只有 Leader 可以最终验收；接管事件包含原因、范围和后续验收，不能覆盖先前事件。
 
 ## §4 安全边界
 
@@ -53,9 +57,11 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 ```
 ~/.amux/                          # AMUX_HOME,测试注入临时目录
   config.toml                     # 全局默认成员/自动拉起/默认主题(WS-012)
+  teams/<id>.toml                 # 可复用团队:唯一 Leader、成员与模型偏好(TEAM-001)
   paths.toml                      # 绝对路径 → slug 反查
   workspaces/<slug>/
     workspace.toml                # 项目根路径(源数据)
+    team.toml                     # 当前工作区绑定的团队 ID(TEAM-001)
     bus/                          # 该工作区的队列、审计、ask/reply(WS-003)
 ```
 

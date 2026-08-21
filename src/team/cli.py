@@ -1,4 +1,4 @@
-"""`amux team init|list|show|use|current`。"""
+"""`amux team init|list|show|use|current|activate`。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from team.activation import activate_team
 from team.binding import bind_team, load_team_binding
 from team.model import Team
 from team.store import DEFAULT_TEAM_ID, TeamStore
@@ -30,6 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     use = sub.add_parser("use", help="将一个团队绑定到当前工作区")
     use.add_argument("team_id", help="团队 ID")
     sub.add_parser("current", help="显示当前工作区绑定的团队")
+    activate = sub.add_parser("activate", help="绑定团队并替换当前工作区的运行成员")
+    activate.add_argument("team_id", nargs="?", help="团队 ID，省略时使用当前绑定")
     return parser
 
 
@@ -41,6 +44,7 @@ def main(
     cwd: Path | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
+    tmux=None,
 ) -> int:
     args = build_parser().parse_args(argv)
     output = stdout or sys.stdout
@@ -75,10 +79,27 @@ def main(
                 file=output,
             )
             return 0
+        if args.action == "activate":
+            team_id = args.team_id
+            if team_id is None:
+                binding = load_team_binding(workspace)
+                if binding is None:
+                    raise WorkspaceError("当前工作区尚未选择团队。用 amux team activate <团队 ID>")
+                team_id = binding.team_id
+            activation = activate_team(
+                workspace,
+                team_id,
+                teams=team_store,
+                tmux=tmux,
+            )
+            print(f"工作区 {workspace.slug} 已激活团队 {activation.team.id}", file=output)
+            for result in (*activation.stopped, *activation.started):
+                print(result.line(), file=output)
+            return 0
     except (WorkspaceError, OSError) as exc:
         print(f"[team] {exc}", file=errors)
         return 1
-    print("用法: amux team init|list|show|use|current", file=errors)
+    print("用法: amux team init|list|show|use|current|activate", file=errors)
     return 2
 
 
@@ -110,3 +131,5 @@ def _show(team: Team, output: TextIO) -> None:
             file=output,
         )
         print(f"  职责: {member.responsibility}", file=output)
+        if member.command is not None:
+            print(f"  启动: {member.command} {' '.join(member.args)}", file=output)

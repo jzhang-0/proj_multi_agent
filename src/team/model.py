@@ -20,7 +20,7 @@ class TeamValidationError(WorkspaceError):
 
 @dataclass(frozen=True)
 class TeamMember:
-    """团队中的一个可追责角色，不等同于实际 CLI 启动参数。"""
+    """团队中的一个可追责角色，附带可选的经验证启动适配。"""
 
     id: str
     role: str
@@ -28,6 +28,8 @@ class TeamMember:
     effort: str
     speed: str
     responsibility: str
+    command: str | None = None
+    args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -94,7 +96,16 @@ def team_from_dict(raw: Any, *, source: str) -> Team:
 def _member(raw: Any, *, source: str) -> TeamMember:
     if not isinstance(raw, dict):
         raise TeamValidationError(f"{source} 的 members 每一项必须是表")
-    allowed = {"id", "role", "model", "effort", "speed", "responsibility"}
+    allowed = {
+        "id",
+        "role",
+        "model",
+        "effort",
+        "speed",
+        "responsibility",
+        "command",
+        "args",
+    }
     unknown = sorted(set(raw) - allowed)
     if unknown:
         raise TeamValidationError(f"{source} 的成员含未知字段: {', '.join(unknown)}")
@@ -112,6 +123,10 @@ def _member(raw: Any, *, source: str) -> TeamMember:
         raise TeamValidationError(
             f"{source} 的成员 {member_id} 的 speed 必须是: {', '.join(sorted(_SPEEDS))}"
         )
+    command = _optional_string_or_none(raw, "command", source)
+    args = _optional_string_list(raw, "args", source)
+    if args and command is None:
+        raise TeamValidationError(f"{source} 的成员 {member_id} 设置 args 时必须同时设置 command")
     return TeamMember(
         id=member_id,
         role=role,
@@ -119,6 +134,8 @@ def _member(raw: Any, *, source: str) -> TeamMember:
         effort=effort,
         speed=speed,
         responsibility=_string(raw, "responsibility", source),
+        command=command,
+        args=args,
     )
 
 
@@ -133,3 +150,18 @@ def _optional_string(raw: dict[str, Any], key: str, source: str) -> str:
     if key not in raw:
         return ""
     return _string(raw, key, source)
+
+
+def _optional_string_or_none(raw: dict[str, Any], key: str, source: str) -> str | None:
+    if key not in raw:
+        return None
+    return _string(raw, key, source)
+
+
+def _optional_string_list(raw: dict[str, Any], key: str, source: str) -> tuple[str, ...]:
+    if key not in raw:
+        return ()
+    value = raw[key]
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise TeamValidationError(f"{source} 的 {key} 必须是字符串数组")
+    return tuple(value)

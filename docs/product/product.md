@@ -71,7 +71,7 @@
 - 工作区内部的寻址方式不变:成员之间仍然 `msg claude`,短名在边界层解析到本工作区。
 - 在某个目录敲 `amux`,就在**这个目录**里工作(未登记则自动登记);不会跳到 amux 自己的仓库。
 - 成员不默认四个。仓库根 `roster.toml` 只是预设,工作区用 `amux member add|rm` 自己增减。
-- 工作区可绑定一个保存于 `~/.amux/teams/` 的团队档案；档案说明 Leader、成员、模型偏好与职责，不把尚未验证的模型标签擅自转成 CLI 参数。
+- 工作区可绑定一个保存于 `~/.amux/teams/` 的团队档案；档案说明 Leader、成员、模型偏好、职责及经验证的启动适配。默认 `fable-core` 的 Claude 系列由 `claude` 启动、Luna/Sol 由 `codex` 启动；Cursor `agent` 只有在另行配置 Cursor 自有模型时才会加入名册。
 
 工程拆分见 [工作区 Goal 卷](../goals/workspace.md)。原「一个仓库一组成员」的形态是它的单工作区特例。
 

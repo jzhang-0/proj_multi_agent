@@ -21,7 +21,7 @@
   - 前置:TEAM-001。
   - 进行中:前置 TEAM-001 已完成，待认领。
 
-- [ ] **TEAM-003** — Fable 团队运行时激活：团队成员档案可保存经验证的本机启动命令与参数；默认 `fable-core` 固定映射 Fable/Sonnet/Opus 到 `claude`，Luna/Sol 到 `codex`，不生成 `agent` 成员。`amux team activate [team-id]` 先校验全部运行器，再绑定团队、仅关闭当前工作区旧名册的已启用成员、写入 `~/.amux/workspaces/<slug>/members.toml` 并拉起新名册。Luna 使用 Codex 的 `priority` 服务档以兑现 `high-fast`；Sol 使用 `xhigh`。激活失败不得改写原有绑定或成员名单。
+- [x] **TEAM-003** — Fable 团队运行时激活：团队成员档案可保存经验证的本机启动命令与参数；默认 `fable-core` 固定映射 Fable/Sonnet/Opus 到 `claude`，Luna/Sol 到 `codex`，不生成 `agent` 成员。`amux team activate [team-id]` 先校验全部运行器，再绑定团队、仅关闭当前工作区旧名册的已启用成员、写入 `~/.amux/workspaces/<slug>/members.toml` 并拉起新名册。Luna 使用 Codex 的 `priority` 服务档以兑现 `high-fast`；Sol 使用 `xhigh`。激活失败不得改写原有绑定或成员名单。
   - 前置:TEAM-001。
-  - 处理登记:Codex，2026-08-22，`team-003-codex`。
-  - 进行中:依据 human 对 CLI 边界的补充，正在实现并准备激活 `proj_fppt`。
+  - 验证:`uv run ruff check .`(通过);`uv run pytest tests/test_teams.py tests/test_team_activation.py tests/test_workspace_members.py tests/test_global_config.py tests/test_workspace_session.py tests/test_console_app.py tests/test_engineering_skeleton.py -q`(37 passed)。
+  - 证据:`src/team/store.py` 在 `~/.amux/teams/fable-core.toml` 保存三条 `claude` 与两条 `codex` 适配；`src/team/activation.py` 先校验运行器、再只结束旧有效名册并投影新 `members.toml`；`tests/test_team_activation.py` 覆盖无 `agent`、工作区隔离与失败不改状态。实机在 `proj_fppt` 运行 `amux team init --force`、`amux team activate fable-core`：旧 `claude`/`codex` 均关闭，`fable`、`sonnet`、`opus`、`luna`、`sol` 均启动；`tmux list-sessions` 和终端抓取确认 Fable high、Luna high fast 已就绪。

@@ -7,8 +7,9 @@
    有这份文件就以它为准。
 3. 没有 members.toml 时,项目根可选 `amux.toml` 的 `enabled` 仍可钉一份名单
    (本仓库自己用它保留四成员协作)。
-4. 两份都没有 = 空名册,一个人都不会被拉起。
-5. `[env]` 覆盖到每个启用成员的 env 上,项目侧同名键赢。
+4. 前两者都没有时,采用 `~/.amux/config.toml` 的 `default_members`。
+5. 三份配置都没有 = 空名册,一个人都不会被拉起。
+6. `[env]` 覆盖到每个启用成员的 env 上,项目侧同名键赢。
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from pathlib import Path
 from roster.paths import default_path
 from roster.schema import Member, Roster, RosterError, roster_from_dict
 from workspace.config import ProjectConfig, load_project_config
+from workspace.global_config import load_global_config
 from workspace.members import WorkspaceMembers, load_workspace_members
 from workspace.resolve import resolve_from_cwd
 
@@ -102,7 +104,7 @@ def load_effective_roster(
     *,
     cwd: str | Path | None = None,
 ) -> Roster:
-    """预设 + 工作区成员名单(或 amux.toml);都没有则空名册。"""
+    """预设 + 工作区/项目/全局成员名单;都没有则空名册。"""
     presets = load_roster(path)
     workspace = resolve_from_cwd(cwd)
     config = (
@@ -113,5 +115,8 @@ def load_effective_roster(
         return assemble_workspace_roster(presets, stored, config)
     if config.enabled is not None:
         return apply_overlay(presets, config)
+    defaults = load_global_config().default_members
+    if defaults:
+        return apply_overlay(presets, ProjectConfig(enabled=defaults, env=config.env))
     empty = ProjectConfig(enabled=(), env=config.env, source=config.source)
     return apply_overlay(presets, empty)

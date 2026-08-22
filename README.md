@@ -29,13 +29,12 @@ tmux attach -t codex   # 围观某个成员(Ctrl-b d 退出)
 
 ```bash
 uv sync
-./install-amux.sh      # 把 amux 装成全局命令(只装这一个;uninstall 卸载)
-amux                   # 任意目录裸跑,进总控台
+uv run amux            # 仓库开发直接运行,不覆盖全局命令
 uv run pytest -q
 uv run ruff check .
 ```
 
-公开发行包使用 `amux-team` 作为 PyPI 名称（`amux` 已被另一项目占用），对外命令仍是 `amux`。发布后可用 `uv tool install amux-team` 安装；当前源码开发继续使用上面的 `install-amux.sh`。构建和可信发布流程见 [打包与发布](docs/releasing.md)。
+公开发行包使用 `amux-team` 作为 PyPI 名称（`amux` 已被另一项目占用），对外命令仍是 `amux`。全局命令统一通过 `uv tool install amux-team` 从 PyPI 安装，后续用 `uv tool upgrade amux-team` 更新；仓库开发使用 `uv run amux`，不再用源码路径或本地 wheel 覆盖全局命令。构建和可信发布流程见 [打包与发布](docs/releasing.md)。
 
 `amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都把**当前目录**当工作区(未登记会自动登记;`--workspace <slug>` 显式指定)。新工作区默认没有成员,用 `amux member add claude` 按需加。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
 

@@ -19,7 +19,7 @@
   - 验证（Codex，2026-08-23）：`uv run ruff check src/qa/release.py tests/test_release_package.py` 通过；`uv run pytest tests/test_release_package.py -q` 为 `6 passed`；`uv run python -m qa.release --out-dir dist --offline-smoke` 构建并验证 wheel/sdist 的许可证文件与元数据。
   - 证据：根 `LICENSE` 是标准 MIT 正文并署名 `jzhang-0`；`pyproject.toml` 使用 SPDX `license = "MIT"` 和 `license-files = ["LICENSE"]`；`src/qa/release.py` 检查 wheel 的 `License-Expression`/`License-File` 以及 wheel/sdist 内许可证路径，README 与发行说明已同步。
 
-- [ ] **REL-004** — 首次公开发布：补齐 GitHub 项目 URL 元数据并验证制品，推送 `main`；配置 GitHub `testpypi`/`pypi` environments 与两站 Trusted Publisher，发布并验证 TestPyPI，再以 `v0.1.0` 标签发布正式 PyPI，最后从正式索引全新安装并验证 `amux --version`。
+- [x] **REL-004** — 首次公开发布：补齐 GitHub 项目 URL 元数据并验证制品，推送 `main`；配置 GitHub `testpypi`/`pypi` environments 与两站 Trusted Publisher，发布并验证 TestPyPI，再以 `v0.1.0` 标签发布正式 PyPI，最后从正式索引全新安装并验证 `amux --version`。
   - 前置:REL-002、REL-003。
-  - 处理登记:Codex，2026-08-23，`rel-004-codex`。
-  - 进行中:正在补齐远端元数据并执行首次 TestPyPI/PyPI 发布。
+  - 验证（Codex，2026-08-23）：`uv run ruff check .` 通过；`uv run pytest tests/test_release_package.py -q` 为 `6 passed`；隔离构建验证生成 `amux_team-0.1.0-py3-none-any.whl` 与 `amux_team-0.1.0.tar.gz`。GitHub `release` 手工运行 #1 成功发布 TestPyPI；`v0.1.0` 触发的运行 #2 首次被 `test_watch_mode_picks_up_new_message` 的已知后台清理时序波动挡住（`1 failed, 475 passed`），保留同一标签重跑后构建、测试与 PyPI OIDC 上传全部通过。
+  - 证据：TestPyPI 与 PyPI 的 JSON 索引均返回 `amux-team==0.1.0` 的 wheel/sdist；正式 [PyPI 项目](https://pypi.org/project/amux-team/0.1.0/) 与 [GitHub 发布流水线](https://github.com/jzhang-0/proj_multi_agent/actions/runs/32594800087) 可公开复核。最终使用 `uv tool install --force --no-cache --no-config --no-sources --default-index https://pypi.org/simple 'amux-team==0.1.0'` 替换旧源码 shim，`~/.local/bin/amux` 指向 uv tool 环境且 `amux --version` 输出 `amux 0.1.0`。

@@ -30,6 +30,8 @@ uv run python -m qa.release --out-dir dist
 
 workflow 使用 OIDC Trusted Publishing，不保存长期 API token。正式 tag 创建前，必须确认 `pyproject.toml` 的版本与 tag 一致；PyPI 版本不可覆盖。
 
+每次更新必须先递增 `pyproject.toml` 中的版本并重新生成锁文件，再创建同版本的新 tag；禁止移动已经公开的 tag，也禁止尝试覆盖 PyPI 上已有的版本。
+
 ## 用户安装
 
 发布后：
@@ -40,6 +42,6 @@ amux --version
 amux
 ```
 
-源码开发安装仍可执行 `./install-amux.sh`。它只是指向当前 checkout 的 shim，不属于公开制品。
+全局 `amux` 统一由 PyPI 和 `uv tool` 管理，升级使用 `uv tool upgrade amux-team`。仓库开发直接运行 `uv run amux`，不要再用源码 checkout 或本地 wheel 覆盖全局命令；`install-amux.sh` 只作为历史兼容脚本保留，不属于公开制品或日常安装流程。
 
 项目主页、源码仓库与问题追踪地址均指向 `https://github.com/jzhang-0/proj_multi_agent`。

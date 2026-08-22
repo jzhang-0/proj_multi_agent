@@ -84,7 +84,7 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
     return wheel, sdist
 
 
-def _isolated_smoke(wheel: Path, version: str) -> None:
+def _isolated_smoke(wheel: Path, version: str, *, offline: bool = False) -> None:
     uv = shutil.which("uv")
     if uv is None:
         raise RuntimeError("找不到 uv，无法做隔离安装 smoke")
@@ -95,25 +95,37 @@ def _isolated_smoke(wheel: Path, version: str) -> None:
         venv = temp / "venv"
         env = os.environ.copy()
         env["AMUX_HOME"] = str(temp / "amux-home")
+        env["UV_CACHE_DIR"] = str(temp / "uv-cache")
         _run(
             [uv, "venv", "--python", sys.executable, str(venv)],
             cwd=project,
             env=env,
         )
+        install_argv = [
+            uv,
+            "pip",
+            "install",
+            "--python",
+            str(venv / "bin" / "python"),
+        ]
+        if offline:
+            install_argv.extend(["--offline", "--no-deps"])
+        install_argv.append(str(wheel))
         _run(
-            [
-                uv,
-                "pip",
-                "install",
-                "--python",
-                str(venv / "bin" / "python"),
-                "--offline",
-                "--no-deps",
-                str(wheel),
-            ],
+            install_argv,
             cwd=project,
             env=env,
         )
+        if not offline:
+            _run(
+                [
+                    str(venv / "bin" / "python"),
+                    "-c",
+                    "import textual, watchfiles; print('release dependencies ok')",
+                ],
+                cwd=project,
+                env=env,
+            )
         amux = venv / "bin" / "amux"
         version_out = _run([str(amux), "--version"], cwd=project, env=env).stdout
         if f"amux {version}" not in version_out:
@@ -139,6 +151,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, default=Path("dist"))
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument(
+        "--offline-smoke",
+        action="store_true",
+        help="只离线安装 wheel payload，不验证依赖解析；不得用于正式发布",
+    )
     return parser
 
 
@@ -160,13 +177,17 @@ def main(argv: list[str] | None = None) -> int:
                 cwd=root,
             )
         wheel, sdist = _assert_artifacts(dist_dir, version)
-        _isolated_smoke(wheel, version)
+        _isolated_smoke(wheel, version, offline=args.offline_smoke)
     except (OSError, RuntimeError, tarfile.TarError, zipfile.BadZipFile) as exc:
         print(f"[release] FAIL: {exc}", file=sys.stderr)
         return 1
     print(f"[release] PASS: {wheel.name}")
     print(f"[release] PASS: {sdist.name}")
-    print("[release] PASS: wheel 已在源码仓库外隔离安装并读取包内资源")
+    if args.offline_smoke:
+        print("[release] PASS: wheel payload 已离线安装并读取包内资源（未验证依赖）")
+    else:
+        print("[release] PASS: wheel 及完整依赖已用全新缓存联网安装")
+        print("[release] PASS: 命令入口与包内资源已在源码仓库外验证")
     return 0
 
 

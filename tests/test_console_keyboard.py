@@ -127,6 +127,7 @@ def test_help_documents_every_console_binding_and_context_action() -> None:
         "PgUp / PgDn",
         "Ctrl+↑ / Ctrl+↓",
         "@ 成员",
+        "直连空 ↑ / ↓",
         "直连空 Del",
         "直连空 ↵",
         "直连 Shift+Tab",

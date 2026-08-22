@@ -79,7 +79,7 @@ amux
 - `Esc` 或 `F2` 返回群聊；
 - 在成员画面中直接输入，可以操作该成员的终端；
 - PgUp/PgDn、`Ctrl+↑/Ctrl+↓` 或滚轮可以回看成员的 tmux 历史；
-- 直连输入为空时，Delete/Backspace、Forward Delete、Enter 和 Shift+Tab 会作为独立按键透传；
+- 直连输入为空时，↑/↓ 可操作成员终端菜单，Delete/Backspace、Forward Delete、Enter 和 Shift+Tab 也会作为独立按键透传；
 - 以 `@成员名` 开头的内容会走消息总线；
 - `F1` 查看完整快捷键；
 - `q` 或 `Ctrl-C` 退出总控台，不会自动终止成员会话。
@@ -150,8 +150,9 @@ amux config show
 amux 的主界面由“会话列表 + 主画面 + 底部输入框”组成。选中群聊时，主画面显示时间线；
 选中成员时，主画面显示该成员的终端镜像。成员画面通过 `capture-pane` 回看 tmux 历史，不会
 切进 copy-mode；PgUp/PgDn 按页滚动（MacBook 是 `Fn+↑/Fn+↓`），`Ctrl+↑/Ctrl+↓` 在未被
-macOS 系统快捷键占用时可逐行回看，滚轮同样可用。直连输入为空时 Delete/Backspace、Forward
-Delete、Enter 和 Shift+Tab 会透传到成员终端；Delete 只能删除成员当前未提交的草稿，已经
+macOS 系统快捷键占用时可逐行回看，滚轮同样可用。直连输入为空且没有补全候选时，↑/↓ 会
+透传到成员终端以操作审批菜单；Delete/Backspace、Forward Delete、Enter 和 Shift+Tab 也会
+透传到成员终端。Delete 只能删除成员当前未提交的草稿，已经
 提交并显示在对话记录里的消息不能编辑。输入不为空时删除键只编辑本地文字。F5–F8 分别用于
 打断、终止、重启和全屏接管。
 

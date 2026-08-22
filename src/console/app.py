@@ -727,7 +727,7 @@ class ConsoleApp(App[None]):
             # 提示里只用等宽字体一定画得出的字符:⌨ 这类符号在不少终端字体里
             # 是缺字形的小方块,画出来反而像界面坏了
             compose.placeholder = (
-                f"直连 {self.selected_member}: 空Del删草稿;Enter/Shift+Tab透传;Fn+↑↓回看"
+                f"直连 {self.selected_member}: 空↑↓/Del/Enter/Shift+Tab透传;Fn+↑↓回看"
             )
         elif self.last_target is None:
             compose.placeholder = "@名字 说点什么,回车发送"
@@ -789,7 +789,7 @@ class ConsoleApp(App[None]):
             )
 
     def press_member_key(self, member: str, tmux_key: str, label: str) -> None:
-        """直连态把空 Enter / Delete / Shift+Tab 等按键交给成员终端。"""
+        """直连态把空输入下的方向键、删除键等交给成员终端。"""
         timeline = self.query_one("#timeline", Timeline)
         if self.controller is None:
             timeline.note("[总控台] 直连不可用(没接上 tmux),用 @名字 走群聊")

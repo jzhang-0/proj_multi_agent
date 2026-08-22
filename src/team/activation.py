@@ -41,7 +41,14 @@ def roster_for_team(team: Team) -> Roster:
         if member.command is None:
             missing.append(member.id)
             continue
-        members.append(Member(name=member.id, command=member.command, args=member.args))
+        members.append(
+            Member(
+                name=member.id,
+                command=member.command,
+                args=member.args,
+                env=member.env,
+            )
+        )
     if missing:
         raise TeamRuntimeError(
             f"团队 {team.id} 的成员缺少启动适配: {', '.join(missing)}。"

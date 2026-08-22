@@ -129,6 +129,9 @@ amux team current
 ```
 
 团队档案记录 Leader、成员、模型偏好和职责。激活后，amux 会把团队成员投影到当前工作区名册。
+默认团队还会让三个 Claude 成员使用 classic renderer，避免 alternate screen 把 tmux 回滚区清成
+`history_size=0`。已有旧团队档案可运行 `amux team init --force` 更新后重新激活；不想重启当前
+Claude 会话时，也可在 Claude 内执行一次 `/tui default`。
 
 ### 设置全局默认值
 
@@ -144,9 +147,11 @@ amux config show
 
 amux 的主界面由“会话列表 + 主画面 + 底部输入框”组成。选中群聊时，主画面显示时间线；
 选中成员时，主画面显示该成员的终端镜像。成员画面通过 `capture-pane` 回看 tmux 历史，不会
-切进 copy-mode；PgUp/PgDn 按页滚动，`Ctrl+↑/Ctrl+↓` 在输入框聚焦时也能逐行回看，滚轮同样
-可用。直连输入为空时 Delete/Backspace、Forward Delete、Enter 和 Shift+Tab 会透传到成员
-终端，输入不为空时删除键只编辑本地文字。F5–F8 分别用于打断、终止、重启和全屏接管。
+切进 copy-mode；PgUp/PgDn 按页滚动（MacBook 是 `Fn+↑/Fn+↓`），`Ctrl+↑/Ctrl+↓` 在未被
+macOS 系统快捷键占用时可逐行回看，滚轮同样可用。直连输入为空时 Delete/Backspace、Forward
+Delete、Enter 和 Shift+Tab 会透传到成员终端；Delete 只能删除成员当前未提交的草稿，已经
+提交并显示在对话记录里的消息不能编辑。输入不为空时删除键只编辑本地文字。F5–F8 分别用于
+打断、终止、重启和全屏接管。
 
 每个工作区的运行时数据默认位于：
 

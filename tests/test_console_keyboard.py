@@ -67,9 +67,15 @@ def test_focus_cycles_forward_and_backward_through_all_work_areas(tmp_path: Path
             await pilot.press("pageup")
             assert app.query_one("#detail", Mirror).history_offset == HISTORY_STEP
 
-            # MacBook 没有独立 PgUp 键；输入框聚焦时 Ctrl+方向键仍能回看。
+            # MacBook 上 Fn+↑/↓ 会被终端解码成 PgUp/PgDn；输入框聚焦也能回看。
             compose = app.query_one("#compose", ComposeInput)
             compose.focus()
+            await pilot.press("pageup")
+            assert app.query_one("#detail", Mirror).history_offset == HISTORY_STEP * 2
+            await pilot.press("pagedown")
+            assert app.query_one("#detail", Mirror).history_offset == HISTORY_STEP
+
+            # Ctrl+方向键仍保留给没有被系统快捷键占用的终端。
             await pilot.press("ctrl+up")
             assert app.query_one("#detail", Mirror).history_offset == HISTORY_STEP + WHEEL_STEP
             await pilot.press("ctrl+down")
@@ -121,7 +127,8 @@ def test_help_documents_every_console_binding_and_context_action() -> None:
         "PgUp / PgDn",
         "Ctrl+↑ / Ctrl+↓",
         "@ 成员",
-        "直连空 Del / ↵",
+        "直连空 Del",
+        "直连空 ↵",
         "直连 Shift+Tab",
         "斜杠命令补全,含 /workspace",
         "Y 确认 / N 取消",

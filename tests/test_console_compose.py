@@ -167,8 +167,9 @@ def test_inside_a_member_conversation_plain_text_is_typed_into_its_terminal(path
             app.select_member("codex")
             await pilot.pause()
             assert "直连 codex" in compose.placeholder
-            assert "空Del/Enter、Shift+Tab" in compose.placeholder
-            assert "Ctrl+↑↓回看" in compose.placeholder
+            assert "空Del删草稿" in compose.placeholder
+            assert "Enter/Shift+Tab透传" in compose.placeholder
+            assert "Fn+↑↓回看" in compose.placeholder
 
             compose.focus()
             compose.value = "继续做 GATE-004"

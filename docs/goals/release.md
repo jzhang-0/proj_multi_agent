@@ -14,7 +14,7 @@
   - 验证（Codex，2026-08-23）：`uv run ruff check .` 通过；合并后 `uv run pytest -q` 为 `476 passed in 49.55s`；通过 Surge `PyPI → NX-HK01` 执行 `uv run python -m qa.release --out-dir dist`，全新缓存联网安装 wheel 与完整依赖并通过命令/资源 smoke；`uv run python -m qa.release --out-dir dist --skip-build --offline-smoke` 也通过并明确标注未验证依赖。
   - 证据：`src/qa/release.py` 默认创建独立 `UV_CACHE_DIR`、正常解析依赖并导入 `textual`/`watchfiles`，仅显式 `--offline-smoke` 才添加 `--offline --no-deps`；`tests/test_release_package.py` 覆盖严格/离线参数分支并禁止发布 workflow 使用离线选项；`docs/releasing.md` 与架构完成契约已同步。
 
-- [ ] **REL-003** — MIT 发行许可：按 human 选择加入标准 MIT `LICENSE`，版权主体使用仓库 Git 身份 `jzhang-0`；以 SPDX 表达式和显式 license file 配置项目元数据，确保 wheel/sdist 携带许可证且 wheel 元数据声明 `License-Expression: MIT`，同步 README 与发行说明并增加制品检查测试。
+- [x] **REL-003** — MIT 发行许可：按 human 选择加入标准 MIT `LICENSE`，版权主体使用仓库 Git 身份 `jzhang-0`；以 SPDX 表达式和显式 license file 配置项目元数据，确保 wheel/sdist 携带许可证且 wheel 元数据声明 `License-Expression: MIT`，同步 README 与发行说明并增加制品检查测试。
   - 前置:REL-001。
-  - 处理登记:Codex，2026-08-23，`rel-003-codex`。
-  - 进行中:正在将 human 的 MIT 选择落实到源码和可发布制品。
+  - 验证（Codex，2026-08-23）：`uv run ruff check src/qa/release.py tests/test_release_package.py` 通过；`uv run pytest tests/test_release_package.py -q` 为 `6 passed`；`uv run python -m qa.release --out-dir dist --offline-smoke` 构建并验证 wheel/sdist 的许可证文件与元数据。
+  - 证据：根 `LICENSE` 是标准 MIT 正文并署名 `jzhang-0`；`pyproject.toml` 使用 SPDX `license = "MIT"` 和 `license-files = ["LICENSE"]`；`src/qa/release.py` 检查 wheel 的 `License-Expression`/`License-File` 以及 wheel/sdist 内许可证路径，README 与发行说明已同步。

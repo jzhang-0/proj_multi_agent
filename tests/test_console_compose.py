@@ -167,7 +167,8 @@ def test_inside_a_member_conversation_plain_text_is_typed_into_its_terminal(path
             app.select_member("codex")
             await pilot.pause()
             assert "直连 codex" in compose.placeholder
-            assert "Shift+Tab/空Enter" in compose.placeholder
+            assert "空Del/Enter、Shift+Tab" in compose.placeholder
+            assert "Ctrl+↑↓回看" in compose.placeholder
 
             compose.focus()
             compose.value = "继续做 GATE-004"
@@ -196,8 +197,8 @@ def test_inside_a_member_conversation_plain_text_is_typed_into_its_terminal(path
     run_async(scenario)
 
 
-def test_direct_member_shortcuts_pass_shift_tab_and_empty_enter_to_the_terminal(paths):
-    """直连输入框既要留住焦点,也要能把 Claude Code 的 BTab 与空回车送出去。"""
+def test_direct_member_shortcuts_pass_non_text_keys_to_the_terminal(paths):
+    """直连输入框留住焦点，并透传模式键、空回车和两种删除键。"""
 
     class RecordingController:
         def __init__(self):
@@ -231,7 +232,57 @@ def test_direct_member_shortcuts_pass_shift_tab_and_empty_enter_to_the_terminal(
             assert await wait_for(
                 pilot, lambda: controller.keys == [("codex", "BTab"), ("codex", "Enter")]
             )
+
+            await pilot.press("backspace")
+            await pilot.press("delete")
+            assert await wait_for(
+                pilot,
+                lambda: controller.keys
+                == [
+                    ("codex", "BTab"),
+                    ("codex", "Enter"),
+                    ("codex", "BSpace"),
+                    ("codex", "DC"),
+                ],
+            )
             assert compose.value == ""
+
+    run_async(scenario)
+
+
+def test_direct_delete_edits_nonempty_compose_instead_of_reaching_tmux(paths):
+    """只有空输入才透传删除键；有文字时保持 Input 的本地编辑语义。"""
+
+    class RecordingController:
+        def __init__(self):
+            self.keys = []
+
+        def press_key(self, target, key):
+            self.keys.append((target, key))
+
+    controller = RecordingController()
+    app = ConsoleApp(
+        paths,
+        deliver=lambda _message: True,
+        members=("codex",),
+        controller=controller,
+    )
+
+    async def scenario():
+        async with app.run_test(size=(120, 30)) as pilot:
+            compose = app.query_one("#compose", ComposeInput)
+            app.select_member("codex")
+            compose.focus()
+
+            compose.value = "ab"
+            await pilot.press("end")  # 解除 Input 聚焦时的全选
+            await pilot.press("backspace")
+            assert compose.value == "a"
+
+            await pilot.press("home")
+            await pilot.press("delete")
+            assert compose.value == ""
+            assert controller.keys == []
 
     run_async(scenario)
 

@@ -27,6 +27,7 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
             Shortcut("↑ / ↓", "选会话（群聊/成员）；输入时选候选项或翻发言历史"),
             Shortcut("Esc / F2", "回到群聊时间线"),
             Shortcut("PgUp / PgDn", "翻时间线；看成员画面时翻它的回滚区"),
+            Shortcut("Ctrl+↑ / Ctrl+↓", "逐行回看当前画面；输入框聚焦时也可用"),
             Shortcut("Home / End", "跳到当前区域最早 / 最新位置"),
         ),
     ),
@@ -37,7 +38,8 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
             Shortcut("/ 命令", "斜杠命令补全,含 /workspace"),
             Shortcut("Enter", "接受补全，再按一次发送或执行"),
             Shortcut("成员会话里直接打字", "不带 @ 就是直接键入该成员终端，等于在它窗口里敲"),
-            Shortcut("直连 Shift+Tab / ↵", "分别透传 BTab / 空 Enter 给成员终端"),
+            Shortcut("直连空 Del / ↵", "透传 Delete/Backspace / Forward Delete / Enter"),
+            Shortcut("直连 Shift+Tab", "透传 BTab 给成员终端"),
         ),
     ),
     (

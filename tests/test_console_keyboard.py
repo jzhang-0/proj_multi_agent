@@ -13,7 +13,7 @@ from console.app import ConsoleApp
 from console.compose import ComposeInput
 from console.help import SHORTCUT_GROUPS, ShortcutHelpScreen, render_shortcuts
 from console.members import MemberStatusService
-from console.mirror import HISTORY_STEP, Mirror
+from console.mirror import HISTORY_STEP, WHEEL_STEP, Mirror
 from console.widgets import Timeline
 from tmuxctl import PaneSnapshot
 
@@ -67,6 +67,14 @@ def test_focus_cycles_forward_and_backward_through_all_work_areas(tmp_path: Path
             await pilot.press("pageup")
             assert app.query_one("#detail", Mirror).history_offset == HISTORY_STEP
 
+            # MacBook 没有独立 PgUp 键；输入框聚焦时 Ctrl+方向键仍能回看。
+            compose = app.query_one("#compose", ComposeInput)
+            compose.focus()
+            await pilot.press("ctrl+up")
+            assert app.query_one("#detail", Mirror).history_offset == HISTORY_STEP + WHEEL_STEP
+            await pilot.press("ctrl+down")
+            assert app.query_one("#detail", Mirror).history_offset == HISTORY_STEP
+
     asyncio.run(scenario())
 
 
@@ -111,8 +119,10 @@ def test_help_documents_every_console_binding_and_context_action() -> None:
     for capability in (
         "Tab / Shift+Tab",
         "PgUp / PgDn",
+        "Ctrl+↑ / Ctrl+↓",
         "@ 成员",
-        "直连 Shift+Tab / ↵",
+        "直连空 Del / ↵",
+        "直连 Shift+Tab",
         "斜杠命令补全,含 /workspace",
         "Y 确认 / N 取消",
         "退出 attach 后返回",

@@ -164,6 +164,18 @@ class ComposeInput(Input):
             event.prevent_default()
             event.stop()
             return
+        if self.direct_mode and not self.value and event.key in {"backspace", "delete"}:
+            # Mac 键盘上标成 Delete 的键在终端里通常叫 Backspace；Fn+Delete
+            # 才是 Forward Delete。输入框为空时本地已经没有字符可删，便把
+            # 两种键分别按 tmux 的 BSpace / DC 原样交给成员 CLI。
+            tmux_key, label = {
+                "backspace": ("BSpace", "Delete/Backspace"),
+                "delete": ("DC", "Forward Delete"),
+            }[event.key]
+            self.post_message(self.DirectKey(self, tmux_key, label))
+            event.prevent_default()
+            event.stop()
+            return
         if event.key == "tab" and self.candidates:
             # 一次 Tab 只做一件事:没选过就先落定第一个,选过就换下一个
             self.accept_candidate()

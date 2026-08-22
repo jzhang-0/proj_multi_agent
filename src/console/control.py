@@ -102,7 +102,7 @@ class MemberController:
 
     def press_key(self, target: str, key: str) -> ControlFeedback:
         """向成员终端发送一枚白名单内的非文本按键,并记录审计。"""
-        if key not in {"Enter", "BTab", "BSpace", "DC"}:
+        if key not in {"Enter", "BTab", "BSpace", "DC", "Up", "Down"}:
             raise ValueError(f"不允许透传的成员按键: {key}")
         try:
             self.tmux.send_keys(target, key)

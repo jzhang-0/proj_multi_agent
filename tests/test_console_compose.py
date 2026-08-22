@@ -167,8 +167,7 @@ def test_inside_a_member_conversation_plain_text_is_typed_into_its_terminal(path
             app.select_member("codex")
             await pilot.pause()
             assert "直连 codex" in compose.placeholder
-            assert "空Del删草稿" in compose.placeholder
-            assert "Enter/Shift+Tab透传" in compose.placeholder
+            assert "空↑↓/Del/Enter/Shift+Tab透传" in compose.placeholder
             assert "Fn+↑↓回看" in compose.placeholder
 
             compose.focus()
@@ -236,6 +235,8 @@ def test_direct_member_shortcuts_pass_non_text_keys_to_the_terminal(paths):
 
             await pilot.press("backspace")
             await pilot.press("delete")
+            await pilot.press("up")
+            await pilot.press("down")
             assert await wait_for(
                 pilot,
                 lambda: controller.keys
@@ -244,9 +245,19 @@ def test_direct_member_shortcuts_pass_non_text_keys_to_the_terminal(paths):
                     ("codex", "Enter"),
                     ("codex", "BSpace"),
                     ("codex", "DC"),
+                    ("codex", "Up"),
+                    ("codex", "Down"),
                 ],
             )
             assert compose.value == ""
+
+            # 有补全候选时 ↑↓ 仍只选候选,不送进成员终端。
+            compose.value = "@"
+            compose.cursor_position = 1
+            compose.refresh_candidates()
+            await pilot.press("up")
+            await pilot.press("down")
+            assert controller.keys[-2:] == [("codex", "Up"), ("codex", "Down")]
 
     run_async(scenario)
 
@@ -274,6 +285,12 @@ def test_direct_delete_edits_nonempty_compose_instead_of_reaching_tmux(paths):
             compose = app.query_one("#compose", ComposeInput)
             app.select_member("codex")
             compose.focus()
+
+            compose.remember("旧的直连输入")
+            compose.value = "当前草稿"
+            await pilot.press("up")
+            assert compose.value == "旧的直连输入"
+            assert controller.keys == []
 
             compose.value = "ab"
             await pilot.press("end")  # 解除 Input 聚焦时的全选

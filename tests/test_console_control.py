@@ -157,17 +157,23 @@ def test_controller_passes_allowed_direct_keys_and_audits_them(tmp_path: Path) -
     assert controller.press_key("claude", "Enter").changed
     assert controller.press_key("claude", "BSpace").changed
     assert controller.press_key("claude", "DC").changed
+    assert controller.press_key("claude", "Up").changed
+    assert controller.press_key("claude", "Down").changed
     assert tmux.calls == [
         ("claude", ("BTab",), False),
         ("claude", ("Enter",), False),
         ("claude", ("BSpace",), False),
         ("claude", ("DC",), False),
+        ("claude", ("Up",), False),
+        ("claude", ("Down",), False),
     ]
     assert [(entry["action"], entry["reason"]) for entry in AuditLog(paths).entries()] == [
         ("key", "BTab"),
         ("key", "Enter"),
         ("key", "BSpace"),
         ("key", "DC"),
+        ("key", "Up"),
+        ("key", "Down"),
     ]
     with pytest.raises(ValueError, match="不允许"):
         controller.press_key("claude", "C-c")

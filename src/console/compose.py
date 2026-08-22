@@ -195,6 +195,15 @@ class ComposeInput(Input):
         if event.key in ("up", "down"):
             if self.candidates:
                 self.cycle_candidate(-1 if event.key == "up" else 1)
+            elif self.direct_mode and not self.value:
+                # 直连空输入时,方向键属于成员终端里的交互界面(例如 Codex
+                # 的审批菜单)。Ctrl+方向键由 ConsoleApp 高优先级绑定留给
+                # tmux 回滚；有本地文字时仍保留发送历史语义。
+                tmux_key, label = {
+                    "up": ("Up", "↑"),
+                    "down": ("Down", "↓"),
+                }[event.key]
+                self.post_message(self.DirectKey(self, tmux_key, label))
             elif not self.recall(-1 if event.key == "up" else 1):
                 return
             event.prevent_default()

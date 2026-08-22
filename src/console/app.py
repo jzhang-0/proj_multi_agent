@@ -48,7 +48,7 @@ from console.control import ConfirmControlScreen, ControlFeedback, MemberControl
 from console.health import ConsoleHealthMonitor, FaultEvent, FaultKind
 from console.help import ShortcutHelpScreen
 from console.members import MemberStatusService, member_names, pending_counts
-from console.mirror import Mirror
+from console.mirror import WHEEL_STEP, Mirror
 from console.theme import THEMES, Tokens
 from console.theme import tokens as theme_tokens
 from console.timeline import TimelineEntry, history
@@ -160,6 +160,20 @@ class ConsoleApp(App[None]):
         Binding("pagedown", "timeline_scroll('page_down')", "下翻", show=False),
         Binding("home", "timeline_scroll('home')", "回到最早", show=False),
         Binding("end", "timeline_scroll('end')", "回到最新", show=False),
+        Binding(
+            "ctrl+up",
+            "timeline_scroll('line_up')",
+            "逐行上翻",
+            priority=True,
+            show=False,
+        ),
+        Binding(
+            "ctrl+down",
+            "timeline_scroll('line_down')",
+            "逐行下翻",
+            priority=True,
+            show=False,
+        ),
         Binding("f5", "interrupt_selected", "打断"),
         Binding("f6", "terminate_selected", "终止"),
         Binding("f7", "restart_selected", "重启"),
@@ -684,7 +698,7 @@ class ConsoleApp(App[None]):
             self.send_from_input(event.value)
 
     def on_compose_input_direct_key(self, event: ComposeInput.DirectKey) -> None:
-        """只在成员直连输入框里处理被 ComposeInput 截获的 Shift+Tab。"""
+        """处理成员直连输入框截获的非文本按键。"""
         if event.compose.id != "compose" or self.selected_member is None:
             return
         self.press_member_key(self.selected_member, event.tmux_key, event.label)
@@ -713,7 +727,7 @@ class ConsoleApp(App[None]):
             # 提示里只用等宽字体一定画得出的字符:⌨ 这类符号在不少终端字体里
             # 是缺字形的小方块,画出来反而像界面坏了
             compose.placeholder = (
-                f"直连 {self.selected_member}: Shift+Tab/空Enter 透传(@名字走群聊)"
+                f"直连 {self.selected_member}: 空Del/Enter、Shift+Tab 透传;Ctrl+↑↓回看"
             )
         elif self.last_target is None:
             compose.placeholder = "@名字 说点什么,回车发送"
@@ -775,7 +789,7 @@ class ConsoleApp(App[None]):
             )
 
     def press_member_key(self, member: str, tmux_key: str, label: str) -> None:
-        """直连态把空 Enter / Shift+Tab 等按键交给成员终端。"""
+        """直连态把空 Enter / Delete / Shift+Tab 等按键交给成员终端。"""
         timeline = self.query_one("#timeline", Timeline)
         if self.controller is None:
             timeline.note("[总控台] 直连不可用(没接上 tmux),用 @名字 走群聊")
@@ -864,6 +878,8 @@ class ConsoleApp(App[None]):
                 "page_down": mirror.action_history_down,
                 "home": mirror.action_history_top,
                 "end": mirror.action_history_bottom,
+                "line_up": lambda: mirror.scroll_history(WHEEL_STEP),
+                "line_down": lambda: mirror.scroll_history(-WHEEL_STEP),
             }[direction]()
             return
         timeline = self.query_one("#timeline", Timeline)
@@ -872,6 +888,8 @@ class ConsoleApp(App[None]):
             "page_down": timeline.scroll_page_down,
             "home": timeline.scroll_home,
             "end": timeline.scroll_end,
+            "line_up": timeline.scroll_up,
+            "line_down": timeline.scroll_down,
         }[direction]()
 
     # --- 成员控制 --------------------------------------------------------

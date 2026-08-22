@@ -16,7 +16,19 @@ MEMBERS = ("claude", "codex", "cursor", "agy")
 
 class DemoSnapshotter:
     async def capture(self, target: str, *, color: bool = False, start=None) -> PaneSnapshot:
-        text = f"\x1b[36m$ {target} agent\x1b[0m\n正在处理安全的视觉示例…\n输出只来自 QA 夹具。"
+        if start is not None:
+            text = (
+                f"\x1b[33m↑ 回看 {target} 的 tmux 历史(start={start})\x1b[0m\n"
+                "较早记录 03 · 已完成分析\n"
+                "较早记录 02 · 正在修改代码\n"
+                "较早记录 01 · 收到任务"
+            )
+        else:
+            text = (
+                f"\x1b[36m$ {target} agent\x1b[0m\n"
+                "正在处理安全的视觉示例…\n"
+                "输出只来自 QA 夹具。"
+            )
         return PaneSnapshot(target, text, color, start, None, 0.0)
 
 

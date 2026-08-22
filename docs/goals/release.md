@@ -18,3 +18,8 @@
   - 前置:REL-001。
   - 验证（Codex，2026-08-23）：`uv run ruff check src/qa/release.py tests/test_release_package.py` 通过；`uv run pytest tests/test_release_package.py -q` 为 `6 passed`；`uv run python -m qa.release --out-dir dist --offline-smoke` 构建并验证 wheel/sdist 的许可证文件与元数据。
   - 证据：根 `LICENSE` 是标准 MIT 正文并署名 `jzhang-0`；`pyproject.toml` 使用 SPDX `license = "MIT"` 和 `license-files = ["LICENSE"]`；`src/qa/release.py` 检查 wheel 的 `License-Expression`/`License-File` 以及 wheel/sdist 内许可证路径，README 与发行说明已同步。
+
+- [ ] **REL-004** — 首次公开发布：补齐 GitHub 项目 URL 元数据并验证制品，推送 `main`；配置 GitHub `testpypi`/`pypi` environments 与两站 Trusted Publisher，发布并验证 TestPyPI，再以 `v0.1.0` 标签发布正式 PyPI，最后从正式索引全新安装并验证 `amux --version`。
+  - 前置:REL-002、REL-003。
+  - 处理登记:Codex，2026-08-23，`rel-004-codex`。
+  - 进行中:正在补齐远端元数据并执行首次 TestPyPI/PyPI 发布。

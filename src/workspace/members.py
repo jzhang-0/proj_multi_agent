@@ -11,7 +11,14 @@ import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
-from roster.schema import Member, Roster, RosterError, member_from_dict, validate_member_name
+from roster.schema import (
+    Member,
+    Roster,
+    RosterError,
+    member_from_dict,
+    member_metadata_env,
+    validate_member_name,
+)
 from workspace.errors import WorkspaceError
 from workspace.model import Workspace
 from workspace.paths import MEMBERS_NAME
@@ -74,21 +81,15 @@ def save_workspace_members(workspace: Workspace, members: WorkspaceMembers) -> N
         lines.append("[[custom]]")
         lines.append(f"name = {_toml_str(member.name)}")
         lines.append(f"command = {_toml_str(member.command)}")
-        if member.role:
-            lines.append(f"team_id = {_toml_str(member.team_id)}")
-            lines.append(f"role = {_toml_str(member.role)}")
-            lines.append(f"leader = {_toml_str(member.leader_name)}")
-            lines.append(f"model = {_toml_str(member.model)}")
-            lines.append(f"responsibility = {_toml_str(member.responsibility)}")
-            lines.append(f"team_roster = {_toml_str(member.team_roster)}")
         if member.args:
             args = ", ".join(_toml_str(arg) for arg in member.args)
             lines.append(f"args = [{args}]")
         if member.auto_respawn:
             lines.append("auto_respawn = true")
-        if member.env:
+        persisted_env = {**dict(member.env), **member_metadata_env(member)}
+        if persisted_env:
             lines.append("[custom.env]")
-            for key, value in member.env.items():
+            for key, value in persisted_env.items():
                 lines.append(f"{key} = {_toml_str(value)}")
     members_file(workspace).write_text("\n".join(lines) + "\n", encoding="utf-8")
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -153,10 +154,10 @@ def test_activate_replaces_only_old_enabled_roster_and_starts_fable_team(tmp_pat
         "codex",
         "codex",
     ]
-    assert dict(stored.custom[0].env) == {
-        "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1",
-        "NO_COLOR": "",
-    }
+    assert stored.custom[0].env["CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"] == "1"
+    assert stored.custom[0].env["NO_COLOR"] == ""
+    assert stored.custom[0].env["AGENT_ROLE"] == "leader"
+    assert stored.custom[0].env["AMUX_TEAM_ID"] == DEFAULT_TEAM_ID
     assert stored.custom[0].team_id == DEFAULT_TEAM_ID
     assert stored.custom[0].role == "leader"
     assert stored.custom[0].leader_name == "fable"
@@ -167,8 +168,23 @@ def test_activate_replaces_only_old_enabled_roster_and_starts_fable_team(tmp_pat
     ).get("fable").team_roster
     assert stored.custom[3].role == "member"
     assert stored.custom[3].leader_name == "fable"
-    assert dict(stored.custom[3].env) == {}
+    assert stored.custom[3].env["AGENT_ROLE"] == "member"
+    assert stored.custom[3].env["AMUX_TEAM_LEADER"] == "fable"
     assert load_team_binding(workspace).team_id == DEFAULT_TEAM_ID
+
+    raw = tomllib.loads((workspace.state_dir / "members.toml").read_text(encoding="utf-8"))
+    old_allowed = {
+        "name",
+        "command",
+        "args",
+        "env",
+        "greeting_template",
+        "enabled",
+        "auto_respawn",
+    }
+    assert all(set(item) <= old_allowed for item in raw["custom"])
+    assert raw["custom"][0]["env"]["AGENT_ROLE"] == "leader"
+    assert raw["custom"][4]["env"]["AGENT_ROLE"] == "member"
 
 
 def test_missing_runner_keeps_existing_binding_and_members_untouched(tmp_path: Path) -> None:

@@ -7,6 +7,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 RESERVED_NAMES = frozenset({"human", "bus"})
+ENV_AGENT_ROLE = "AGENT_ROLE"
+ENV_TEAM_ID = "AMUX_TEAM_ID"
+ENV_TEAM_LEADER = "AMUX_TEAM_LEADER"
+ENV_AGENT_MODEL = "AMUX_AGENT_MODEL"
+ENV_AGENT_RESPONSIBILITY = "AMUX_AGENT_RESPONSIBILITY"
+ENV_TEAM_ROSTER = "AMUX_TEAM_ROSTER"
 
 
 class RosterError(ValueError):
@@ -147,14 +153,17 @@ def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
     greeting = raw.get("greeting_template", default_greeting)
     if not isinstance(greeting, str):
         raise RosterError(f"成员 {name} 的开场白模板必须是字符串")
-    role = _optional_str(raw, "role")
+    env = _optional_env(raw)
+    role = _optional_str(raw, "role") or env.get(ENV_AGENT_ROLE, "")
     if role not in {"", "leader", "member"}:
         raise RosterError(f"成员 {name} 的 role 必须是 leader 或 member")
-    team_id = _optional_str(raw, "team_id")
-    leader_name = _optional_str(raw, "leader")
-    model = _optional_str(raw, "model")
-    responsibility = _optional_str(raw, "responsibility")
-    team_roster = _optional_str(raw, "team_roster")
+    team_id = _optional_str(raw, "team_id") or env.get(ENV_TEAM_ID, "")
+    leader_name = _optional_str(raw, "leader") or env.get(ENV_TEAM_LEADER, "")
+    model = _optional_str(raw, "model") or env.get(ENV_AGENT_MODEL, "")
+    responsibility = _optional_str(raw, "responsibility") or env.get(
+        ENV_AGENT_RESPONSIBILITY, ""
+    )
+    team_roster = _optional_str(raw, "team_roster") or env.get(ENV_TEAM_ROSTER, "")
     metadata = (team_id, leader_name, model, responsibility, team_roster)
     if role and not all(metadata):
         raise RosterError(
@@ -187,7 +196,7 @@ def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
         name=name,
         command=command,
         args=_optional_str_list(raw, "args"),
-        env=_optional_env(raw),
+        env=env,
         team_id=team_id,
         role=role,
         leader_name=leader_name,
@@ -198,6 +207,20 @@ def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
         enabled=_optional_bool(raw, "enabled", True),
         auto_respawn=_optional_bool(raw, "auto_respawn", False),
     )
+
+
+def member_metadata_env(member: Member) -> dict[str, str]:
+    """把角色元数据编码到 0.1.x 已允许的 env 表，保持共享名册向后兼容。"""
+    if not member.role:
+        return {}
+    return {
+        ENV_AGENT_ROLE: member.role,
+        ENV_TEAM_ID: member.team_id,
+        ENV_TEAM_LEADER: member.leader_name,
+        ENV_AGENT_MODEL: member.model,
+        ENV_AGENT_RESPONSIBILITY: member.responsibility,
+        ENV_TEAM_ROSTER: member.team_roster,
+    }
 
 
 def roster_from_dict(raw: Any, *, source: str = "roster.toml") -> Roster:

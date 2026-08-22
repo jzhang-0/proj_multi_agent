@@ -6,7 +6,7 @@ import shlex
 from pathlib import Path
 
 from roster.paths import repo_root
-from roster.schema import Member, Roster
+from roster.schema import Member, Roster, member_metadata_env
 from tmuxctl import Tmux
 from workspace.session import session_for
 
@@ -34,15 +34,10 @@ def _expand_add_dirs(args: tuple[str, ...]) -> tuple[str, ...]:
 
 def member_env(member: Member) -> dict[str, str]:
     """构造启动与原窗格重启共用的成员环境。"""
-    metadata = {
-        "AGENT_ROLE": member.role,
-        "AMUX_TEAM_ID": member.team_id,
-        "AMUX_TEAM_LEADER": member.leader_name,
-    }
     return {
         **dict(member.env),
         "AGENT_NAME": member.name,
-        **{key: value for key, value in metadata.items() if value},
+        **member_metadata_env(member),
     }
 
 

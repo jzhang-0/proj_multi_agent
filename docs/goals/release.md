@@ -9,7 +9,7 @@
   - 验证（Codex，2026-08-23）：`uv run ruff check .` 通过；合并后 `uv run pytest -q` 为 `474 passed in 32.96s`；`uv run pytest tests/test_release_package.py -q` 为 `4 passed`；`uv run python -m qa.release --out-dir dist` 生成并验证 `amux_team-0.1.0-py3-none-any.whl` 与 `amux_team-0.1.0.tar.gz`。
   - 证据：`src/amux_runtime/` 提供受测试约束的名册/协议快照，`src/qa/release.py` 在源码仓库外离线安装 wheel 并验证版本、名册与默认团队；`.github/workflows/release.yml` 将构建与 OIDC 发布 job 分离，手工运行发布 TestPyPI，版本一致的 `v*` 标签发布 PyPI；发布操作说明见 `docs/releasing.md`。未上传制品、未创建远端、未选择许可证。
 
-- [ ] **REL-002** — 严格联网发行 smoke：默认在源码仓库外创建临时虚拟环境和全新 uv 缓存，从索引安装 wheel 及其完整依赖，验证声明依赖可导入、命令入口与包内资源可用；保留显式离线 payload smoke 供断网诊断，但 GitHub 发布工作流必须使用联网严格模式。同步发行说明并增加自动化测试。
+- [x] **REL-002** — 严格联网发行 smoke：默认在源码仓库外创建临时虚拟环境和全新 uv 缓存，从索引安装 wheel 及其完整依赖，验证声明依赖可导入、命令入口与包内资源可用；保留显式离线 payload smoke 供断网诊断，但 GitHub 发布工作流必须使用联网严格模式。同步发行说明并增加自动化测试。
   - 前置:REL-001。
-  - 处理登记:Codex，2026-08-23，`rel-002-codex`。
-  - 进行中:正在把网络恢复后的完整依赖安装纳入发布候选完成契约。
+  - 验证（Codex，2026-08-23）：`uv run ruff check .` 通过；合并后 `uv run pytest -q` 为 `476 passed in 49.55s`；通过 Surge `PyPI → NX-HK01` 执行 `uv run python -m qa.release --out-dir dist`，全新缓存联网安装 wheel 与完整依赖并通过命令/资源 smoke；`uv run python -m qa.release --out-dir dist --skip-build --offline-smoke` 也通过并明确标注未验证依赖。
+  - 证据：`src/qa/release.py` 默认创建独立 `UV_CACHE_DIR`、正常解析依赖并导入 `textual`/`watchfiles`，仅显式 `--offline-smoke` 才添加 `--offline --no-deps`；`tests/test_release_package.py` 覆盖严格/离线参数分支并禁止发布 workflow 使用离线选项；`docs/releasing.md` 与架构完成契约已同步。

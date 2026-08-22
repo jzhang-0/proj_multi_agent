@@ -38,3 +38,8 @@
   - 证据：`src/team/store.py` 只在默认 Fable/Sonnet/Opus 的 `env` 中新增 `NO_COLOR = ""`，复用 TEAM-004 的严格环境解析与完整激活投影；`tests/test_teams.py`/`tests/test_team_activation.py` 钉住三个 Claude 成员同时获得回滚与颜色环境、Luna/Sol 环境保持空、工作区落盘重读不丢空字符串。现有 `PaneSnapshotter(color=True) → capture-pane -e` 与 `Mirror.show_screen → Text.from_ansi` 无需改动，实测 Luna/Sol 原始 pane 已分别含 28/32 个 ESC，证明颜色链原本正常。README、产品定义与架构同步。
   - 当前机器：`~/.amux/workspaces/proj_fppt/members.toml` 已给 Fable/Sonnet/Opus 加 `NO_COLOR = ""`；本地源码与 PyPI 0.1.0 均可读取名单。环境变量只能在新进程生效，为保留当前对话未自动重启三个 Claude；human 可在空闲时逐个 F7 重启后看到颜色。
   - 视觉例外（启动环境修复）：本 Goal 没有改变 console 布局或渲染代码，颜色来自真实 Claude 的 ANSI 而非新增界面样式，因此不制造静态 fixture 冒充实机画面；可重复的真实 pane ANSI 数量与 Rich 样式 span 见上面的验证命令结果，重启现有成员前仍保持 0 属于预期。
+
+- [ ] **TEAM-006** — 角色化运行时提示词：把成员开场白正文从 Python 与 `AGENTS.md` 迁入独立、可维护且随 wheel 发布的 prompts 目录，拆成所有成员共用、Leader 专用和普通成员专用三份文件；团队激活时把 `team_id`、`role`、Leader、模型与成员职责完整投影并持久化到工作区名册，启动时按角色拼装提示词，未绑定团队的自定义成员只使用公共提示；Leader 提示明确唯一责任、拆解派工、推进验收、失败接管和向 human 汇报，成员提示明确执行、阻塞、证据、独立评审及不得最终验收。补 schema、落盘重读、角色选择、制品资源和旧内嵌正文消失的自动化测试，更新架构与提示词维护入口。
+  - 前置：TEAM-001、TEAM-003、ROS-007。
+  - 处理登记：Codex，2026-08-23，分支 `team-006-codex`。
+  - 进行中：正在建立 prompts 单一来源，并打通团队档案到运行时名册的角色元数据。

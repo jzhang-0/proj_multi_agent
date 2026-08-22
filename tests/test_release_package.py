@@ -23,6 +23,11 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     assert project["requires-python"] == ">=3.11"
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
+    assert project["urls"] == {
+        "Homepage": "https://github.com/jzhang-0/proj_multi_agent",
+        "Repository": "https://github.com/jzhang-0/proj_multi_agent.git",
+        "Issues": "https://github.com/jzhang-0/proj_multi_agent/issues",
+    }
     assert "Development Status :: 3 - Alpha" in project["classifiers"]
     packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/amux_runtime" in packages

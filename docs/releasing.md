@@ -42,6 +42,4 @@ amux
 
 源码开发安装仍可执行 `./install-amux.sh`。它只是指向当前 checkout 的 shim，不属于公开制品。
 
-## 仍需 human 补充
-
-仓库目前没有远端地址，因此项目主页、问题追踪链接需在建好远端后补入。
+项目主页、源码仓库与问题追踪地址均指向 `https://github.com/jzhang-0/proj_multi_agent`。

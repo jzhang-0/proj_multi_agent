@@ -78,6 +78,7 @@ speed = "standard"
 responsibility = "面向 human，拆解、分派、验收；必要时接管实现并承担最终责任"
 command = "claude"
 args = ["--model", "fable", "--effort", "high", "--permission-mode", "acceptEdits"]
+env = { CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN = "1" }
 
 [[members]]
 id = "sonnet"
@@ -88,6 +89,7 @@ speed = "standard"
 responsibility = "实现与深入分析，提交可复核的证据"
 command = "claude"
 args = ["--model", "sonnet", "--effort", "xhigh", "--permission-mode", "acceptEdits"]
+env = { CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN = "1" }
 
 [[members]]
 id = "opus"
@@ -98,6 +100,7 @@ speed = "standard"
 responsibility = "复杂问题分析、方案评审与风险检查"
 command = "claude"
 args = ["--model", "opus", "--effort", "high", "--permission-mode", "acceptEdits"]
+env = { CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN = "1" }
 
 [[members]]
 id = "luna"

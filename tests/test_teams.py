@@ -37,6 +37,10 @@ def test_default_team_records_the_agreed_leader_and_members(tmp_path: Path) -> N
         ("sol", "xhigh", "standard"),
     ]
     assert "接管" in team.leader_member.responsibility
+    for member in team.members[:3]:
+        assert dict(member.env) == {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"}
+    for member in team.members[3:]:
+        assert dict(member.env) == {}
     with pytest.raises(Exception, match="已存在"):
         teams.init_default()
 
@@ -71,6 +75,36 @@ def test_team_schema_requires_one_leader_and_one_member() -> None:
         }
     )
     with pytest.raises(TeamValidationError, match="恰有一名"):
+        team_from_dict(raw, source="memory")
+
+
+def test_team_schema_rejects_invalid_runtime_env() -> None:
+    raw = {
+        "id": "invalid-env",
+        "name": "坏环境",
+        "leader": "one",
+        "members": [
+            {
+                "id": "one",
+                "role": "leader",
+                "model": "Fable",
+                "effort": "high",
+                "speed": "standard",
+                "responsibility": "负责",
+                "command": "claude",
+                "env": {"FLAG": 1},
+            },
+            {
+                "id": "two",
+                "role": "member",
+                "model": "Opus",
+                "effort": "high",
+                "speed": "standard",
+                "responsibility": "实现",
+            },
+        ],
+    }
+    with pytest.raises(TeamValidationError, match="env 必须"):
         team_from_dict(raw, source="memory")
 
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from workspace.errors import WorkspaceError
@@ -30,6 +31,7 @@ class TeamMember:
     responsibility: str
     command: str | None = None
     args: tuple[str, ...] = ()
+    env: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,7 @@ def _member(raw: Any, *, source: str) -> TeamMember:
         "responsibility",
         "command",
         "args",
+        "env",
     }
     unknown = sorted(set(raw) - allowed)
     if unknown:
@@ -125,6 +128,7 @@ def _member(raw: Any, *, source: str) -> TeamMember:
         )
     command = _optional_string_or_none(raw, "command", source)
     args = _optional_string_list(raw, "args", source)
+    env = _optional_env(raw, source)
     if args and command is None:
         raise TeamValidationError(f"{source} 的成员 {member_id} 设置 args 时必须同时设置 command")
     return TeamMember(
@@ -136,6 +140,7 @@ def _member(raw: Any, *, source: str) -> TeamMember:
         responsibility=_string(raw, "responsibility", source),
         command=command,
         args=args,
+        env=env,
     )
 
 
@@ -165,3 +170,17 @@ def _optional_string_list(raw: dict[str, Any], key: str, source: str) -> tuple[s
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise TeamValidationError(f"{source} 的 {key} 必须是字符串数组")
     return tuple(value)
+
+
+def _optional_env(raw: dict[str, Any], source: str) -> dict[str, str]:
+    if "env" not in raw:
+        return {}
+    value = raw["env"]
+    if not isinstance(value, dict) or not all(
+        isinstance(key, str)
+        and bool(key.strip())
+        and isinstance(item, str)
+        for key, item in value.items()
+    ):
+        raise TeamValidationError(f"{source} 的成员 env 必须是非空字符串键到字符串的表")
+    return dict(value)

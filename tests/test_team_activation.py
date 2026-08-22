@@ -65,6 +65,17 @@ def test_default_fable_team_uses_only_claude_and_codex_runners(tmp_path: Path) -
         ("sol", "codex"),
     ]
     assert all(member.command != "agent" for member in roster.members)
+    assert dict(roster.get("fable").env) == {
+        "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"
+    }
+    assert dict(roster.get("sonnet").env) == {
+        "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"
+    }
+    assert dict(roster.get("opus").env) == {
+        "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"
+    }
+    assert dict(roster.get("luna").env) == {}
+    assert dict(roster.get("sol").env) == {}
     assert roster.get("fable").args[:4] == ("--model", "fable", "--effort", "high")
     assert roster.get("sonnet").args[:4] == ("--model", "sonnet", "--effort", "xhigh")
     assert roster.get("opus").args[:4] == ("--model", "opus", "--effort", "high")
@@ -115,6 +126,10 @@ def test_activate_replaces_only_old_enabled_roster_and_starts_fable_team(tmp_pat
         "codex",
         "codex",
     ]
+    assert dict(stored.custom[0].env) == {
+        "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"
+    }
+    assert dict(stored.custom[3].env) == {}
     assert load_team_binding(workspace).team_id == DEFAULT_TEAM_ID
 
 

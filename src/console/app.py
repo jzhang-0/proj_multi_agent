@@ -727,7 +727,7 @@ class ConsoleApp(App[None]):
             # 提示里只用等宽字体一定画得出的字符:⌨ 这类符号在不少终端字体里
             # 是缺字形的小方块,画出来反而像界面坏了
             compose.placeholder = (
-                f"直连 {self.selected_member}: 空Del/Enter、Shift+Tab 透传;Ctrl+↑↓回看"
+                f"直连 {self.selected_member}: 空Del删草稿;Enter/Shift+Tab透传;Fn+↑↓回看"
             )
         elif self.last_target is None:
             compose.placeholder = "@名字 说点什么,回车发送"

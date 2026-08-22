@@ -24,7 +24,7 @@
   - 验证（Codex，2026-08-23）：`uv run ruff check .` 通过；`uv run pytest tests/test_release_package.py -q` 为 `6 passed`；隔离构建验证生成 `amux_team-0.1.0-py3-none-any.whl` 与 `amux_team-0.1.0.tar.gz`。GitHub `release` 手工运行 #1 成功发布 TestPyPI；`v0.1.0` 触发的运行 #2 首次被 `test_watch_mode_picks_up_new_message` 的已知后台清理时序波动挡住（`1 failed, 475 passed`），保留同一标签重跑后构建、测试与 PyPI OIDC 上传全部通过。
   - 证据：TestPyPI 与 PyPI 的 JSON 索引均返回 `amux-team==0.1.0` 的 wheel/sdist；正式 [PyPI 项目](https://pypi.org/project/amux-team/0.1.0/) 与 [GitHub 发布流水线](https://github.com/jzhang-0/proj_multi_agent/actions/runs/32594800087) 可公开复核。最终使用 `uv tool install --force --no-cache --no-config --no-sources --default-index https://pypi.org/simple 'amux-team==0.1.0'` 替换旧源码 shim，`~/.local/bin/amux` 指向 uv tool 环境且 `amux --version` 输出 `amux 0.1.0`。
 
-- [ ] **REL-005** — 可重复安装的源码开发入口：`./install-amux.sh dev` 只生成 `amux-dev`，不覆盖 PyPI 管理的 `amux`；开发入口指向当前源码 checkout，默认复用正式版的 `~/.amux`，让已保存并激活的团队在开发版中可见，只有显式设置 `AMUX_DEV_HOME` 时才使用隔离状态目录；提供卸载命令、自动化测试与 README 说明。
+- [x] **REL-005** — 可重复安装的源码开发入口：`./install-amux.sh dev` 只生成 `amux-dev`，不覆盖 PyPI 管理的 `amux`；开发入口指向当前源码 checkout，默认复用正式版的 `~/.amux`，让已保存并激活的团队在开发版中可见，只有显式设置 `AMUX_DEV_HOME` 时才使用隔离状态目录；提供卸载命令、自动化测试与 README 说明。
   - 前置：REL-004、TEAM-003。
-  - 处理登记：Codex，2026-08-23，`rel-005-codex`。
-  - 进行中：已定位现有手工 shim 强制使用 `~/.amux-dev`，正在改为可重复安装且默认共享团队状态。
+  - 验证（Codex，2026-08-23）：`bash -n install-amux.sh`、`uv run --offline ruff check tests/test_dev_installer.py` 通过；`uv run --offline pytest tests/test_dev_installer.py -q` 为 `2 passed`。从 main 执行 `./install-amux.sh dev` 后，在 `/Users/jzhang/Downloads/proj_fppt` 运行 `amux-dev workspace current`、`amux-dev team current`、`amux-dev member list`，识别到 `proj_fppt`、`fable-core` 和 Fable/Sonnet/Opus/Luna/Sol；`amux-dev --headless --once` 后以 `tmux list-sessions` 确认五个 `<成员>@proj_fppt` 会话全部存在。
+  - 证据：`install-amux.sh dev|uninstall-dev` 生成和卸载独立 `amux-dev`，生成物不设置默认 `AMUX_HOME`，显式 `AMUX_DEV_HOME` 时才映射为隔离状态；`tests/test_dev_installer.py` 使用假 `uv` 验证共享/隔离两条路径、源码参数透传、卸载以及 PyPI `amux` 不被覆盖；README、架构和发行说明同步开发工作流。实机 `~/.local/bin/amux-dev` 已从 main 重新生成，不再引用旧的 `~/.amux-dev`。

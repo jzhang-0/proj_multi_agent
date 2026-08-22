@@ -48,7 +48,7 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 2. **`./msg` 命令行**:`./msg <收件人> <内容...>` 永远可用(仓库根薄入口);成员面向的形态是 `amux msg`(从当前工作区投递)。发件人取 `AGENT_NAME`,缺省 `human`。新参数只能是可选 flag(如 `--ask`)。
 3. **寻址**:工作区内收件人仍是短名(`claude`);tmux 会话名是 `<成员>@<slug>`,双向映射收口在 `workspace.session`(`bind_tmux` 是生产路径唯一入口)。`human` 是保留名,不投递、只上屏;`bus` 是总线自身的署名(防环拒收回执);`im:` 前缀是 IM 网关代投的远程身份(同样只上屏,由网关发回群)。这三者没有 tmux 会话,不参与 slug 拼接,成员不得占用这些名字。
 4. **群规文本**:成员运行时协议维护在 `AGENTS.md` 的「群聊协议」一节,roster 的开场白从它生成,两处不允许漂移(由 ROS-006 钉住)。
-5. **团队档案**:`~/.amux/teams/<id>.toml` 是 Leader、成员、模型偏好、职责与经验证启动适配（`command`/`args`/`env`）的唯一来源；`workspaces/<slug>/team.toml` 只保存所选团队 ID。`amux team activate` 将已校验的团队适配完整投影为该工作区 `members.toml`，再由 `roster` 负责生命周期；无适配的团队不能激活。默认 Fable 团队的三个 Claude 成员通过 `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` 保留 tmux 回滚区，否则 Claude fullscreen 的 alternate screen 会令 `history_size=0`，`capture-pane -S` 没有历史可读。
+5. **团队档案**:`~/.amux/teams/<id>.toml` 是 Leader、成员、模型偏好、职责与经验证启动适配（`command`/`args`/`env`）的唯一来源；`workspaces/<slug>/team.toml` 只保存所选团队 ID。`amux team activate` 将已校验的团队适配完整投影为该工作区 `members.toml`，再由 `roster` 负责生命周期；无适配的团队不能激活。默认 Fable 团队的三个 Claude 成员通过 `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` 保留 tmux 回滚区，否则 Claude fullscreen 的 alternate screen 会令 `history_size=0`，`capture-pane -S` 没有历史可读；同一适配把 `NO_COLOR` 设为空，覆盖 amux 调用环境可能带入的 `NO_COLOR=1`，让 Claude 继续向 tmux 网格输出 ANSI 样式。颜色捕获仍统一走 TMX-004 的 `capture-pane -e`，console 不自行猜测或重绘成员配色。
 6. **任务事件(TEAM-002)**:任务的派工、提交、评审、退回、接管和最终验收必须追加到工作区账本。只有 Leader 可以最终验收；接管事件包含原因、范围和后续验收，不能覆盖先前事件。
 
 ## §4 安全边界

@@ -130,8 +130,10 @@ amux team current
 
 团队档案记录 Leader、成员、模型偏好和职责。激活后，amux 会把团队成员投影到当前工作区名册。
 默认团队还会让三个 Claude 成员使用 classic renderer，避免 alternate screen 把 tmux 回滚区清成
-`history_size=0`。已有旧团队档案可运行 `amux team init --force` 更新后重新激活；不想重启当前
-Claude 会话时，也可在 Claude 内执行一次 `/tui default`。
+`history_size=0`；同时用空 `NO_COLOR` 覆盖 amux 调用环境里可能继承的 `NO_COLOR=1`，让 Claude
+把原有 ANSI 颜色交给 tmux 和总控台。已有旧团队档案可运行 `amux team init --force` 更新后重新
+激活；不想重启当前 Claude 会话时，也可在 Claude 内执行一次 `/tui default`（颜色环境仍需下次
+启动或重启才会生效）。
 
 ### 设置全局默认值
 

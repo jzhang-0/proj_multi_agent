@@ -6,6 +6,7 @@
 | 分层、技术栈、冻结契约、安全边界 | [架构决策](architecture/architecture.md) |
 | 工程任务、完成契约、执行顺序 | [Goal 总索引](goals/README.md) |
 | 打包、版本与发布 | [发布工程](goals/release.md) |
+| 发布候选构建与上传流程 | [打包与发布](releasing.md) |
 | 界面改动的自验证步骤与判定清单 | [视觉自验证](quality/visual-check.md) |
 | 四个真实成员的协作取证与离线复验 | [协作实测](quality/collaboration-check.md) |
 | 成员运行时通信协议(群规) | [AGENTS.md「群聊协议」](../AGENTS.md#群聊协议) |

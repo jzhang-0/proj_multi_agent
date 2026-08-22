@@ -5,7 +5,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from roster.paths import repo_root
+from amux_runtime import PROTOCOL_RESOURCE, ROSTER_RESOURCE, read_resource
+from roster.paths import source_root
 
 CHAT_PROTOCOL_HEADING = "## 群聊协议"
 
@@ -34,12 +35,17 @@ def extract_chat_protocol(markdown: str) -> str:
 
 
 def load_chat_protocol(path: str | Path | None = None) -> str:
-    """从指定或仓库根 ``AGENTS.md`` 读取权威群聊协议。"""
-    target = Path(path) if path is not None else repo_root() / "AGENTS.md"
-    try:
-        markdown = target.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ProtocolSourceError(f"无法读取群聊协议: {target}: {exc}") from exc
+    """源码模式读 ``AGENTS.md``，wheel 模式读包内同步快照。"""
+    if path is not None:
+        target = Path(path)
+        try:
+            markdown = target.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ProtocolSourceError(f"无法读取群聊协议: {target}: {exc}") from exc
+    elif (root := source_root()) is not None:
+        markdown = (root / "AGENTS.md").read_text(encoding="utf-8")
+    else:
+        markdown = read_resource(PROTOCOL_RESOURCE)
     return extract_chat_protocol(markdown)
 
 
@@ -91,11 +97,24 @@ def check_single_source(
         raise ProtocolSourceError("群聊协议必须使用全局命令 amux msg")
     if "在仓库根运行 `./msg" in protocol:
         raise ProtocolSourceError("群聊协议不得再要求在仓库根运行 ./msg")
-    target = Path(roster_path) if roster_path is not None else repo_root() / "roster.toml"
+    if roster_path is not None:
+        target = Path(roster_path)
+        try:
+            roster_text = target.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ProtocolSourceError(f"无法检查静态名册: {target}: {exc}") from exc
+        source = str(target)
+    elif (root := source_root()) is not None:
+        target = root / "roster.toml"
+        roster_text = target.read_text(encoding="utf-8")
+        source = str(target)
+    else:
+        roster_text = read_resource(ROSTER_RESOURCE)
+        source = f"package:amux_runtime/{ROSTER_RESOURCE}"
     try:
-        raw = tomllib.loads(target.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise ProtocolSourceError(f"无法检查静态名册: {target}: {exc}") from exc
+        raw = tomllib.loads(roster_text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ProtocolSourceError(f"无法检查静态名册: {source}: {exc}") from exc
 
     if "default_greeting_template" in raw:
         raise ProtocolSourceError("roster.toml 不得维护 default_greeting_template 副本")

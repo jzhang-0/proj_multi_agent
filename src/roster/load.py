@@ -18,7 +18,8 @@ import tomllib
 from dataclasses import replace
 from pathlib import Path
 
-from roster.paths import default_path
+from amux_runtime import ROSTER_RESOURCE, read_resource
+from roster.paths import source_default_path
 from roster.schema import Member, Roster, RosterError, roster_from_dict
 from workspace.config import ProjectConfig, load_project_config
 from workspace.global_config import load_global_config
@@ -27,15 +28,21 @@ from workspace.resolve import resolve_from_cwd
 
 
 def load_roster(path: str | Path | None = None) -> Roster:
-    """读并校验名册。默认仓库根 `roster.toml`。"""
-    target = Path(path) if path is not None else default_path()
-    if not target.is_file():
-        raise RosterError(f"找不到名册文件: {target}")
+    """源码模式读根名册，wheel 模式读包内快照；显式路径始终最高优先。"""
+    target = Path(path) if path is not None else source_default_path()
+    if target is not None:
+        if not target.is_file():
+            raise RosterError(f"找不到名册文件: {target}")
+        text = target.read_text(encoding="utf-8")
+        source = str(target)
+    else:
+        text = read_resource(ROSTER_RESOURCE)
+        source = f"package:amux_runtime/{ROSTER_RESOURCE}"
     try:
-        raw = tomllib.loads(target.read_text(encoding="utf-8"))
+        raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise RosterError(f"无法解析 {target}: {exc}") from exc
-    return roster_from_dict(raw, source=str(target))
+        raise RosterError(f"无法解析 {source}: {exc}") from exc
+    return roster_from_dict(raw, source=source)
 
 
 def apply_overlay(roster: Roster, config: ProjectConfig) -> Roster:

@@ -1,152 +1,216 @@
-# proj_multi_agent — 总控台
+# amux
 
-本项目采用 [MIT License](LICENSE)，版权所有 © 2026 jzhang-0。
+**在一台机器上，把多个 AI CLI 组织成一个可观察、可沟通、可接管的协作团队。**
 
-一台机器上多个 AI CLI 组成一个由 Leader 负责的协作团队：人直接面向 Leader，成员执行、提交证据和互相评审，所有派工、验收与接管都可回看。群聊只是其中一种沟通渠道。产品形态与硬指标见 [产品定义](docs/product/product.md)。
+amux 是一个基于 tmux 的终端总控台。Claude Code、Codex、Cursor Agent 等 CLI
+仍在各自独立的真实终端里运行；amux 把它们集中到一个 TUI 中，负责成员状态、终端画面、
+消息投递和审计记录。
 
-## 现状:v0 总线(可用)
+当前版本为 **v0.1.0（Alpha）**，采用 [MIT License](LICENSE)。它适合愿意尝试本地多
+Agent 工作流的开发者；任务账本、Leader 验收和接管流程仍在继续开发，当前范围与路线图见
+[产品定义](docs/product/product.md) 和 [Goal 清单](docs/goals/README.md)。
+
+## 它解决什么问题
+
+同时使用多个 AI CLI 时，常见做法是开很多终端，再靠人记住谁在做什么、手动复制消息、来回
+切窗口。amux 把这些操作收进一个界面：
+
+- 每个成员拥有独立 tmux 会话，并在当前项目目录中工作；
+- 一个界面查看群聊时间线、成员状态和成员终端画面；
+- 可以向成员发消息、等待关联回复，或直接操作成员终端；
+- 消息、投递结果和控制动作写入审计日志；
+- 同一台机器可以登记多个项目，各自拥有独立成员和消息总线。
+
+amux 不替代 Claude Code、Codex 等工具，也不会绕过它们的账号、登录或权限机制。它只负责把
+已经能在本机运行的 CLI 组织起来。
+
+## 三分钟上手
+
+### 1. 准备环境
+
+你需要：
+
+- macOS 或其他 POSIX 环境；
+- Python 3.11 或更高版本；
+- [uv](https://docs.astral.sh/uv/)；
+- tmux 3.2 或更高版本；
+- 至少一个已经安装并登录的 AI CLI。
+
+内置成员预设包括：
+
+| amux 成员名 | 本机命令 | 对应工具 |
+|---|---|---|
+| `claude` | `claude` | Claude Code |
+| `codex` | `codex` | OpenAI Codex CLI |
+| `cursor` | `agent` | Cursor Agent |
+| `agy` | `agy` | agy CLI |
+
+没有某个 CLI 不影响使用，只添加你本机已有的成员即可。
+
+### 2. 安装 amux
 
 ```bash
-./start.sh          # 拉起全部成员,本窗口变成群聊记录(hub)
-./msg claude 写一个fizzbuzz 写完让cursor review 通过后向我汇报
-./msg --ask claude 这个改动是否已经通过测试
-./msg --reply <ask-id> 已通过,验证命令见日志
-tmux attach -t codex   # 围观某个成员(Ctrl-b d 退出)
-./start.sh stop     # 收工
+uv tool install amux-team
+amux --version
 ```
 
-- 收件人名字 = tmux 会话名;`human` 保留给人,消息只显示在 hub 窗口。
-- 消息单行注入;成员正忙时排进其输入队列。全部流量留档 `bus/log.jsonl`。
-- `--ask` 默认阻塞等待关联回复 10 分钟;收件人按投递消息里的 `--reply <ask-id>` 指引答复。可用 `--timeout <秒>` 缩短等待。
-- 各成员的免权限弹窗配置见 `start.sh` 与 [roster Goal 卷](docs/goals/roster.md)。
-- `./msg` 与 `hub.py` 现在是 `src/bus/` 的薄入口(用法一字未变,自己会切到项目 venv),第一次用前在仓库根跑一次 `uv sync`。
-
-## 开发中:总控台
-
-这是一个多 AI 协作开发的仓库。开发者(即群成员)从 [AGENTS.md](AGENTS.md) 入口开工,任务全部在 [docs/goals/](docs/goals/README.md)。
-
-工程环境由 `uv` 管理,要求 Python ≥ 3.11:
+PyPI 包名是 `amux-team`，安装后的命令名是 `amux`。升级时运行：
 
 ```bash
-uv sync
-uv run amux            # 仓库开发直接运行,不覆盖全局命令
-uv run pytest -q
-uv run ruff check .
+uv tool upgrade amux-team
 ```
 
-公开发行包使用 `amux-team` 作为 PyPI 名称（`amux` 已被另一项目占用），对外命令仍是 `amux`。全局命令统一通过 `uv tool install amux-team` 从 PyPI 安装，后续用 `uv tool upgrade amux-team` 更新；仓库开发使用 `uv run amux`，不再用源码路径或本地 wheel 覆盖全局命令。构建和可信发布流程见 [打包与发布](docs/releasing.md)。
+### 3. 在项目中启动一个成员
 
-`amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都把**当前目录**当工作区(未登记会自动登记;`--workspace <slug>` 显式指定)。新工作区默认没有成员,用 `amux member add claude` 按需加。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
-
-先初始化并绑定默认协作团队：
+进入你希望 AI 团队工作的项目目录：
 
 ```bash
-amux team init                 # 写 ~/.amux/teams/fable-core.toml
-amux team show fable-core      # 查看 Fable Leader、成员和职责
-amux team activate fable-core  # 绑定并启动五人团队
-amux team current              # 确认当前工作区的团队
+cd /path/to/your-project
+amux member add claude
+roster up claude
+amux
 ```
 
-`fable-core` 固定记录 Claude Fable 5 / high 为 Leader，Sonnet / xhigh、Opus / high、Luna / high-fast、Sol / xhigh 为成员。Fable/Sonnet/Opus 由 `claude` 启动，Luna/Sol 由 `codex` 启动；`amux team activate` 会把这份适配投影到当前工作区名册。任务分派、验收与接管账本将在 TEAM-002 落地。
+把 `claude` 换成你已安装的其他预设即可。第一次执行时，amux 会自动把当前目录登记为工作区；
+运行时状态保存在 `~/.amux/`，不会向你的项目写入隐藏目录。
 
-若希望任何新工作区默认拥有四个成员、打开 amux 就幂等地拉起它们,只需在任意目录执行一次:
+打开界面后：
+
+- `Esc` 或 `F2` 返回群聊；
+- 在成员画面中直接输入，可以操作该成员的终端；
+- 以 `@成员名` 开头的内容会走消息总线；
+- `F1` 查看完整快捷键；
+- `q` 或 `Ctrl-C` 退出总控台，不会自动终止成员会话。
+
+也可以从另一个终端直接派发消息：
 
 ```bash
-amux config init                 # 写 ~/.amux/config.toml,不改用户项目
-amux config show                 # 查看默认成员、自动拉起和主题
+amux msg claude "检查当前项目并告诉我最值得先修的问题"
+amux msg --ask claude "测试是否已经通过？"
 ```
 
-这份全局配置包含 `default_members`、`auto_start_members` 和 `theme`;可直接编辑 `~/.amux/config.toml` 调整。工作区已有的 `members.toml` 或项目根 `amux.toml` 的成员配置优先于全局默认;显式 `amux --theme ...` 优先于配置文件。未执行 `amux config init` 时,amux 保持不自动创建配置、也不自动拉起成员的旧行为。
+## 常用操作
 
-工作区登记(状态在 `~/.amux`,不往用户项目里写目录):
+### 管理工作区
 
 ```bash
-amux workspace add [路径]     # 把项目登记为工作区;同名目录自动 slug-2
-amux workspace list
-amux workspace current        # 从当前目录向上找所属工作区;找不到就报错
-amux workspace rm <slug>      # 关掉该区会话并取消登记,不碰项目文件
-amux workspace gc             # 回收已无登记但仍挂着的成员会话
-amux workspace migrate        # 把仓库根 bus/ 拷进工作区总线;源目录先留着
-amux workspace migrate --rollback  # 把工作区总线拷回仓库根 bus/
-amux member add claude        # 启用一个预设;自定义: amux member add bot --command cat
-amux member rm claude
+amux workspace add .        # 显式登记当前项目；通常可省略
+amux workspace list         # 查看全部工作区
+amux workspace current      # 查看当前目录属于哪个工作区
+amux workspace rm <slug>    # 取消登记，不删除项目文件
+```
+
+### 管理成员
+
+```bash
+amux member add codex
 amux member list
-amux team init                 # 初始化默认 Fable 协作组
-amux team use fable-core       # 当前工作区选用该团队
+roster up codex
+roster restart codex
+roster down codex
+amux member rm codex
+```
+
+`member rm` 只从工作区名册移除成员，不会关闭仍在运行的会话；需要时先执行
+`roster down <成员名>`。
+
+### 使用默认团队
+
+如果本机已经安装了默认团队需要的 Claude 和 Codex CLI，可以初始化并激活内置的
+`fable-core` 团队档案：
+
+```bash
+amux team init
+amux team show fable-core
+amux team activate fable-core
 amux team current
-amux msg claude 写一个fizzbuzz  # 从当前目录定位工作区总线;./msg 仍是仓库根薄入口
-amux --workspace alpha          # 显式绑定工作区(界面里 /workspace beta 再切)
 ```
 
-项目根可以放可选的 `amux.toml`(钉死启用哪些成员、额外 env);没有则看工作区 `members.toml`,再没有就是空名册。测试用 `AMUX_HOME` 把状态指到临时目录。
+团队档案记录 Leader、成员、模型偏好和职责。激活后，amux 会把团队成员投影到当前工作区名册。
 
-`amux` 起全屏 TUI(内嵌总线投递循环,`q` / Ctrl-C 干净退出,不影响任何成员会话);`amux --headless` 等价于纯 hub 模式(和 `python3 hub.py` 同一份实现)。界面是「会话列表 + 一块主画面」:左边窄列表第一项是群聊(带未读数),后面每个成员一项;选中谁,右边主画面就显示谁——群聊显示时间线,成员显示它的终端画面镜像(Esc/F2 回群聊)。打开成员会话时会把它的 tmux 窗口调成主画面大小,让画面铺满(`--no-fit` 关掉;F8 接管前自动把尺寸还给 tmux)。成员画面用 PgUp/PgDn 或滚轮直接往上翻它自己的回滚区,不必先 Tab 过去。输入框在底部通栏,**在成员会话里不带 `@` 的一行直接键入该成员的终端**(等于在它自己窗口里敲,动作进审计日志),`@名字` 开头仍然走群聊总线。成员直连输入框中 Shift+Tab 会传给成员 CLI,空输入时按 Enter 也会传一个独立回车;其他位置的 Tab/Shift+Tab 仍用于焦点导航。系统 Python 版本不满足要求时也不要绕过 `uv run`。
-
-当前过渡界面仍提供群聊时间线和成员终端镜像；团队档案已可由命令行保存/绑定，任务看板与 Leader 验收流将在 TEAM-002 成为主画面。
-
-硬指标实测:`uv run python -m qa.perf`(产品定义四条延迟预算一次跑完:入队→注入终端、消息→时间线上屏、详情画面刷新、键入回显,打印分布并按预算判定,退出码 0/1)。
-
-投递延迟实测:`uv run python -m bus.bench`(起临时 tmux 会话跑 `cat` 当收件人,打印 min/P50/P95/max 并按 P95 < 200ms 判定;`--fake` 只量总线自身调度)。
-
-批 1 收口冒烟:`uv run python -m qa.smoke`(假成员 `cat` 窗格 → 入队 → 投递 → 窗格收到,打印入队到上屏延迟;用临时目录,不碰仓库根 `bus/`)。
-
-四个真实成员的协作实测证据可用 `uv run python -m qa.collab verify` 离线复验；它检查派活、三路回报、最终汇报的入队/投递审计，以及真实 F5 控制事件和 160×40 总控台截取物。复现真实流程见 [协作实测文档](docs/quality/collaboration-check.md)。
-
-投递一条消息 = 一次 tmux 调用:文本和 Enter 用 `send-keys ... ; send-keys Enter` 塞进同一条命令(`Tmux.send_line`),中间不留让成员 CLI 重绘的缝隙,注入前也不再抓画面。投递之后由后台线程确认「那行字真的提交出去了」(`KeyInjector.ensure_submitted`):光标还停在自己刚注入的那行字上就补 Enter,补不动就在 `bus/log.jsonl` 记一条 `deliver-failed`。确认放后台是因为它要等成员 CLI 处理 0.1 秒,挂在投递循环上会把下一条消息的延迟一起抬高(实测 P95 194ms → 345ms)。
-
-消息总线模块是 `src/bus/`:消息 schema v1(`to/from/text/ts` 必备,`id/kind/replyTo` 可选,未知字段原样保留)、文件队列、死信目录、投递循环。bus 运行时根目录默认是仓库根 `bus/`,可用环境变量 `BUS_ROOT` 或 `BusPaths.resolve(root)` 重定向(测试一律指向临时目录)。
-
-tmux 控制层是 `src/tmuxctl/`:启动时探测 tmux ≥ 3.2,并把 `has-session` / `new-session` / `kill-session` / `send-keys` / `capture-pane` / `list-panes` 收口为类型化 API;`PaneOutputStream` 用 control mode 订阅输出并在不可用时回退 pipe-pane FIFO;`ActivityTracker` 只按输出字节活动推断 working/idle/stuck/dead;`PaneSnapshotter` 提供带色/去色与历史快照,并把同窗格高频捕获合并到最多 10Hz;`ProcessController` 提供进程树与打断/终止/强杀分级控制;`CrashMonitor` 用 pane-died hook + 轮询检测崩溃并原地 respawn。其他模块不要直接拼 tmux 命令。
-
-成员可在 `roster.toml` 中设置 `auto_respawn = true` 开启无人值守恢复（缺省关闭）。`HealthSupervisor` 会为所有崩溃发布状态更新；开启恢复时，死窗格原地 respawn，整个会话消失则重新创建，连续三次失败后进入 `failed` 并停止重试，需显式 `reset_failed()` 解除熔断。
-
-`SessionAdopter.discover()` 可发现静态名册外的现有 tmux 会话，`adopt(name)` 一步收编为可寻址的临时成员；`member_names()` 是收件人补全、成员栏和时间线着色的统一名称集合。收编记录只在当前进程内存中，重启不会写入或改动 `roster.toml`，`forget(name)` 也不会关闭用户原有会话。
-
-总控台成员栏由 `MemberStatusService` 驱动：它把每个 pane 的 `PaneOutputStream` 交给 TMX-007 `ActivityTracker`，每 0.5 秒刷新 `idle/working/stuck/dead/failed` 图形徽标、未投递队列数和最后输出相对时间；成功投递会标记成员正在工作，ROS-004 的熔断状态可通过 `mark_failed()` 覆盖为 `failed`。
-
-选中成员后可用 F5 打断、F6 终止、F7 重启、F8 全屏接管；终止和重启必须在默认焦点为“取消”的弹窗中二次确认。接管会暂时挂起 Textual，再进入 `tmux attach-session`，退出 attach 后恢复总控台；所有实际控制尝试都以 `control` 事件写入 `bus/log.jsonl`。
-
-所有工作区域都能用 Tab / Shift+Tab 循环到达（主画面上只有当前那个内容参与循环），聚焦后可用方向键和 PgUp/PgDn 操作会话列表、时间线与成员回滚区。在非输入区按 `?`、或在任意位置按 F1 可打开快捷键帮助；帮助面板本身可用 PgUp/PgDn/Home/End 滚动，Esc 关闭后恢复原焦点。
-
-总控台每 0.5 秒探测 tmux server、各成员会话和 `bus/queue/` 可写性；故障与恢复只在状态变化时写入时间线。tmux server 不在时不重复报每个成员缺失，bus 恢复可写后会自动重启已退出的投递线程；人类输入的入队失败也会显式告警并保留内容供恢复后重试。
-
-成员名册是 `roster.toml`(由 `src/roster` 加载校验)。成员启动开场白由 `AGENTS.md` 的「群聊协议」章节动态生成,roster 不保存协议副本；`check_single_source()` 与回归测试负责防漂移。`./start.sh` 是读名册的薄入口。生命周期直接用 `roster` 命令,单个成员或全体都行,而且幂等(已经在跑的不会被顶掉):
+### 设置全局默认值
 
 ```bash
-uv run roster up            # 拉起全部启用成员(已在跑的跳过)
-uv run roster up claude     # 只拉一个
-uv run roster restart codex # 关掉再拉起
-uv run roster down          # 全部关掉(含已停用成员的残留会话)
+amux config init
+amux config show
 ```
 
-各成员免弹窗参数与残留弹窗写在 `roster.toml` 注释里;claude 的 `./msg` 白名单在 `.claude/settings.json`。
+这会创建 `~/.amux/config.toml`，其中包含默认成员、自动拉起成员和主题设置。默认配置会尝试
+启动全部内置成员，因此请先确认相应 CLI 已安装；也可以直接编辑该文件，只保留自己需要的成员。
 
-## 手机接入(自建 IM 网关)
+## 界面与数据
+
+amux 的主界面由“会话列表 + 主画面 + 底部输入框”组成。选中群聊时，主画面显示时间线；
+选中成员时，主画面显示该成员的终端镜像。成员画面支持滚动、直接输入，以及 F5–F8 的打断、
+终止、重启和全屏接管操作。
+
+每个工作区的运行时数据默认位于：
+
+```text
+~/.amux/workspaces/<slug>/
+├── workspace.toml   # 项目路径
+├── members.toml     # 当前工作区成员
+├── team.toml        # 当前绑定的团队
+└── bus/             # 消息队列、正文和审计日志
+```
+
+项目之间的队列和成员会话相互隔离。成员 tmux 会话名采用 `<成员>@<工作区>`，因此同一个成员
+可以同时服务多个项目。
+
+## 从源码运行
+
+如果你想参与开发：
 
 ```bash
-uv run python -m gateway        # 打印带口令的地址,手机同 WiFi 打开就是群聊页
+git clone https://github.com/jzhang-0/proj_multi_agent.git
+cd proj_multi_agent
+uv sync
+uv run amux --version
 ```
 
-第一次跑会在 `gateway.toml` 里生成访问口令(该文件已 gitignore,别提交),并要在同一个文件里写白名单 `users = ["你的名字"]`——**白名单是空的时候网关谁都不服务**。多工作区时 IM 的房间名(或 POST 里的 `workspace`)对上已登记 slug 就投进该区总线,可在 `[workspaces.<slug>]` 里单独写 `users`/`rooms`。远程指令弱于本机指令:手机上发的消息里出现 push / 删文件 / 装软件 / 出仓库这类要求时不会直接转给成员,而是挂起等本机确认:
+仓库开发时用 `uv run amux`，例如：
 
 ```bash
-uv run python -m gateway pending          # 看有哪些待确认
-uv run python -m gateway approve <编号>   # 本机点头,网关下一轮转给成员
-uv run python -m gateway reject <编号>    # 不同意,直接丢弃
+uv run amux member add claude
+uv run roster up claude
+uv run amux
 ```
 
-页面只用标准库提供,不依赖任何第三方账号;消息进出都经 `bus/queue`,清洗、限频、熔断照常生效。手机上的人在总线里的身份是 `im:<名字>`,成员回给他的消息由网关代投回群。
+常用检查命令：
 
-## 仓库结构
+```bash
+uv run ruff check .
+uv run pytest -q
+uv run python -m qa.smoke
+```
+
+仓库根目录的 `./start.sh`、`./msg` 和 `hub.py` 是早期总线接口，目前仍为兼容入口。新用户优先
+使用 `amux` 命令。
+
+## 项目结构
 
 | 路径 | 内容 |
 |---|---|
-| `AGENTS.md` / `CLAUDE.md` | AI 入口:群聊协议 + 工作规则 |
-| `docs/` | 产品定义、架构决策、Goal 清单 |
-| `pyproject.toml` / `uv.lock` | Python、依赖、pytest、ruff 与命令入口配置 |
-| `src/` / `tests/` | 应用源码与自动化测试(`src/bus`、`src/console`、`src/tmuxctl`、`src/qa`、`src/roster`) |
-| `hub.py` `msg` `start.sh` | v0 总线入口(`start.sh` 现读 `roster.toml`) |
-| `install-amux.sh` | 把 `amux` 装成全局命令的薄 shim(`uninstall` 卸载) |
-| `roster.toml` | 成员名册(名字、启动命令、启用与否、自动恢复配置) |
-| `bus/` | 运行时数据(gitignore) |
-| `reference/pi-extensions/` | 参考实现:pi 的 talk 扩展(只读,防环策略的出处) |
+| `src/console/` | Textual TUI 和命令入口 |
+| `src/bus/` | 消息队列、投递、ask/reply 与审计 |
+| `src/tmuxctl/` | tmux 会话、画面和进程控制 |
+| `src/workspace/` | 多工作区登记与隔离 |
+| `src/roster/` | 成员名册和生命周期 |
+| `src/team/` | 团队档案与工作区绑定 |
+| `tests/` | 自动化测试 |
+| `docs/` | 产品、架构、Goal 和质量文档 |
+
+参与开发前请先阅读 [AGENTS.md](AGENTS.md) 和 [文档索引](docs/README.md)。架构边界见
+[架构决策](docs/architecture/architecture.md)，打包与发布流程见
+[发行文档](docs/releasing.md)。
+
+## 安全说明
+
+- amux 不替你接受 AI CLI 的权限弹窗；权限由各 CLI 自己的正规配置控制。
+- `git push`、删除文件、安装软件和访问项目外路径等操作仍应由人明确授权。
+- 消息总线会清洗控制字符，并对重复消息、发送频率和积压做传输层限制。
+- 手机网关默认无可用用户，必须显式配置白名单后才会接收请求。
+
+问题和建议欢迎提交到 [GitHub Issues](https://github.com/jzhang-0/proj_multi_agent/issues)。
+
+Copyright © 2026 jzhang-0. Licensed under the [MIT License](LICENSE).

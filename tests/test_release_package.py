@@ -21,9 +21,14 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     assert project["name"] == "amux-team"
     assert project["scripts"]["amux"] == "console.cli:main"
     assert project["requires-python"] == ">=3.11"
+    assert project["license"] == "MIT"
+    assert project["license-files"] == ["LICENSE"]
     assert "Development Status :: 3 - Alpha" in project["classifiers"]
     packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/amux_runtime" in packages
+    license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    assert "MIT License" in license_text
+    assert "Copyright (c) 2026 jzhang-0" in license_text
 
 
 def test_release_workflow_has_version_guard_and_trusted_publishers() -> None:

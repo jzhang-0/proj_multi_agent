@@ -2,6 +2,8 @@
 
 PyPI 发行名为 `amux-team`，安装后的主要命令仍是 `amux`。PyPI 上的 `amux` 已属于另一项目，不得尝试覆盖。源码仓库内继续保留 `console` / `roster` 兼容入口。
 
+项目采用 MIT License，版权主体为 `jzhang-0`；构建检查会验证许可证正文同时进入 wheel 和 sdist。
+
 ## 发布前检查
 
 发布机需要 Python ≥ 3.11 和 `uv`；终端运行还要求 `tmux ≥ 3.2`。Claude Code、Codex CLI 和 Cursor Agent 是用户自行安装、登录的外部运行器，不进入 Python 制品。
@@ -40,6 +42,6 @@ amux
 
 源码开发安装仍可执行 `./install-amux.sh`。它只是指向当前 checkout 的 shim，不属于公开制品。
 
-## 仍需 human 拍板
+## 仍需 human 补充
 
-发布前必须选择许可证并补 `LICENSE` 与 `project.license`；MIT、Apache-2.0 或不公开授权的法律含义不同，工具不代替 human 选择。仓库目前也没有远端地址，因此项目主页、问题追踪链接需在建好远端后补入。
+仓库目前没有远端地址，因此项目主页、问题追踪链接需在建好远端后补入。

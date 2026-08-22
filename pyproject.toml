@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "一台机器上多个 AI CLI 的协作团队指挥中心"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 keywords = ["ai", "agents", "collaboration", "tmux", "tui"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -55,6 +57,7 @@ packages = [
 [tool.hatch.build.targets.sdist]
 include = [
   "/AGENTS.md",
+  "/LICENSE",
   "/README.md",
   "/pyproject.toml",
   "/roster.toml",

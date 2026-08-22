@@ -83,3 +83,8 @@
   - 验证:`uv run ruff check . && uv run pytest tests/test_console_compose.py tests/test_console_control.py tests/test_console_keyboard.py tests/test_console_app.py tests/test_console_commands.py tests/test_visual_evidence.py -q`(57 passed);看画面:`uv run python -m qa.visual --goal CON-014 --scene direct-keys --size 120x30 --fixture controls --keys Down,Tab,Tab,BTab,Enter,Escape` 与 `--scene direct-input --keys Down,Tab,Tab`。
   - 证据:`ComposeInput.DirectKey` 只在成员直连输入框截获 Shift+Tab,交由 `ConsoleApp` 后台线程调用 `MemberController.press_key`;后者白名单仅放行 `BTab`/`Enter`,并以 `control/action=key` 记审计。空 Enter 只在成员直连且未输入文本时透传,避免改变群聊空输入语义。`tests/test_console_compose.py` 覆盖 Shift+Tab 不再反向切焦点、BTab 与 Enter 两个调用;`tests/test_console_control.py` 覆盖白名单、tmux 参数与审计;`tests/test_console_keyboard.py` 继续钉住常规导航与帮助列对齐。README、产品定义、帮助与输入提示同步。
   - 视觉自验证:`tests/baseline/con-014-direct-keys-120x30.txt`/`.ansi`(安全 controls 夹具)在 Esc 回群聊后可见两行`[直连] → human → claude: 按键 Shift+Tab`和`按键 Enter`,证明两键没有被导航吞掉;`tests/baseline/con-014-direct-input-120x30.txt`/`.ansi`显示选中 claude 后输入框提示「Shift+Tab/空Enter 透传」,成员镜像、三栏分隔线和底栏仍完整对齐。
+
+- [ ] **CON-015** — 直连删除键与回滚快捷键:选中成员且输入框为空时,Mac Delete/Backspace 与 Forward Delete 分别作为 tmux `BSpace`/`DC` 透传；输入框有内容时仍只编辑本地内容。成员画面继续通过 `capture-pane -S` 读取 tmux 回滚区,保留滚轮与 PgUp/PgDn/Home/End,并增加输入框聚焦时也可用的 `Ctrl+↑/Ctrl+↓` 回看/返回快捷键；动作审计、输入提示、帮助和 README 同步,并完成实际画面验证。
+  - 前置:CON-006、CON-014。
+  - 处理登记:Codex，2026-08-23，`con-015-codex`。
+  - 进行中:正在实现空删除键透传和更易用的成员回滚快捷键。

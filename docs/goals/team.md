@@ -25,3 +25,8 @@
   - 前置:TEAM-001。
   - 验证:`uv run ruff check .`(通过);`uv run pytest tests/test_teams.py tests/test_team_activation.py tests/test_workspace_members.py tests/test_global_config.py tests/test_workspace_session.py tests/test_console_app.py tests/test_engineering_skeleton.py -q`(37 passed)。
   - 证据:`src/team/store.py` 在 `~/.amux/teams/fable-core.toml` 保存三条 `claude` 与两条 `codex` 适配；`src/team/activation.py` 先校验运行器、再只结束旧有效名册并投影新 `members.toml`；`tests/test_team_activation.py` 覆盖无 `agent`、工作区隔离与失败不改状态。实机在 `proj_fppt` 运行 `amux team init --force`、`amux team activate fable-core`：旧 `claude`/`codex` 均关闭，`fable`、`sonnet`、`opus`、`luna`、`sol` 均启动；`tmux list-sessions` 和终端抓取确认 Fable high、Luna high fast 已就绪。
+
+- [ ] **TEAM-004** — Claude 成员的可回滚终端适配：团队成员运行时适配支持并严格校验 `env`，激活时完整投影到工作区名册；默认 `fable-core` 的 Fable/Sonnet/Opus 设置 `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`，使 tmux 能保留 Claude 对话回滚区，Luna/Sol 不受影响。控制台帮助与直连提示明确 Mac 的 `Fn+↑/Fn+↓` 即 PgUp/PgDn，并说明空 Delete 只删除成员当前未提交草稿、不能修改已提交消息；保留现有滚轮和快捷键。补自动化测试、文档、真实 Claude pane 与实际画面验证。
+  - 前置：TEAM-003、CON-015。
+  - 处理登记：Codex，2026-08-23，`team-004-codex`。
+  - 进行中：已实测删除透传对未提交 `XYZ` 生效；已定位 Claude alternate screen 导致 tmux `history_size=0`，正在持久化 classic renderer 启动适配并改善提示。

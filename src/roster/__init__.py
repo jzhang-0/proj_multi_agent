@@ -4,10 +4,13 @@ from roster.adopt import SessionAdopter, SessionCandidate, TemporaryMember
 from roster.health import HealthState, HealthSupervisor, HealthUpdate
 from roster.load import load_effective_roster, load_roster
 from roster.protocol import (
+    COLLABORATION_PROTOCOL_HEADING,
     ProtocolSourceError,
     check_single_source,
     extract_chat_protocol,
+    extract_collaboration_protocol,
     load_chat_protocol,
+    load_collaboration_protocol,
     render_member_greeting,
 )
 from roster.schema import Member, Roster, RosterError
@@ -18,6 +21,7 @@ __all__ = [
     "HealthSupervisor",
     "HealthUpdate",
     "Member",
+    "COLLABORATION_PROTOCOL_HEADING",
     "ProtocolSourceError",
     "Roster",
     "RosterError",
@@ -25,9 +29,11 @@ __all__ = [
     "SessionCandidate",
     "TemporaryMember",
     "check_single_source",
+    "extract_collaboration_protocol",
     "extract_chat_protocol",
     "load_effective_roster",
     "load_roster",
+    "load_collaboration_protocol",
     "load_chat_protocol",
     "member_env",
     "render_member_greeting",

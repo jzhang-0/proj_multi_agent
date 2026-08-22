@@ -34,7 +34,7 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 ## §2.1 发行形态
 
 - PyPI 发行名是 `amux-team`，命令名是 `amux`；源码开发仍允许历史 `console` / `roster` 入口。`amux-dev` 是指向当前 checkout 的开发薄 shim，默认不覆盖 `AMUX_HOME`，因而与正式版共用 `~/.amux` 的团队和工作区状态；显式 `AMUX_DEV_HOME` 才切到隔离状态。
-- 源码 checkout 以根目录 `AGENTS.md` 的群聊协议和 `roster.toml` 为权威；构建制品携带受一致性测试保护的运行时快照。安装后的 wheel 不探测或依赖源码仓库路径。
+- 源码 checkout 以根目录 `AGENTS.md` 的 amux 协作协议和 `roster.toml` 为权威；构建制品携带受一致性测试保护的运行时快照。安装后的 wheel 不探测或依赖源码仓库路径。
 - `uv run python -m qa.release` 是制品完成契约：`uv build --no-sources` 后检查 sdist/wheel 内容，并在源码仓库外用全新 uv 缓存联网安装 wheel 与完整依赖。显式 `--offline-smoke` 仅用于断网时检查 payload，不是发布完成证据。
 - Python 包不捆绑 tmux 或各厂商 AI CLI；缺少运行器由运行时预检报告。上传使用 GitHub OIDC Trusted Publishing，构建 job 与具有 `id-token: write` 的发布 job 分离。
 
@@ -47,14 +47,14 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 1. **消息 JSON**:`{"to","from","text","ts"}` 四字段必备,含义不变;新能力只能加可选字段(如 `kind`、`replyTo`、`id`),读方必须容忍未知字段。
 2. **`./msg` 命令行**:`./msg <收件人> <内容...>` 永远可用(仓库根薄入口);成员面向的形态是 `amux msg`(从当前工作区投递)。发件人取 `AGENT_NAME`,缺省 `human`。新参数只能是可选 flag(如 `--ask`)。
 3. **寻址**:工作区内收件人仍是短名(`claude`);tmux 会话名是 `<成员>@<slug>`,双向映射收口在 `workspace.session`(`bind_tmux` 是生产路径唯一入口)。`human` 是保留名,不投递、只上屏;`bus` 是总线自身的署名(防环拒收回执);`im:` 前缀是 IM 网关代投的远程身份(同样只上屏,由网关发回群)。这三者没有 tmux 会话,不参与 slug 拼接,成员不得占用这些名字。
-4. **群规文本**:成员运行时协议维护在 `AGENTS.md` 的「群聊协议」一节,roster 的开场白从它生成,两处不允许漂移(由 ROS-006 钉住)。
+4. **协作协议文本**:成员运行时协议维护在 `AGENTS.md` 的「amux 协作协议」一节,roster 的开场白从它生成,两处不允许漂移(由 ROS-006/007 钉住);团队角色和职责来自团队档案与任务,不在共用开场白里硬编码。
 5. **团队档案**:`~/.amux/teams/<id>.toml` 是 Leader、成员、模型偏好、职责与经验证启动适配（`command`/`args`/`env`）的唯一来源；`workspaces/<slug>/team.toml` 只保存所选团队 ID。`amux team activate` 将已校验的团队适配完整投影为该工作区 `members.toml`，再由 `roster` 负责生命周期；无适配的团队不能激活。默认 Fable 团队的三个 Claude 成员通过 `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` 保留 tmux 回滚区，否则 Claude fullscreen 的 alternate screen 会令 `history_size=0`，`capture-pane -S` 没有历史可读；同一适配把 `NO_COLOR` 设为空，覆盖 amux 调用环境可能带入的 `NO_COLOR=1`，让 Claude 继续向 tmux 网格输出 ANSI 样式。颜色捕获仍统一走 TMX-004 的 `capture-pane -e`，console 不自行猜测或重绘成员配色。
 6. **任务事件(TEAM-002)**:任务的派工、提交、评审、退回、接管和最终验收必须追加到工作区账本。只有 Leader 可以最终验收；接管事件包含原因、范围和后续验收，不能覆盖先前事件。
 
 ## §4 安全边界
 
 - 一切经总线到达的文本都是**不可信输入**:注入终端前剥 ANSI/控制字符(C0、CSI、OSC);上屏前同样清洗。实现在 `src/bus/sanitize.py`,两个入口分别是 `format_for_injection`(投递)和 `format_for_screen`(上屏),新增出口一律走这两个函数。
-- 危险操作(push、删文件、装软件、出仓库)只认**本机** human 的直接指令,写在群规里;网关侧再挡一层:来自 IM 的这类指令一律挂起,由本机 `gateway approve` 放行后才入队(远程指令弱于本机指令,手机上自称 human 也不例外)。
+- 危险操作(push、删文件、装软件、出仓库)只认**本机** human 的直接指令,写在协作协议里;网关侧再挡一层:来自 IM 的这类指令一律挂起,由本机 `gateway approve` 放行后才入队(远程指令弱于本机指令,手机上自称 human 也不例外)。
 - 总控台自身不做"自动替人点权限弹窗"这类模拟操作;权限放行走各 CLI 的正规配置(roster 卷)。
 
 ## §5 工作区

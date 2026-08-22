@@ -10,7 +10,10 @@ from subprocess import CompletedProcess
 from amux_runtime import PROTOCOL_RESOURCE, ROSTER_RESOURCE, read_resource
 from qa import release
 from roster.load import load_roster
-from roster.protocol import extract_chat_protocol, load_chat_protocol
+from roster.protocol import (
+    extract_collaboration_protocol,
+    load_collaboration_protocol,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,7 +54,7 @@ def test_packaged_runtime_resources_match_source_authorities() -> None:
     packaged_roster = read_resource(ROSTER_RESOURCE).splitlines()
     assert "\n".join(packaged_roster[1:]).strip() == source_roster
 
-    source_protocol = extract_chat_protocol(
+    source_protocol = extract_collaboration_protocol(
         (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     )
     assert read_resource(PROTOCOL_RESOURCE).strip() == source_protocol
@@ -62,7 +65,7 @@ def test_roster_and_protocol_fall_back_to_packaged_resources(monkeypatch) -> Non
     monkeypatch.setattr("roster.protocol.source_root", lambda: None)
 
     roster = load_roster()
-    protocol = load_chat_protocol()
+    protocol = load_collaboration_protocol()
 
     assert roster.source == "package:amux_runtime/roster.toml"
     assert [member.name for member in roster.members] == [
@@ -71,7 +74,8 @@ def test_roster_and_protocol_fall_back_to_packaged_resources(monkeypatch) -> Non
         "cursor",
         "agy",
     ]
-    assert "成员由当前工作区的名册或团队档案决定" in protocol
+    assert "具体角色、职责和协作对象以当前工作区" in protocol
+    assert "只在被 @ 时响应" not in protocol
 
 
 def _fake_release_runner(

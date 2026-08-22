@@ -1,4 +1,4 @@
-"""从仓库 ``AGENTS.md`` 的「群聊协议」生成成员运行时开场白。"""
+"""从仓库 ``AGENTS.md`` 的「amux 协作协议」生成成员运行时开场白。"""
 
 from __future__ import annotations
 
@@ -8,19 +8,28 @@ from pathlib import Path
 from amux_runtime import PROTOCOL_RESOURCE, ROSTER_RESOURCE, read_resource
 from roster.paths import source_root
 
-CHAT_PROTOCOL_HEADING = "## 群聊协议"
+COLLABORATION_PROTOCOL_HEADING = "## amux 协作协议"
+
+# 0.1.x 兼容名；新代码使用与产品定位一致的 collaboration 命名。
+CHAT_PROTOCOL_HEADING = COLLABORATION_PROTOCOL_HEADING
 
 
 class ProtocolSourceError(ValueError):
-    """群聊协议缺失、重复或静态名册又维护了副本。"""
+    """协作协议缺失、重复或静态名册又维护了副本。"""
 
 
-def extract_chat_protocol(markdown: str) -> str:
-    """抽取二级标题「群聊协议」的完整正文，不吞下后续章节。"""
+def extract_collaboration_protocol(markdown: str) -> str:
+    """抽取二级标题「amux 协作协议」的完整正文，不吞下后续章节。"""
     lines = markdown.splitlines()
-    headings = [index for index, line in enumerate(lines) if line.strip() == CHAT_PROTOCOL_HEADING]
+    headings = [
+        index
+        for index, line in enumerate(lines)
+        if line.strip() == COLLABORATION_PROTOCOL_HEADING
+    ]
     if len(headings) != 1:
-        raise ProtocolSourceError(f"{CHAT_PROTOCOL_HEADING} 必须且只能出现一次")
+        raise ProtocolSourceError(
+            f"{COLLABORATION_PROTOCOL_HEADING} 必须且只能出现一次"
+        )
 
     start = headings[0]
     end = len(lines)
@@ -29,24 +38,29 @@ def extract_chat_protocol(markdown: str) -> str:
             end = index
             break
     body = "\n".join(lines[start:end]).strip()
-    if body == CHAT_PROTOCOL_HEADING:
-        raise ProtocolSourceError(f"{CHAT_PROTOCOL_HEADING} 不能为空")
+    if body == COLLABORATION_PROTOCOL_HEADING:
+        raise ProtocolSourceError(f"{COLLABORATION_PROTOCOL_HEADING} 不能为空")
     return body
 
 
-def load_chat_protocol(path: str | Path | None = None) -> str:
+def load_collaboration_protocol(path: str | Path | None = None) -> str:
     """源码模式读 ``AGENTS.md``，wheel 模式读包内同步快照。"""
     if path is not None:
         target = Path(path)
         try:
             markdown = target.read_text(encoding="utf-8")
         except OSError as exc:
-            raise ProtocolSourceError(f"无法读取群聊协议: {target}: {exc}") from exc
+            raise ProtocolSourceError(f"无法读取协作协议: {target}: {exc}") from exc
     elif (root := source_root()) is not None:
         markdown = (root / "AGENTS.md").read_text(encoding="utf-8")
     else:
         markdown = read_resource(PROTOCOL_RESOURCE)
-    return extract_chat_protocol(markdown)
+    return extract_collaboration_protocol(markdown)
+
+
+# 保留发行版 0.1.x 已导出的内部名称，避免升级时破坏已有调用方。
+extract_chat_protocol = extract_collaboration_protocol
+load_chat_protocol = load_collaboration_protocol
 
 
 def render_member_greeting(
@@ -59,12 +73,12 @@ def render_member_greeting(
 ) -> str:
     """把成员身份、所在工作区和权威协议组合成启动时传给 CLI 的开场白。"""
     intro = intro_template.replace("{NAME}", name).replace("{name}", name).strip()
-    identity = f"你是本机 AI 群的成员 {name}。"
+    identity = f"你是 amux 工作区的协作成员 {name}。"
     location = _workspace_location(workspace_slug=workspace_slug, project_root=project_root)
     if location:
         identity += location
-    identity += "以下内容直接来自 AGENTS.md,必须遵守:"
-    parts = [intro, identity, protocol or load_chat_protocol()]
+    identity += "以下运行时协作协议必须遵守:"
+    parts = [intro, identity, protocol or load_collaboration_protocol()]
     return "\n\n".join(part for part in parts if part)
 
 
@@ -92,11 +106,11 @@ def check_single_source(
     roster_path: str | Path | None = None,
 ) -> None:
     """检查仓库静态名册没有另存一份开场白/协议文本,且协议已改用 amux msg。"""
-    protocol = load_chat_protocol(agents_path)
+    protocol = load_collaboration_protocol(agents_path)
     if "amux msg" not in protocol:
-        raise ProtocolSourceError("群聊协议必须使用全局命令 amux msg")
+        raise ProtocolSourceError("协作协议必须使用全局命令 amux msg")
     if "在仓库根运行 `./msg" in protocol:
-        raise ProtocolSourceError("群聊协议不得再要求在仓库根运行 ./msg")
+        raise ProtocolSourceError("协作协议不得再要求在仓库根运行 ./msg")
     if roster_path is not None:
         target = Path(roster_path)
         try:

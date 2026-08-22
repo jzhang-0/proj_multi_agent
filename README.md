@@ -129,6 +129,9 @@ amux team current
 ```
 
 团队档案记录 Leader、成员、模型偏好和职责。激活后，amux 会把团队成员投影到当前工作区名册。
+启动时所有人读取公共提示词，Leader 与普通成员再分别读取自己的角色提示；Leader 还会拿到完整
+团队能力名册用于派工。提示正文集中维护在 [`src/amux_runtime/prompts/`](src/amux_runtime/prompts/README.md)，
+修改 Markdown 即可，不需要改 Python。
 默认团队还会让三个 Claude 成员使用 classic renderer，避免 alternate screen 把 tmux 回滚区清成
 `history_size=0`；同时用空 `NO_COLOR` 覆盖 amux 调用环境里可能继承的 `NO_COLOR=1`，让 Claude
 把原有 ANSI 颜色交给 tmux 和总控台。已有旧团队档案可运行 `amux team init --force` 更新后重新
@@ -220,6 +223,7 @@ uv run python -m qa.smoke
 | `src/workspace/` | 多工作区登记与隔离 |
 | `src/roster/` | 成员名册和生命周期 |
 | `src/team/` | 团队档案与工作区绑定 |
+| `src/amux_runtime/prompts/` | 公共、Leader 与普通成员运行时提示词 |
 | `tests/` | 自动化测试 |
 | `docs/` | 产品、架构、Goal 和质量文档 |
 

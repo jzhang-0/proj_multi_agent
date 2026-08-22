@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from roster.schema import Member, Roster
+from roster.start import member_env
 from team.activation import TeamRuntimeError, activate_team, roster_for_team
 from team.binding import bind_team, load_team_binding
 from team.store import DEFAULT_TEAM_ID, TeamStore
@@ -65,6 +66,27 @@ def test_default_fable_team_uses_only_claude_and_codex_runners(tmp_path: Path) -
         ("sol", "codex"),
     ]
     assert all(member.command != "agent" for member in roster.members)
+    assert roster.get("fable").team_id == DEFAULT_TEAM_ID
+    assert roster.get("fable").role == "leader"
+    assert roster.get("fable").leader_name == "fable"
+    assert roster.get("fable").model == "Claude Fable 5"
+    assert "最终责任" in roster.get("fable").responsibility
+    assert "`sonnet`: role=member, model=Sonnet" in roster.get("fable").team_roster
+    assert "effort=xhigh, speed=standard" in roster.get("fable").team_roster
+    assert roster.get("sol").role == "member"
+    assert roster.get("sol").leader_name == "fable"
+    fable_env = member_env(roster.get("fable"))
+    assert {key: fable_env[key] for key in (
+        "AGENT_NAME",
+        "AGENT_ROLE",
+        "AMUX_TEAM_ID",
+        "AMUX_TEAM_LEADER",
+    )} == {
+        "AGENT_NAME": "fable",
+        "AGENT_ROLE": "leader",
+        "AMUX_TEAM_ID": DEFAULT_TEAM_ID,
+        "AMUX_TEAM_LEADER": "fable",
+    }
     assert dict(roster.get("fable").env) == {
         "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1",
         "NO_COLOR": "",
@@ -135,6 +157,16 @@ def test_activate_replaces_only_old_enabled_roster_and_starts_fable_team(tmp_pat
         "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1",
         "NO_COLOR": "",
     }
+    assert stored.custom[0].team_id == DEFAULT_TEAM_ID
+    assert stored.custom[0].role == "leader"
+    assert stored.custom[0].leader_name == "fable"
+    assert stored.custom[0].model == "Claude Fable 5"
+    assert "最终责任" in stored.custom[0].responsibility
+    assert stored.custom[0].team_roster == roster_for_team(
+        teams.load(DEFAULT_TEAM_ID)
+    ).get("fable").team_roster
+    assert stored.custom[3].role == "member"
+    assert stored.custom[3].leader_name == "fable"
     assert dict(stored.custom[3].env) == {}
     assert load_team_binding(workspace).team_id == DEFAULT_TEAM_ID
 

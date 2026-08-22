@@ -11,6 +11,7 @@ from roster.protocol import (
     extract_collaboration_protocol,
     load_chat_protocol,
     load_collaboration_protocol,
+    load_prompt,
     render_member_greeting,
 )
 from roster.schema import Member, Roster, RosterError
@@ -35,6 +36,7 @@ __all__ = [
     "load_roster",
     "load_collaboration_protocol",
     "load_chat_protocol",
+    "load_prompt",
     "member_env",
     "render_member_greeting",
     "start_all",

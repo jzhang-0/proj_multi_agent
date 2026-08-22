@@ -21,18 +21,38 @@ class Member:
     command: str
     args: tuple[str, ...] = ()
     env: Mapping[str, str] = field(default_factory=dict)
+    team_id: str = ""
+    role: str = ""
+    leader_name: str = ""
+    model: str = ""
+    responsibility: str = ""
+    team_roster: str = ""
     greeting_template: str = ""
     enabled: bool = True
     auto_respawn: bool = False
 
-    def render_greeting(self, *, protocol: str | None = None) -> str:
-        """从 AGENTS.md 权威协议生成开场白；模板只作为可选的成员前言。"""
+    def render_greeting(
+        self,
+        *,
+        protocol: str | None = None,
+        workspace_slug: str | None = None,
+        project_root: str | None = None,
+    ) -> str:
+        """从 prompts 资源生成开场白；模板只作为可选的成员前言。"""
         from roster.protocol import render_member_greeting
 
         return render_member_greeting(
             self.name,
             intro_template=self.greeting_template,
             protocol=protocol,
+            workspace_slug=workspace_slug,
+            project_root=project_root,
+            team_id=self.team_id,
+            role=self.role,
+            leader_name=self.leader_name,
+            model=self.model,
+            responsibility=self.responsibility,
+            team_roster=self.team_roster,
         )
 
 
@@ -93,6 +113,12 @@ def _optional_env(raw: Mapping[str, Any]) -> dict[str, str]:
     return dict(value)
 
 
+def _optional_str(raw: Mapping[str, Any], key: str) -> str:
+    if key not in raw:
+        return ""
+    return _require_str(raw, key)
+
+
 def validate_member_name(name: str) -> str:
     """校验可同时作为总线收件人和 tmux 会话名主体的成员名。"""
     if name in RESERVED_NAMES:
@@ -121,11 +147,35 @@ def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
     greeting = raw.get("greeting_template", default_greeting)
     if not isinstance(greeting, str):
         raise RosterError(f"成员 {name} 的开场白模板必须是字符串")
+    role = _optional_str(raw, "role")
+    if role not in {"", "leader", "member"}:
+        raise RosterError(f"成员 {name} 的 role 必须是 leader 或 member")
+    team_id = _optional_str(raw, "team_id")
+    leader_name = _optional_str(raw, "leader")
+    model = _optional_str(raw, "model")
+    responsibility = _optional_str(raw, "responsibility")
+    team_roster = _optional_str(raw, "team_roster")
+    metadata = (team_id, leader_name, model, responsibility, team_roster)
+    if role and not all(metadata):
+        raise RosterError(
+            f"成员 {name} 设置 role 时必须同时设置 team_id、leader、model、"
+            "responsibility、team_roster"
+        )
+    if not role and any(metadata):
+        raise RosterError(f"成员 {name} 的团队元数据必须与 role 一起设置")
+    if role == "leader" and leader_name != name:
+        raise RosterError(f"Leader 成员 {name} 的 leader 必须指向自己")
     known = {
         "name",
         "command",
         "args",
         "env",
+        "team_id",
+        "role",
+        "leader",
+        "model",
+        "responsibility",
+        "team_roster",
         "greeting_template",
         "enabled",
         "auto_respawn",
@@ -138,6 +188,12 @@ def member_from_dict(raw: Any, *, default_greeting: str) -> Member:
         command=command,
         args=_optional_str_list(raw, "args"),
         env=_optional_env(raw),
+        team_id=team_id,
+        role=role,
+        leader_name=leader_name,
+        model=model,
+        responsibility=responsibility,
+        team_roster=team_roster,
         greeting_template=greeting,
         enabled=_optional_bool(raw, "enabled", True),
         auto_respawn=_optional_bool(raw, "auto_respawn", False),

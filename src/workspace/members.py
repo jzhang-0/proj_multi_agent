@@ -18,7 +18,14 @@ from workspace.paths import MEMBERS_NAME
 
 
 def _toml_str(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return '"' + escaped + '"'
 
 
 @dataclass(frozen=True)
@@ -67,6 +74,13 @@ def save_workspace_members(workspace: Workspace, members: WorkspaceMembers) -> N
         lines.append("[[custom]]")
         lines.append(f"name = {_toml_str(member.name)}")
         lines.append(f"command = {_toml_str(member.command)}")
+        if member.role:
+            lines.append(f"team_id = {_toml_str(member.team_id)}")
+            lines.append(f"role = {_toml_str(member.role)}")
+            lines.append(f"leader = {_toml_str(member.leader_name)}")
+            lines.append(f"model = {_toml_str(member.model)}")
+            lines.append(f"responsibility = {_toml_str(member.responsibility)}")
+            lines.append(f"team_roster = {_toml_str(member.team_roster)}")
         if member.args:
             args = ", ".join(_toml_str(arg) for arg in member.args)
             lines.append(f"args = [{args}]")

@@ -11,9 +11,9 @@ from tmuxctl import Tmux
 from workspace.session import session_for
 
 
-def window_command(member: Member) -> str:
+def window_command(member: Member, *, project_root: Path | None = None) -> str:
     """v0 同款:在默认 shell 里跑 CLI,把开场白当第一个参数,退出后留在 shell。"""
-    prompt = member.render_greeting()
+    prompt = member.render_greeting(project_root=str(project_root) if project_root else None)
     argv = [member.command, *_expand_add_dirs(member.args)]
     return f"{shlex.join(argv)} {shlex.quote(prompt)}; exec $SHELL"
 
@@ -34,7 +34,16 @@ def _expand_add_dirs(args: tuple[str, ...]) -> tuple[str, ...]:
 
 def member_env(member: Member) -> dict[str, str]:
     """构造启动与原窗格重启共用的成员环境。"""
-    return {**dict(member.env), "AGENT_NAME": member.name}
+    metadata = {
+        "AGENT_ROLE": member.role,
+        "AMUX_TEAM_ID": member.team_id,
+        "AMUX_TEAM_LEADER": member.leader_name,
+    }
+    return {
+        **dict(member.env),
+        "AGENT_NAME": member.name,
+        **{key: value for key, value in metadata.items() if value},
+    }
 
 
 def start_member(member: Member, tmux: Tmux, *, cwd: Path | None = None) -> str:
@@ -44,7 +53,7 @@ def start_member(member: Member, tmux: Tmux, *, cwd: Path | None = None) -> str:
         return f"[start] {member.name} 已在运行,跳过"
     tmux.new_session(
         member.name,
-        command=window_command(member),
+        command=window_command(member, project_root=cwd),
         detached=True,
         cwd=str(cwd or repo_root()),
         env=member_env(member),

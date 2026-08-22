@@ -49,6 +49,7 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
     required = {
         "amux_runtime/protocol.md",
         "amux_runtime/roster.toml",
+        f"{dist_info}/licenses/LICENSE",
         f"{dist_info}/METADATA",
         f"{dist_info}/entry_points.txt",
     }
@@ -61,6 +62,8 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         entry_points = archive.read(f"{dist_info}/entry_points.txt").decode()
     if f"Name: {DISTRIBUTION}" not in metadata or f"Version: {version}" not in metadata:
         raise RuntimeError("wheel METADATA 的发行名或版本不正确")
+    if "License-Expression: MIT" not in metadata or "License-File: LICENSE" not in metadata:
+        raise RuntimeError("wheel METADATA 没有正确声明 MIT 许可证")
     if "Requires-Dist: textual>=1.0" not in metadata:
         raise RuntimeError("wheel METADATA 缺少 textual 依赖")
     if "Requires-Dist: watchfiles>=0.24" not in metadata:
@@ -72,6 +75,7 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         names = archive.getnames()
     required_suffixes = (
         "/AGENTS.md",
+        "/LICENSE",
         "/roster.toml",
         "/src/amux_runtime/protocol.md",
         "/src/amux_runtime/roster.toml",

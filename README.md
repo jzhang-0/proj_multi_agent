@@ -1,5 +1,7 @@
 # proj_multi_agent — 总控台
 
+本项目采用 [MIT License](LICENSE)，版权所有 © 2026 jzhang-0。
+
 一台机器上多个 AI CLI 组成一个由 Leader 负责的协作团队：人直接面向 Leader，成员执行、提交证据和互相评审，所有派工、验收与接管都可回看。群聊只是其中一种沟通渠道。产品形态与硬指标见 [产品定义](docs/product/product.md)。
 
 ## 现状:v0 总线(可用)

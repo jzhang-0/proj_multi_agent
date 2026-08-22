@@ -35,6 +35,11 @@ amux = "console.cli:main"
 console = "console.cli:main"
 roster = "roster.__main__:main"
 
+[project.urls]
+Homepage = "https://github.com/jzhang-0/proj_multi_agent"
+Repository = "https://github.com/jzhang-0/proj_multi_agent.git"
+Issues = "https://github.com/jzhang-0/proj_multi_agent/issues"
+
 [dependency-groups]
 dev = [
   "pytest>=8.3",

@@ -47,7 +47,10 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
 
     dist_info = f"{NORMALIZED_DISTRIBUTION}-{version}.dist-info"
     required = {
-        "amux_runtime/protocol.md",
+        "amux_runtime/prompts/README.md",
+        "amux_runtime/prompts/common.md",
+        "amux_runtime/prompts/leader.md",
+        "amux_runtime/prompts/member.md",
         "amux_runtime/roster.toml",
         f"{dist_info}/licenses/LICENSE",
         f"{dist_info}/METADATA",
@@ -77,7 +80,10 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "/AGENTS.md",
         "/LICENSE",
         "/roster.toml",
-        "/src/amux_runtime/protocol.md",
+        "/src/amux_runtime/prompts/common.md",
+        "/src/amux_runtime/prompts/leader.md",
+        "/src/amux_runtime/prompts/member.md",
+        "/src/amux_runtime/prompts/README.md",
         "/src/amux_runtime/roster.toml",
     )
     missing_sdist = [

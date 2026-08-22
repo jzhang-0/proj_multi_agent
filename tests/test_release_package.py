@@ -7,13 +7,10 @@ from collections.abc import Callable
 from pathlib import Path
 from subprocess import CompletedProcess
 
-from amux_runtime import PROTOCOL_RESOURCE, ROSTER_RESOURCE, read_resource
+from amux_runtime import PROMPT_RESOURCES, ROSTER_RESOURCE, read_resource
 from qa import release
 from roster.load import load_roster
-from roster.protocol import (
-    extract_collaboration_protocol,
-    load_collaboration_protocol,
-)
+from roster.protocol import load_prompt
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,18 +51,21 @@ def test_packaged_runtime_resources_match_source_authorities() -> None:
     packaged_roster = read_resource(ROSTER_RESOURCE).splitlines()
     assert "\n".join(packaged_roster[1:]).strip() == source_roster
 
-    source_protocol = extract_collaboration_protocol(
-        (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    )
-    assert read_resource(PROTOCOL_RESOURCE).strip() == source_protocol
+    for role, resource in PROMPT_RESOURCES.items():
+        source_prompt = (ROOT / "src" / "amux_runtime" / resource).read_text(
+            encoding="utf-8"
+        )
+        assert read_resource(resource) == source_prompt
+        assert load_prompt(role) == source_prompt.strip()
 
 
-def test_roster_and_protocol_fall_back_to_packaged_resources(monkeypatch) -> None:
+def test_roster_and_prompts_fall_back_to_packaged_resources(monkeypatch) -> None:
     monkeypatch.setattr("roster.load.source_default_path", lambda: None)
-    monkeypatch.setattr("roster.protocol.source_root", lambda: None)
 
     roster = load_roster()
-    protocol = load_collaboration_protocol()
+    common = load_prompt("common")
+    leader = load_prompt("leader")
+    member = load_prompt("member")
 
     assert roster.source == "package:amux_runtime/roster.toml"
     assert [member.name for member in roster.members] == [
@@ -74,8 +74,10 @@ def test_roster_and_protocol_fall_back_to_packaged_resources(monkeypatch) -> Non
         "cursor",
         "agy",
     ]
-    assert "具体角色、职责和协作对象以当前工作区" in protocol
-    assert "只在被 @ 时响应" not in protocol
+    assert "## 通用协作协议" in common
+    assert "唯一 Leader" in leader
+    assert "不能代替 Leader" in member
+    assert "只在被 @ 时响应" not in common
 
 
 def _fake_release_runner(

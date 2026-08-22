@@ -37,6 +37,7 @@ def roster_for_team(team: Team) -> Roster:
     """将团队中的运行时适配转为 `roster` 的自定义成员。"""
     members: list[Member] = []
     missing: list[str] = []
+    team_roster = _team_roster_summary(team)
     for member in team.members:
         if member.command is None:
             missing.append(member.id)
@@ -47,6 +48,12 @@ def roster_for_team(team: Team) -> Roster:
                 command=member.command,
                 args=member.args,
                 env=member.env,
+                team_id=team.id,
+                role=member.role,
+                leader_name=team.leader,
+                model=member.model,
+                responsibility=member.responsibility,
+                team_roster=team_roster,
             )
         )
     if missing:
@@ -55,6 +62,15 @@ def roster_for_team(team: Team) -> Roster:
             "请在 ~/.amux/teams 的团队档案中补齐 command/args"
         )
     return Roster(members=tuple(members), source=f"team:{team.id}")
+
+
+def _team_roster_summary(team: Team) -> str:
+    return "\n".join(
+        "  - "
+        f"`{member.id}`: role={member.role}, model={member.model}, "
+        f"effort={member.effort}, speed={member.speed}; {member.responsibility}"
+        for member in team.members
+    )
 
 
 def validate_runtime(

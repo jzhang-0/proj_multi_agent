@@ -120,7 +120,7 @@ def test_real_session_gets_agent_name_and_greeting():
         name=name,
         command="sh",
         args=("-c", 'echo "AGENT=$AGENT_NAME GREETING=$0"; cat'),
-        greeting_template="你好 {name},先读 AGENTS.md",
+        greeting_template="你好 {name},准备协作",
     )
     life = Lifecycle(Roster(members=(member,)), Tmux())
     try:
@@ -133,7 +133,7 @@ def test_real_session_gets_agent_name_and_greeting():
             check=True,
         ).stdout
         assert f"AGENT={name}" in screen
-        assert f"GREETING=你好 {name},先读 AGENTS.md" in screen
+        assert f"GREETING=你好 {name},准备协作" in screen
         assert not life.up(name)[0].changed  # 幂等:不会把正在跑的顶掉
         assert life.down(name)[0].changed
         assert life.running() == ()

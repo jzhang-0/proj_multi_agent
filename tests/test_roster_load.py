@@ -87,6 +87,31 @@ enabled = false
     assert roster.get("off") is not None
 
 
+def test_team_runtime_metadata_is_strictly_loaded(tmp_path: Path) -> None:
+    path = write_toml(
+        tmp_path / "team-roster.toml",
+        """
+[[members]]
+name = "fable"
+command = "claude"
+team_id = "fable-core"
+role = "leader"
+leader = "fable"
+model = "Claude Fable 5"
+responsibility = "最终负责"
+team_roster = "fable: leader\\nsol: member"
+""",
+    )
+    member = load_roster(path).get("fable")
+    assert member is not None
+    assert member.team_id == "fable-core"
+    assert member.role == "leader"
+    assert member.leader_name == "fable"
+    assert member.model == "Claude Fable 5"
+    assert member.responsibility == "最终负责"
+    assert member.team_roster == "fable: leader\nsol: member"
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -125,6 +150,23 @@ default_greeting_template = "x {name}"
 [[members]]
 name = "bad.bot"
 command = "true"
+""",
+        """
+[[members]]
+name = "partial"
+command = "true"
+role = "member"
+""",
+        """
+[[members]]
+name = "wrong-leader"
+command = "true"
+team_id = "demo"
+role = "leader"
+leader = "somebody-else"
+model = "model"
+responsibility = "负责"
+team_roster = "wrong-leader: leader"
 """,
     ],
 )

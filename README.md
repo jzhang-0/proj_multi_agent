@@ -170,14 +170,25 @@ git clone https://github.com/jzhang-0/proj_multi_agent.git
 cd proj_multi_agent
 uv sync
 uv run amux --version
+./install-amux.sh dev
 ```
 
-仓库开发时用 `uv run amux`，例如：
+`./install-amux.sh dev` 会在 `~/.local/bin` 生成指向当前 checkout 的 `amux-dev`，不会覆盖
+PyPI 安装的 `amux`。它默认与正式版共用 `~/.amux`，因此已保存的团队、工作区绑定和成员名单
+都能直接用于开发版；只有需要完全隔离的测试时才显式设置 `AMUX_DEV_HOME`。
+
+仓库开发时可用 `uv run amux`，也可进入任何其他项目直接运行 `amux-dev`：
 
 ```bash
 uv run amux member add claude
 uv run roster up claude
 uv run amux
+
+cd /path/to/another-project
+amux-dev
+
+AMUX_DEV_HOME=/tmp/amux-sandbox amux-dev  # 可选：使用隔离状态
+./install-amux.sh uninstall-dev           # 卸载开发入口
 ```
 
 常用检查命令：

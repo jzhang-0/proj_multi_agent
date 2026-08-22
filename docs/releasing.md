@@ -42,6 +42,6 @@ amux --version
 amux
 ```
 
-全局 `amux` 统一由 PyPI 和 `uv tool` 管理，升级使用 `uv tool upgrade amux-team`。仓库开发直接运行 `uv run amux`，不要再用源码 checkout 或本地 wheel 覆盖全局命令；`install-amux.sh` 只作为历史兼容脚本保留，不属于公开制品或日常安装流程。
+全局 `amux` 统一由 PyPI 和 `uv tool` 管理，升级使用 `uv tool upgrade amux-team`。不要用源码 checkout 或本地 wheel 覆盖它。仓库内可直接运行 `uv run amux`；需要在其他仓库测试当前源码时，运行 `./install-amux.sh dev` 安装独立的 `amux-dev`。该开发入口默认复用 `~/.amux`，只有显式设置 `AMUX_DEV_HOME` 才隔离状态。`install-amux.sh` 的无参数 `amux` 安装方式只作为历史兼容保留，不属于公开制品或日常安装流程。
 
 项目主页、源码仓库与问题追踪地址均指向 `https://github.com/jzhang-0/proj_multi_agent`。

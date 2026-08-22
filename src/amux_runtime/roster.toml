@@ -1,0 +1,40 @@
+# 此文件由仓库根 roster.toml 同步而来，供 wheel 脱离源码仓库时使用；不要手改。
+# 成员预设。name = 总线短名;tmux 会话名是 <name>@<工作区slug>。
+# 这份文件只说明四个 CLI 怎么启动,不自动启用。
+# 某个工作区要谁,用 `amux member add claude` 或项目根可选的 amux.toml。
+# 总控台不模拟点「允许」按钮;权限放行走各 CLI 自己的配置(架构决策 §4)。
+# 下面每条写清:用什么参数免弹窗、以及仍然可能冒出来的残留弹窗。
+# auto_respawn 缺省为 false;需要无人值守恢复时才按成员显式开启。
+
+# claude: --permission-mode acceptEdits 自动接受文件编辑,不再为每次 Edit/Write 弹窗。
+# 项目级白名单见 .claude/settings.json,放行 Bash(./msg *)——群聊回执不必人点允许。
+# 残留弹窗:网络请求、git push / 删文件 / 装软件等危险 bash,以及切换到 bypass 之外的权限模式时。
+[[members]]
+name = "claude"
+command = "claude"
+args = ["--permission-mode", "acceptEdits"]
+enabled = true
+
+# codex: -s workspace-write 允许改工作区内文件; -a on-request 只在模型主动要提权时问人。
+# 残留弹窗:工作区外路径、网络、以及 agent 申请 escalated approvals 时的 on-request 确认。
+[[members]]
+name = "codex"
+command = "codex"
+args = ["-s", "workspace-write", "-a", "on-request"]
+enabled = true
+
+# cursor: agent --force 跳过交互确认,按默认权限直接跑。
+# 残留弹窗:仍受 Cursor 账号/项目权限策略约束;force 管的是 CLI 交互确认,不是云端策略。
+[[members]]
+name = "cursor"
+command = "agent"
+args = ["--force"]
+enabled = true
+
+# agy: --dangerously-skip-permissions 跳过工具权限确认; -i 进入交互会话以便收总线注入。
+# 残留弹窗:极少。跳过权限不等于能绕过 OS 文件权限;宿主机保护(sip、密钥链)仍会挡。
+[[members]]
+name = "agy"
+command = "agy"
+args = ["--dangerously-skip-permissions", "-i"]
+enabled = true

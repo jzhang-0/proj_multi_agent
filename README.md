@@ -33,6 +33,8 @@ uv run pytest -q
 uv run ruff check .
 ```
 
+公开发行包使用 `amux-team` 作为 PyPI 名称（`amux` 已被另一项目占用），对外命令仍是 `amux`。发布后可用 `uv tool install amux-team` 安装；当前源码开发继续使用上面的 `install-amux.sh`。构建和可信发布流程见 [打包与发布](docs/releasing.md)。
+
 `amux` 是总控台的正名。装完之后在任何目录敲 `amux` 都把**当前目录**当工作区(未登记会自动登记;`--workspace <slug>` 显式指定)。新工作区默认没有成员,用 `amux member add claude` 按需加。仓库内开发时 `uv run amux` 等价,`uv run console` 是保留的旧别名(历史 Goal 证据里的命令继续可用)。
 
 先初始化并绑定默认协作团队：
@@ -40,11 +42,11 @@ uv run ruff check .
 ```bash
 amux team init                 # 写 ~/.amux/teams/fable-core.toml
 amux team show fable-core      # 查看 Fable Leader、成员和职责
-amux team use fable-core       # 绑定到当前工作区
+amux team activate fable-core  # 绑定并启动五人团队
 amux team current              # 确认当前工作区的团队
 ```
 
-`fable-core` 固定记录 Claude Fable 5 / high 为 Leader，Sonnet / xhigh、Opus / high、Luna / high-fast、Sol / xhigh 为成员。模型字段是团队协作偏好，**不会**被猜测成某个 CLI 的启动参数；实际启动命令仍按 `roster.toml` 和工作区成员名单配置。TEAM-001 已提供可保存团队和工作区绑定，任务分派、验收与接管账本将在 TEAM-002 落地。
+`fable-core` 固定记录 Claude Fable 5 / high 为 Leader，Sonnet / xhigh、Opus / high、Luna / high-fast、Sol / xhigh 为成员。Fable/Sonnet/Opus 由 `claude` 启动，Luna/Sol 由 `codex` 启动；`amux team activate` 会把这份适配投影到当前工作区名册。任务分派、验收与接管账本将在 TEAM-002 落地。
 
 若希望任何新工作区默认拥有四个成员、打开 amux 就幂等地拉起它们,只需在任意目录执行一次:
 

@@ -3,11 +3,25 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "proj-multi-agent"
+name = "amux-team"
 version = "0.1.0"
 description = "一台机器上多个 AI CLI 的协作团队指挥中心"
 readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["ai", "agents", "collaboration", "tmux", "tui"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development",
+  "Topic :: System :: Shells",
+]
 dependencies = [
   "textual>=1.0",
   "watchfiles>=0.24",
@@ -26,7 +40,28 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/bus", "src/console", "src/gateway", "src/qa", "src/roster", "src/team", "src/tmuxctl", "src/workspace"]
+packages = [
+  "src/amux_runtime",
+  "src/bus",
+  "src/console",
+  "src/gateway",
+  "src/qa",
+  "src/roster",
+  "src/team",
+  "src/tmuxctl",
+  "src/workspace",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/AGENTS.md",
+  "/README.md",
+  "/pyproject.toml",
+  "/roster.toml",
+  "/src",
+  "/tests",
+  "/uv.lock",
+]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers --strict-config"

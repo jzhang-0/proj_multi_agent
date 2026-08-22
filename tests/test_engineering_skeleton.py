@@ -35,4 +35,5 @@ def test_console_reports_version() -> None:
 
 
 def test_package_has_version() -> None:
-    assert __version__ == "0.1.0"
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert __version__ == config["project"]["version"]

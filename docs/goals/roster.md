@@ -27,3 +27,7 @@
   - 前置:ROS-001。
   - 验证:`uv run pytest tests/test_roster_protocol.py tests/test_roster_load.py tests/test_roster_profiles.py tests/test_roster_lifecycle.py tests/test_roster_health.py tests/test_roster_adopt.py -q && uv run ruff check .`
   - 证据:`src/roster/protocol.py` 精确抽取 `AGENTS.md` 唯一的二级「群聊协议」章节并由 `render_member_greeting()` 注入成员身份后生成启动开场白;`roster.toml` 已删除默认开场白副本,成员模板仅作为可选前言且不能替代权威协议;`check_single_source()` 拒绝静态 roster 再出现默认或成员级副本;`tests/test_roster_protocol.py` 覆盖章节边界、缺失/空/重复、仓库一致性、全部真实成员启动命令、AGENTS 改动即时生效与前言不可替代协议,同全套 roster 回归共 45 passed;真实 tmux 生命周期测试以滚动区确认长开场白和 `AGENT_NAME` 均已注入;README 已同步。
+- [ ] **ROS-007** — 通用协作开场白:把成员启动提示从旧的「本机 AI 群聊」约束收敛为适用于任意团队、角色和成员的最小协作协议;删除固定成员名单、只能被 @ 后响应、AI 往返轮数和总线实现参数等过时或不通用内容,保留真实消息格式、关联回复、简洁留痕、人类汇报与危险操作边界;源码协议、wheel 运行时快照、文档和一致性测试同步更新。
+  - 前置:ROS-006、TEAM-001。
+  - 处理登记:Codex,2026-08-23,分支 `ros-007-codex`。
+  - 进行中:正在收敛协议文本、成员身份开场白与制品快照,并补充防旧提示回归测试。

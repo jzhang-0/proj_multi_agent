@@ -33,7 +33,7 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 
 ## §2.1 发行形态
 
-- PyPI 发行名是 `amux-team`，命令名是 `amux`；源码开发仍允许历史 `console` / `roster` 入口。
+- PyPI 发行名是 `amux-team`，命令名是 `amux`；源码开发仍允许历史 `console` / `roster` 入口。`amux-dev` 是指向当前 checkout 的开发薄 shim，默认不覆盖 `AMUX_HOME`，因而与正式版共用 `~/.amux` 的团队和工作区状态；显式 `AMUX_DEV_HOME` 才切到隔离状态。
 - 源码 checkout 以根目录 `AGENTS.md` 的群聊协议和 `roster.toml` 为权威；构建制品携带受一致性测试保护的运行时快照。安装后的 wheel 不探测或依赖源码仓库路径。
 - `uv run python -m qa.release` 是制品完成契约：`uv build --no-sources` 后检查 sdist/wheel 内容，并在源码仓库外用全新 uv 缓存联网安装 wheel 与完整依赖。显式 `--offline-smoke` 仅用于断网时检查 payload，不是发布完成证据。
 - Python 包不捆绑 tmux 或各厂商 AI CLI；缺少运行器由运行时预检报告。上传使用 GitHub OIDC Trusted Publishing，构建 job 与具有 `id-token: write` 的发布 job 分离。

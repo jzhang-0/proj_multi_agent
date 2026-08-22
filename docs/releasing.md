@@ -15,7 +15,9 @@ uv run pytest -q
 uv run python -m qa.release --out-dir dist
 ```
 
-最后一条会执行 `uv build --no-sources`，检查 wheel/sdist 的资源、入口与依赖元数据，然后把 wheel 本体离线安装进临时虚拟环境，在源码仓库外验证版本、包内名册和默认团队。它不上传任何文件；完整依赖组合由前面的 `uv sync --locked` 与测试覆盖。
+最后一条会执行 `uv build --no-sources`，检查 wheel/sdist 的资源、入口与依赖元数据，然后在源码仓库外创建临时虚拟环境和全新 uv 缓存，从包索引安装 wheel 及其完整依赖，验证依赖导入、版本、包内名册和默认团队。它不上传任何文件。
+
+断网诊断时可追加 `--offline-smoke`，只离线安装 wheel payload 且跳过依赖解析；该模式不能作为正式发布证据，GitHub 发布 workflow 始终使用默认联网严格模式。
 
 ## TestPyPI 与 PyPI
 

@@ -35,7 +35,7 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 
 - PyPI 发行名是 `amux-team`，命令名是 `amux`；源码开发仍允许历史 `console` / `roster` 入口。
 - 源码 checkout 以根目录 `AGENTS.md` 的群聊协议和 `roster.toml` 为权威；构建制品携带受一致性测试保护的运行时快照。安装后的 wheel 不探测或依赖源码仓库路径。
-- `uv run python -m qa.release` 是制品完成契约：`uv build --no-sources` 后检查 sdist/wheel 内容，并在源码仓库外的临时 uv tool 环境完成 smoke。
+- `uv run python -m qa.release` 是制品完成契约：`uv build --no-sources` 后检查 sdist/wheel 内容，并在源码仓库外用全新 uv 缓存联网安装 wheel 与完整依赖。显式 `--offline-smoke` 仅用于断网时检查 payload，不是发布完成证据。
 - Python 包不捆绑 tmux 或各厂商 AI CLI；缺少运行器由运行时预检报告。上传使用 GitHub OIDC Trusted Publishing，构建 job 与具有 `id-token: write` 的发布 job 分离。
 
 IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标准库的 HTTP 服务,手机浏览器打开即是群聊页;消息进出都经 `bus/queue`,清洗、限频、熔断照常生效。不引第三方 SDK,也就没有账号与凭证问题。

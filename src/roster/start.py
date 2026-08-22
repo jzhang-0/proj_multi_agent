@@ -14,8 +14,22 @@ from workspace.session import session_for
 def window_command(member: Member) -> str:
     """v0 同款:在默认 shell 里跑 CLI,把开场白当第一个参数,退出后留在 shell。"""
     prompt = member.render_greeting()
-    argv = [member.command, *member.args]
+    argv = [member.command, *_expand_add_dirs(member.args)]
     return f"{shlex.join(argv)} {shlex.quote(prompt)}; exec $SHELL"
+
+
+def _expand_add_dirs(args: tuple[str, ...]) -> tuple[str, ...]:
+    """Codex 的 ``--add-dir`` 在 shell 引号落下前展开 ``~``。
+
+    ``shlex.join`` 会为 ``~/.amux`` 加引号,交给 shell 后便不会再做 tilde
+    expansion；这里仅展开明确属于路径参数的位置,不改写其他 CLI 参数。
+    """
+    expanded: list[str] = []
+    expand_next = False
+    for arg in args:
+        expanded.append(str(Path(arg).expanduser()) if expand_next else arg)
+        expand_next = arg == "--add-dir"
+    return tuple(expanded)
 
 
 def member_env(member: Member) -> dict[str, str]:

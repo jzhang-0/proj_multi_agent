@@ -114,7 +114,7 @@ args = [
   "-m", "gpt-5.6-luna",
   "-c", "model_reasoning_effort=\\\"high\\\"",
   "-c", "service_tier=\\\"priority\\\"",
-  "-s", "workspace-write", "-a", "on-request",
+  "-s", "workspace-write", "--add-dir", "~/.amux", "-a", "on-request",
 ]
 
 [[members]]
@@ -129,6 +129,6 @@ args = [
   "-m", "gpt-5.6-sol",
   "-c", "model_reasoning_effort=\\\"xhigh\\\"",
   "-c", "service_tier=\\\"default\\\"",
-  "-s", "workspace-write", "-a", "on-request",
+  "-s", "workspace-write", "--add-dir", "~/.amux", "-a", "on-request",
 ]
 '''

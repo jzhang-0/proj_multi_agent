@@ -9,7 +9,7 @@ import pytest
 
 from roster.load import load_roster
 from roster.paths import default_path, repo_root
-from roster.schema import RosterError, roster_from_dict
+from roster.schema import Member, RosterError, roster_from_dict
 from roster.start import window_command
 
 
@@ -50,6 +50,22 @@ env = { LANG = "C" }
     assert bot.args == ("-n",)
     assert window_command(bot).startswith("cat -n ")
     assert "hi bot" in window_command(bot)
+
+
+def test_window_command_expands_tilde_for_codex_add_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    member = Member(
+        name="codex",
+        command="codex",
+        args=("-s", "workspace-write", "--add-dir", "~/.amux", "-a", "on-request"),
+    )
+
+    command = window_command(member)
+
+    assert f"--add-dir {tmp_path / '.amux'}" in command
+    assert "~/.amux" not in command
 
 
 def test_disabled_member_excluded_from_enabled(tmp_path: Path) -> None:

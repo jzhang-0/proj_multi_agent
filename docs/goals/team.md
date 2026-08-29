@@ -45,3 +45,7 @@
   - 前置：TEAM-001、TEAM-003、ROS-007。
   - 验证（Codex，2026-08-23）：`uv run --offline ruff check .`；`uv run --offline pytest tests/test_roster_protocol.py tests/test_roster_load.py tests/test_roster_profiles.py tests/test_roster_lifecycle.py tests/test_roster_health.py tests/test_roster_adopt.py tests/test_team_activation.py tests/test_teams.py tests/test_workspace_members.py tests/test_global_config.py tests/test_release_package.py -q` 为 78 passed；`uv run --offline python -m qa.release --out-dir <临时目录> --offline-smoke` 的 wheel、sdist、源码外离线安装与包内资源读取全部 PASS。
   - 证据：`src/amux_runtime/prompts/{common,leader,member}.md` 是三份提示正文，`README.md` 记录拼装顺序和占位符；旧 `protocol.md` 已删除，`AGENTS.md` 只保留维护入口。团队激活把 team/role/leader/model/responsibility 与含五人能力、effort、speed 的 `team_roster` 投影到 `Member`，用 PyPI 0.1.0 已允许的 `[custom.env]` 键向后兼容地落盘并在新代码中还原，自动化测试钉住 custom 顶层字段仍是旧版允许集合。实渲染默认团队确认 Fable 只有公共+Leader 段且看到五人能力，Sol 只有公共+成员段；当前 `proj_fppt/members.toml` 已无重启补齐兼容元数据，实测已安装的 `amux member list` 与 `amux-dev member list` 同时成功，开发版实读为 Fable leader、其余四人 member，现有会话留存到 human 主动 F7。
+
+- [ ] **TEAM-007** — 工作对话与图片附件：总控台把用户可见的“群聊时间线”统一更名为“工作对话记录”；任务主界面与工作对话输入框明确提示 `@成员`，输入 `@` 后展示全体成员候选并支持 Tab/方向键选择和回车落定；统一用 `Ctrl+V` 读取系统剪贴板图片，在发送前显示待发图片提示，支持图片单独发送或随文字发送。图片持久化到工作区状态目录，消息仅以向后兼容的可选附件字段记录本机路径、媒体类型、尺寸和大小，不把二进制塞入队列；总线投递和成员直连都把附件路径明确交给目标成员，审计、工作对话记录和任务关联沟通保留图片提示。同步产品、架构、README、帮助、自动化测试与 120×30/80×24 实际画面证据。
+  - 前置：TEAM-002、CON-004。
+  - 处理登记：Codex，2026-08-29 23:23 CST，分支 `team-007-codex`。

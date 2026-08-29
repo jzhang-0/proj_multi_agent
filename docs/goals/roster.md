@@ -37,3 +37,7 @@
   - 验证（Codex，2026-08-23）:`uv run --offline ruff check src/roster/start.py src/team/store.py tests/test_roster_load.py tests/test_roster_profiles.py tests/test_teams.py tests/test_team_activation.py` 通过；`uv run --offline pytest tests/test_roster_load.py tests/test_roster_profiles.py tests/test_teams.py tests/test_team_activation.py tests/test_release_package.py -q` 为 `31 passed in 0.34s`；本机 `codex 0.149.0` 以 `-s workspace-write --add-dir /Users/jzhang/.amux -a on-request --help` 成功解析参数，实际渲染普通 codex 启动命令确认 `~/.amux` 展开为 `/Users/jzhang/.amux`。
   - 证据:`roster.toml` 与 `src/amux_runtime/roster.toml` 的 codex 预设、`src/team/store.py` 的 Luna/Sol 都加入 `--add-dir ~/.amux`；`src/roster/start.py` 仅对 `--add-dir` 后的路径调用 `Path.expanduser()`，再交给 `shlex.join`。测试钉住三类档案、wheel 快照一致性、团队激活投影和绝对路径启动命令；README 与架构说明新增权限边界。
   - 视觉例外（纯启动参数）:本 Goal 不改变 TUI 布局或渲染，不制造静态截图；可见效果是 Codex 成员执行 `amux msg` 不再因写 `~/.amux` 请求沙箱提权，需在成员下次启动或人工重启后生效。
+
+- [ ] **ROS-009** — 默认成员启动权限策略：所有 Claude 启动适配统一使用 `--permission-mode auto`；所有 GPT/Codex 启动适配统一使用 `-s danger-full-access -a never`，获得完整文件与命令权限且不再请求批准。同步源码名册、wheel 运行时快照、默认 `fable-core` 团队档案、架构说明与自动化测试；更新本机默认团队并重建 `proj_sv_1` 成员，实测 Claude 显示 auto mode、Luna 能在完整权限下启动并完成一轮。
+  - 前置：ROS-002、ROS-008、TEAM-003。
+  - 处理登记：Codex，2026-08-30 00:06 CST，分支 `ros-009-codex`。

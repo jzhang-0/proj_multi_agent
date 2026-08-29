@@ -22,8 +22,8 @@ Agent 工作流的开发者；当前已包含任务账本、Leader 验收和接�
 - 派工、进展、证据、评审、退回、接管、验收和 human 汇报写入不可覆盖任务账本；
 - 同一台机器可以登记多个项目，各自拥有独立成员和消息总线。
 
-amux 不替代 Claude Code、Codex 等工具，也不会绕过它们的账号、登录或权限机制。它只负责把
-已经能在本机运行的 CLI 组织起来。
+amux 不替代 Claude Code、Codex 等工具，也不会模拟点击权限弹窗。默认适配会按团队策略让
+Claude 使用 auto mode、让 Codex 使用完整文件与命令权限；账号、组织策略和操作系统保护仍然生效。
 
 ## 三分钟上手
 
@@ -138,9 +138,10 @@ amux team current
 修改 Markdown 即可，不需要改 Python。
 默认团队还会让三个 Claude 成员使用 classic renderer，避免 alternate screen 把 tmux 回滚区清成
 `history_size=0`；同时用空 `NO_COLOR` 覆盖 amux 调用环境里可能继承的 `NO_COLOR=1`，让 Claude
-把原有 ANSI 颜色交给 tmux 和总控台。已有旧团队档案可运行 `amux team init --force` 更新后重新
-激活；不想重启当前 Claude 会话时，也可在 Claude 内执行一次 `/tui default`（颜色环境仍需下次
-启动或重启才会生效）。
+把原有 ANSI 颜色交给 tmux 和总控台。三个 Claude 成员统一以 `--permission-mode auto` 启动；
+Luna/Sol 统一以 `-s danger-full-access -a never` 启动，不启用 Codex 命令沙箱，也不请求人工批准。
+已有旧团队档案可运行 `amux team init --force` 更新后重新激活；不想重启当前 Claude 会话时，也可
+在 Claude 内执行一次 `/tui default`（颜色环境和启动权限仍需下次启动或重启才会生效）。
 
 ### 使用任务账本
 
@@ -280,8 +281,9 @@ uv run python -m qa.smoke
 
 ## 安全说明
 
-- amux 不替你接受 AI CLI 的权限弹窗；权限由各 CLI 自己的正规配置控制。
-- 内置 Codex 预设只额外放行 `~/.amux`，使成员能写消息队列；网络和其他工作区外路径仍需审批。
+- amux 不模拟接受 AI CLI 的权限弹窗；默认团队通过各 CLI 的正规启动参数启用 Claude auto mode
+  和 Codex 完整权限，仍不能绕过账号、组织策略或操作系统保护。
+- 内置 Codex 预设不启用命令沙箱或人工审批；请只在可信工作区和可信本机环境中使用。
 - `git push`、删除文件、安装软件和访问项目外路径等操作仍应由人明确授权。
 - 消息总线会清洗控制字符，并对重复消息、发送频率和积压做传输层限制。
 - 手机网关默认无可用用户，必须显式配置白名单后才会接收请求。

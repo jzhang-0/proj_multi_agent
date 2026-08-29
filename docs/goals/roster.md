@@ -6,7 +6,7 @@
   - 前置:无。
   - 验证:`uv run ruff check . && uv run pytest tests/test_roster_load.py -q`
   - 证据:`roster.toml` + `src/roster/{schema,load,start,__main__}.py`;`start.sh` 改为 `uv run python -m roster`;`tests/test_roster_load.py` 11 passed(四成员加载、路径注入、停用排除、保留名/重名/缺字段/类型错误、start.sh 不再内嵌 ROSTER 数组)。
-- [x] **ROS-002** — 四个真实成员的适配档案落进 roster.toml:claude(`--permission-mode acceptEdits` + 项目级 `./msg` 白名单)、codex(`-s workspace-write -a on-request`)、cursor(`agent --force`)、agy(`--dangerously-skip-permissions -i`);每家的免弹窗方式和残留弹窗写进注释。
+- [x] **ROS-002** — （历史启动策略，现行策略见 ROS-009）四个真实成员的适配档案落进 roster.toml:claude(`--permission-mode acceptEdits` + 项目级 `./msg` 白名单)、codex(`-s workspace-write -a on-request`)、cursor(`agent --force`)、agy(`--dangerously-skip-permissions -i`);每家的免弹窗方式和残留弹窗写进注释。
   - 前置:ROS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_roster_profiles.py tests/test_roster_load.py -q`
   - 证据:`roster.toml` 四成员参数与免弹窗/残留弹窗注释;`.claude/settings.json` 放行 `Bash(./msg *)`;`tests/test_roster_profiles.py` 钉住 flags、注释关键词与白名单,连同 ROS-001 共 14 passed。
@@ -32,7 +32,7 @@
   - 验证:`uv run --offline ruff check . && uv run --offline pytest tests/test_roster_protocol.py tests/test_roster_lifecycle.py tests/test_release_package.py -q`
   - 证据:2026-08-23 在 `main` 实测 ruff 全绿、25 passed;`AGENTS.md` 与 `src/amux_runtime/protocol.md` 同步为 7 条「amux 协作协议」,`render_member_greeting()` 使用通用成员身份并保留 0.1.x 旧 API 兼容别名;`tests/test_roster_protocol.py` 明确拒绝固定成员、只在被 @、6 轮、30 秒/8 条、32KB/50 条等旧提示回归,真实 tmux 生命周期和 wheel 资源一致性均通过;另实际渲染 `sol@proj_fppt` 开场白检查了最终可见文本。
 
-- [x] **ROS-008** — Codex 成员可写 amux 运行时:普通 `codex` 预设及默认 `fable-core` 的 Luna/Sol 启动参数加入 `--add-dir ~/.amux`,让 `workspace-write` 内可直接执行会写消息队列的 `amux msg`；启动命令必须把 `~` 展开为当前用户绝对路径,避免 shell 引号阻止展开。源码名册、wheel 快照、团队档案、测试和文档同步；保留 `on-request` 对网络及其他工作区外路径的审批,不自动重启正在运行的成员。
+- [x] **ROS-008** — （历史启动策略，现行策略见 ROS-009）Codex 成员可写 amux 运行时:普通 `codex` 预设及默认 `fable-core` 的 Luna/Sol 启动参数加入 `--add-dir ~/.amux`,让 `workspace-write` 内可直接执行会写消息队列的 `amux msg`；启动命令必须把 `~` 展开为当前用户绝对路径,避免 shell 引号阻止展开。源码名册、wheel 快照、团队档案、测试和文档同步；保留 `on-request` 对网络及其他工作区外路径的审批,不自动重启正在运行的成员。
   - 前置:ROS-002、TEAM-003。
   - 验证（Codex，2026-08-23）:`uv run --offline ruff check src/roster/start.py src/team/store.py tests/test_roster_load.py tests/test_roster_profiles.py tests/test_teams.py tests/test_team_activation.py` 通过；`uv run --offline pytest tests/test_roster_load.py tests/test_roster_profiles.py tests/test_teams.py tests/test_team_activation.py tests/test_release_package.py -q` 为 `31 passed in 0.34s`；本机 `codex 0.149.0` 以 `-s workspace-write --add-dir /Users/jzhang/.amux -a on-request --help` 成功解析参数，实际渲染普通 codex 启动命令确认 `~/.amux` 展开为 `/Users/jzhang/.amux`。
   - 证据:`roster.toml` 与 `src/amux_runtime/roster.toml` 的 codex 预设、`src/team/store.py` 的 Luna/Sol 都加入 `--add-dir ~/.amux`；`src/roster/start.py` 仅对 `--add-dir` 后的路径调用 `Path.expanduser()`，再交给 `shlex.join`。测试钉住三类档案、wheel 快照一致性、团队激活投影和绝对路径启动命令；README 与架构说明新增权限边界。

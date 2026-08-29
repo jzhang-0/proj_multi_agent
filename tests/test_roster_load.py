@@ -25,7 +25,7 @@ def test_repo_roster_loads_four_enabled_members() -> None:
     claude = roster.get("claude")
     assert claude is not None
     assert claude.command == "claude"
-    assert claude.args == ("--permission-mode", "acceptEdits")
+    assert claude.args == ("--permission-mode", "auto")
     assert "claude" in claude.render_greeting()
     assert "{name}" not in claude.render_greeting()
 
@@ -59,7 +59,7 @@ def test_window_command_expands_tilde_for_codex_add_dir(
     member = Member(
         name="codex",
         command="codex",
-        args=("-s", "workspace-write", "--add-dir", "~/.amux", "-a", "on-request"),
+        args=("--add-dir", "~/.amux"),
     )
 
     command = window_command(member)

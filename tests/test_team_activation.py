@@ -103,14 +103,17 @@ def test_default_fable_team_uses_only_claude_and_codex_runners(tmp_path: Path) -
     assert dict(roster.get("luna").env) == {}
     assert dict(roster.get("sol").env) == {}
     assert roster.get("fable").args[:4] == ("--model", "fable", "--effort", "high")
+    assert roster.get("fable").args[-2:] == ("--permission-mode", "auto")
     assert roster.get("sonnet").args[:4] == ("--model", "sonnet", "--effort", "xhigh")
+    assert roster.get("sonnet").args[-2:] == ("--permission-mode", "auto")
     assert roster.get("opus").args[:4] == ("--model", "opus", "--effort", "high")
+    assert roster.get("opus").args[-2:] == ("--permission-mode", "auto")
     assert roster.get("luna").args[:2] == ("-m", "gpt-5.6-luna")
     assert 'service_tier="priority"' in roster.get("luna").args
-    assert roster.get("luna").args[-4:] == ("--add-dir", "~/.amux", "-a", "on-request")
+    assert roster.get("luna").args[-4:] == ("-s", "danger-full-access", "-a", "never")
     assert roster.get("sol").args[:2] == ("-m", "gpt-5.6-sol")
     assert 'model_reasoning_effort="xhigh"' in roster.get("sol").args
-    assert roster.get("sol").args[-4:] == ("--add-dir", "~/.amux", "-a", "on-request")
+    assert roster.get("sol").args[-4:] == ("-s", "danger-full-access", "-a", "never")
 
 
 def test_activate_replaces_only_old_enabled_roster_and_starts_fable_team(tmp_path: Path) -> None:

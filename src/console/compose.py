@@ -19,13 +19,14 @@ from textual import events
 from textual.message import Message
 from textual.widgets import Input
 
+from bus import Attachment
 from console.commands import COMMAND_NAMES
 
 #: 光标前正在输入的 `@前缀`(允许中文名字)
 AT_PREFIX = re.compile(r"@([\w一-鿿-]*)$")
 
-#: 整条输入开头的 `@名字 正文`
-AT_ADDRESS = re.compile(r"^@([\w一-鿿-]+)\s+(.*)$", re.DOTALL)
+#: 整条输入开头的 `@名字 正文`；正文可空，便于只给指定成员发送图片。
+AT_ADDRESS = re.compile(r"^@([\w一-鿿-]+)(?:\s+(.*))?$", re.DOTALL)
 
 
 def split_address(text: str) -> tuple[str | None, str]:
@@ -33,7 +34,7 @@ def split_address(text: str) -> tuple[str | None, str]:
     match = AT_ADDRESS.match(text.strip())
     if match is None:
         return None, text.strip()
-    return match.group(1), match.group(2).strip()
+    return match.group(1), (match.group(2) or "").strip()
 
 
 def completion_prefix(text: str, cursor: int) -> str | None:
@@ -66,6 +67,20 @@ class ComposeInput(Input):
             self.tmux_key = tmux_key
             self.label = label
 
+    class PasteImage(Message):
+        """用户按下统一的 `Ctrl+V`，请求应用读取系统剪贴板图片。"""
+
+        def __init__(self, compose: ComposeInput) -> None:
+            super().__init__()
+            self.compose = compose
+
+    class AttachmentsChanged(Message):
+        """待发送图片有变化，让应用刷新输入框上方的提示行。"""
+
+        def __init__(self, compose: ComposeInput) -> None:
+            super().__init__()
+            self.compose = compose
+
     def __init__(self, members: tuple[str, ...] = (), **kwargs: object) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
         self.members = members
@@ -77,6 +92,23 @@ class ComposeInput(Input):
         self.candidate_kind = "member"
         #: 只在选中成员会话时由 ConsoleApp 打开,不能影响群聊焦点导航。
         self.direct_mode = False
+        self.attachments: tuple[Attachment, ...] = ()
+
+    def attach_image(self, attachment: Attachment) -> bool:
+        """加入一张待发图片；同一路径不重复加入。"""
+        if any(item.path == attachment.path for item in self.attachments):
+            return False
+        if len(self.attachments) >= 8:
+            return False
+        self.attachments = (*self.attachments, attachment)
+        self.post_message(self.AttachmentsChanged(self))
+        return True
+
+    def clear_attachments(self) -> None:
+        if not self.attachments:
+            return
+        self.attachments = ()
+        self.post_message(self.AttachmentsChanged(self))
 
     # --- 补全 -----------------------------------------------------------
 
@@ -157,6 +189,11 @@ class ComposeInput(Input):
     # --- 按键 -----------------------------------------------------------
 
     async def _on_key(self, event: events.Key) -> None:
+        if event.key == "ctrl+v":
+            self.post_message(self.PasteImage(self))
+            event.prevent_default()
+            event.stop()
+            return
         if event.key == "shift+tab" and self.direct_mode:
             # Textual 默认把 Shift+Tab 当焦点反向循环;在直连输入框里把它
             # 转成 tmux 的 BTab,以支持 Claude Code 等终端程序的模式切换。

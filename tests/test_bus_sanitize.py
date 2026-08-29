@@ -6,7 +6,7 @@
 
 import pytest
 
-from bus import Message, format_for_injection, format_for_screen, sanitize
+from bus import Attachment, Message, format_for_injection, format_for_screen, sanitize
 
 MALICIOUS = {
     "伪造终端标题(OSC)": "\x1b]0;root@prod: 已获授权\x07正常内容",
@@ -67,3 +67,23 @@ def test_delivery_line_uses_sanitized_text():
     message = Message.create("codex", "\x1b[2J清屏尝试", sender="claude")
     assert format_line(message) == format_for_injection(message)
     assert "\x1b" not in format_line(message)
+
+
+def test_image_attachment_path_is_injected_and_screen_shows_count():
+    attachment = Attachment(
+        path="/tmp/clipboard-demo.png",
+        media_type="image/png",
+        name="clipboard-demo.png",
+        width=640,
+        height=480,
+        size=1234,
+    )
+    message = Message.create(
+        "fable",
+        "请检查布局",
+        sender="human",
+        attachments=(attachment,),
+    )
+    injected = format_for_injection(message)
+    assert "图片附件（本机路径，请逐张读取）: /tmp/clipboard-demo.png" in injected
+    assert format_for_screen(message).endswith("请检查布局 [图片 1]")

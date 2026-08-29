@@ -8,6 +8,7 @@ import json
 import pytest
 
 from bus import (
+    Attachment,
     BusPaths,
     DeliveryOutcome,
     Hub,
@@ -52,6 +53,35 @@ def test_optional_fields_are_parsed():
     assert message.to_dict() == payload
 
 
+def test_image_attachments_are_optional_and_roundtrip():
+    attachment = Attachment(
+        path="/tmp/work/attachments/clipboard-a.png",
+        media_type="image/png",
+        name="clipboard-a.png",
+        width=1280,
+        height=720,
+        size=4096,
+    )
+    message = Message.create(
+        "fable",
+        "看这张图",
+        sender="human",
+        attachments=(attachment,),
+    )
+    payload = message.to_dict()
+    assert payload["attachments"] == [
+        {
+            "path": attachment.path,
+            "mediaType": "image/png",
+            "name": "clipboard-a.png",
+            "width": 1280,
+            "height": 720,
+            "size": 4096,
+        }
+    ]
+    assert Message.from_dict(payload) == message
+
+
 def test_unknown_fields_are_preserved():
     payload = {
         "to": "claude",
@@ -75,6 +105,14 @@ def test_unknown_fields_are_preserved():
         {"to": "", "from": "codex", "text": "hi", "ts": "t"},  # to 为空
         {"to": 1, "from": "codex", "text": "hi", "ts": "t"},  # to 类型错
         {"to": "a", "from": "b", "text": "hi", "ts": "t", "kind": 3},  # 可选字段类型错
+        {"to": "a", "from": "b", "text": "hi", "ts": "t", "attachments": {}},
+        {
+            "to": "a",
+            "from": "b",
+            "text": "hi",
+            "ts": "t",
+            "attachments": [{"path": "/tmp/x.png"}],
+        },
         ["not", "an", "object"],
     ],
 )

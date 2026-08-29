@@ -1,7 +1,7 @@
 """消息 schema v1 的定义与校验。
 
 冻结契约(架构决策 §3):`to/from/text/ts` 四字段必备、含义不变;新能力
-只能加可选字段(`id`/`kind`/`replyTo`/`task`),读方必须容忍未知字段。所以这里
+只能加可选字段(`id`/`kind`/`replyTo`/`task`/`attachments`),读方必须容忍未知字段。所以这里
 的校验只拒绝"必备字段缺失或类型不对"和"已知可选字段类型不对",其余
 未知字段原样保留在 `extra` 里带着走。
 """
@@ -20,7 +20,7 @@ TS_FORMAT = "%Y-%m-%d %H:%M:%S"
 REQUIRED_FIELDS = ("to", "from", "text", "ts")
 
 #: 已知可选字段(JSON 里的名字)
-OPTIONAL_FIELDS = ("id", "kind", "replyTo", "task")
+OPTIONAL_FIELDS = ("id", "kind", "replyTo", "task", "attachments")
 
 #: 远程身份前缀:来自 IM 群的人是 `im:小明`。它不是 `human`,所以照样受
 #: 限频约束;作为收件人时也没有 tmux 会话,由网关代投(见 `bus.hub`)
@@ -50,6 +50,67 @@ def _optional_str(raw: dict[str, Any], key: str) -> str | None:
 
 
 @dataclass(frozen=True)
+class Attachment:
+    """消息携带的本机图片引用；队列只保存元数据，不复制图片二进制。"""
+
+    path: str
+    media_type: str
+    name: str
+    width: int
+    height: int
+    size: int
+
+    @classmethod
+    def from_dict(cls, raw: Any) -> Attachment:
+        if not isinstance(raw, dict):
+            raise MalformedMessage("attachments 的每一项必须是对象")
+        required = ("path", "mediaType", "name", "width", "height", "size")
+        missing = [key for key in required if key not in raw]
+        if missing:
+            raise MalformedMessage(f"图片附件缺少字段: {', '.join(missing)}")
+        strings = (raw["path"], raw["mediaType"], raw["name"])
+        if not all(isinstance(value, str) and value.strip() for value in strings):
+            raise MalformedMessage("图片附件 path/mediaType/name 必须是非空字符串")
+        numbers = (raw["width"], raw["height"], raw["size"])
+        if not all(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0
+            for value in numbers
+        ):
+            raise MalformedMessage("图片附件 width/height/size 必须是正整数")
+        if not raw["mediaType"].startswith("image/"):
+            raise MalformedMessage("当前只支持图片附件")
+        return cls(
+            path=raw["path"],
+            media_type=raw["mediaType"],
+            name=raw["name"],
+            width=raw["width"],
+            height=raw["height"],
+            size=raw["size"],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "path": self.path,
+            "mediaType": self.media_type,
+            "name": self.name,
+            "width": self.width,
+            "height": self.height,
+            "size": self.size,
+        }
+
+
+def _optional_attachments(raw: dict[str, Any]) -> tuple[Attachment, ...]:
+    if "attachments" not in raw or raw["attachments"] is None:
+        return ()
+    value = raw["attachments"]
+    if not isinstance(value, list):
+        raise MalformedMessage("可选字段 attachments 必须是数组")
+    if len(value) > 8:
+        raise MalformedMessage("单条消息最多携带 8 张图片")
+    return tuple(Attachment.from_dict(item) for item in value)
+
+
+@dataclass(frozen=True)
 class Message:
     """一条总线消息。
 
@@ -65,6 +126,7 @@ class Message:
     kind: str | None = None
     reply_to: str | None = None
     task: str | None = None
+    attachments: tuple[Attachment, ...] = ()
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -79,6 +141,7 @@ class Message:
         message_id: str | None = None,
         ts: str | None = None,
         task: str | None = None,
+        attachments: tuple[Attachment, ...] = (),
         **extra: Any,
     ) -> Message:
         """新建一条消息,自动补 `ts` 和 `id`。"""
@@ -91,6 +154,7 @@ class Message:
             kind=kind,
             reply_to=reply_to,
             task=task,
+            attachments=tuple(attachments),
             extra=dict(extra),
         )
 
@@ -112,6 +176,7 @@ class Message:
             kind=_optional_str(raw, "kind"),
             reply_to=_optional_str(raw, "replyTo"),
             task=_optional_str(raw, "task"),
+            attachments=_optional_attachments(raw),
             extra={key: value for key, value in raw.items() if key not in known},
         )
 
@@ -131,5 +196,7 @@ class Message:
         ):
             if value is not None:
                 payload[key] = value
+        if self.attachments:
+            payload["attachments"] = [item.to_dict() for item in self.attachments]
         payload.update(self.extra)
         return payload

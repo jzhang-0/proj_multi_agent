@@ -29,6 +29,7 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
         "Issues": "https://github.com/jzhang-0/proj_multi_agent/issues",
     }
     assert "Development Status :: 3 - Alpha" in project["classifiers"]
+    assert "pillow>=10.0" in project["dependencies"]
     packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/amux_runtime" in packages
     assert "src/work" in packages
@@ -122,7 +123,7 @@ def test_strict_release_smoke_installs_and_imports_dependencies(
     assert any(
         argv[-2:] == [
             "-c",
-            "import textual, watchfiles; print('release dependencies ok')",
+            "import PIL, textual, watchfiles; print('release dependencies ok')",
         ]
         for argv, _ in calls
     )

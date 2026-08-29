@@ -51,30 +51,40 @@ def sanitize(text: str) -> str:
     )
 
 
+def _attachment_note(message: Message) -> str:
+    if not message.attachments:
+        return ""
+    paths = "；".join(sanitize(item.path) for item in message.attachments)
+    return f"图片附件（本机路径，请逐张读取）: {paths}"
+
+
 def format_for_injection(message: Message) -> str:
     """投递入口:清洗后拼成注入成员终端的那一行(单行)。"""
     text = sanitize(message.text)
+    attachment = _attachment_note(message)
+    content = "；".join(part for part in (text, attachment) if part) or "（空消息）"
     sender = sanitize(message.sender)
     task = message.task
     task_prefix = f"任务 {sanitize(task)} · " if isinstance(task, str) else ""
     if message.kind == "ask" and message.id is not None:
         ask_id = sanitize(message.id)
         return (
-            f"[群提问 ask {ask_id}] 来自 {sender}: {text}"
+            f"[群提问 ask {ask_id}] 来自 {sender}: {content}"
             f' —— 回复此提问,运行: amux msg --reply {ask_id} "你的答复"'
         )
     if message.kind == "reply" and message.reply_to is not None:
         ask_id = sanitize(message.reply_to)
-        return f"[群回复 ask {ask_id}] 来自 {sender}: {text}"
+        return f"[群回复 ask {ask_id}] 来自 {sender}: {content}"
     reply = f'amux msg {sender} "你的回复"'
     if isinstance(task, str):
         reply = f'amux msg --task {sanitize(task)} {sender} "你的回复"'
-    return f"[{task_prefix}群消息] 来自 {sender}: {text} —— 如需回复,运行: {reply}"
+    return f"[{task_prefix}群消息] 来自 {sender}: {content} —— 如需回复,运行: {reply}"
 
 
 def format_for_screen(message: Message) -> str:
     """上屏入口:清洗后拼成总控台时间线里的那一行。"""
+    attachment = f" [图片 {len(message.attachments)}]" if message.attachments else ""
     return (
         f"{sanitize(message.ts)}  {sanitize(message.sender)} -> "
-        f"{sanitize(message.to)}: {sanitize(message.text)}"
+        f"{sanitize(message.to)}: {sanitize(message.text)}{attachment}"
     )

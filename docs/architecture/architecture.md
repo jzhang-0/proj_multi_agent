@@ -26,6 +26,7 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 | 语言 | Python ≥ 3.11 | 与现有总线同语言;四个协作 AI 都熟练 |
 | 运行环境 | `uv` 管理的项目 venv(`uv sync` / `uv run`) | 系统 python 是 3.8(miniconda),不满足要求;不污染系统环境 |
 | TUI | Textual | 满足"漂亮 + 低延迟"且纯 Python;富组件、深浅色、CSS 式主题 |
+| 剪贴板图片 | Pillow `ImageGrab` + PNG 内容寻址文件 | `Ctrl+V` 由总控台统一读取系统剪贴板；不依赖不同成员 CLI 的粘贴按键实现 |
 | 消息存储 | 文件队列(`bus/queue/` 一消息一文件,原子改名)+ `bus/processed/` 归档 + `bus/dead/` 死信 + `bus/log.jsonl` 审计(80 字符预览,全文另存 `bus/bodies/`,10MB 轮转);根目录可注入(`BUS_ROOT` 或显式参数,优先级最高)。已登记工作区的默认根是 `~/.amux/workspaces/<slug>/bus/`,互不串台;未登记时回落仓库根 `bus/` | 语言无关、可 tail、崩溃可恢复;规模(单机、几个成员)远够 |
 | 文件事件 | `watchfiles`,不可用时回退 0.2s 轮询 | 达成投递延迟预算 |
 | 任务存储 | 工作区 `work/events.jsonl` 只追加事件流 + SHA-256 哈希链 | 单机规模无需数据库；可直接审计，并能检测历史删改 |
@@ -45,7 +46,7 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 
 ## §3 冻结契约
 
-1. **消息 JSON**:`{"to","from","text","ts"}` 四字段必备,含义不变;新能力只能加可选字段(如 `kind`、`replyTo`、`id`),读方必须容忍未知字段。
+1. **消息 JSON**:`{"to","from","text","ts"}` 四字段必备,含义不变;新能力只能加可选字段(如 `kind`、`replyTo`、`id`、`task`、`attachments`),读方必须容忍未知字段。`attachments` 只保存图片的绝对本机路径、媒体类型、名称、宽高和字节数，不把二进制或 base64 塞进文件队列；旧读方会把它当未知字段原样保留。
 2. **`./msg` 命令行**:`./msg <收件人> <内容...>` 永远可用(仓库根薄入口);成员面向的形态是 `amux msg`(从当前工作区投递)。发件人取 `AGENT_NAME`,缺省 `human`。新参数只能是可选 flag(如 `--ask`)。
 3. **寻址**:工作区内收件人仍是短名(`claude`);tmux 会话名是 `<成员>@<slug>`,双向映射收口在 `workspace.session`(`bind_tmux` 是生产路径唯一入口)。`human` 是保留名,不投递、只上屏;`bus` 是总线自身的署名(防环拒收回执);`im:` 前缀是 IM 网关代投的远程身份(同样只上屏,由网关发回群)。这三者没有 tmux 会话,不参与 slug 拼接,成员不得占用这些名字。
 4. **运行时提示词**:`src/amux_runtime/prompts/` 是唯一事实来源；`common.md` 对所有成员生效，`leader.md` / `member.md` 根据工作区名册中的 `role` 追加。`team activate` 必须把团队 ID、角色、Leader、模型和职责完整投影并持久化，未绑定团队的成员只加载公共提示。为让共用 `~/.amux` 的 PyPI 0.1.0 仍能读取开发版生成的 `members.toml`，角色元数据编码在旧版已经允许的 `[custom.env]` 中(`AGENT_ROLE`、`AMUX_TEAM_*`、`AMUX_AGENT_*`)，不新增旧版会拒绝的顶层键；新代码加载时还原为类型化 `Member` 字段。正文不得复制进 Python、`AGENTS.md`、团队档案或名册(由 ROS-006/007、TEAM-006 钉住)。
@@ -72,6 +73,7 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
     workspace.toml                # 项目根路径(源数据)
     team.toml                     # 当前工作区绑定的团队 ID(TEAM-001)
     members.toml                  # `team activate` 投影的成员角色、职责和启动适配(TEAM-003/006)
+    attachments/                  # Ctrl+V 图片；PNG 内容寻址、文件权限 0600
     bus/                          # 该工作区的队列、审计、ask/reply(WS-003)
     work/events.jsonl             # 只追加任务事件、证据与责任链(TEAM-002)
 ```

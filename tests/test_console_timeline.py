@@ -9,7 +9,7 @@ import asyncio
 import pytest
 from rich.console import Console
 
-from bus import Message, deposit
+from bus import Attachment, Message, deposit
 from bus.audit import AuditEvent, AuditLog
 from bus.paths import BusPaths
 from console.app import ConsoleApp
@@ -109,6 +109,30 @@ def test_history_merges_events_of_one_message(paths):
         ("被挡下的一条", "rejected"),
     ]
     assert entries[1].reason == "10 秒内重复"
+
+
+def test_image_count_survives_audit_merge_and_is_rendered(paths):
+    attachment = Attachment(
+        path="/tmp/layout.png",
+        media_type="image/png",
+        name="layout.png",
+        width=800,
+        height=600,
+        size=2048,
+    )
+    message = Message.create(
+        "fable",
+        "检查布局",
+        sender="human",
+        attachments=(attachment,),
+    )
+    audit = AuditLog(paths)
+    audit.record(AuditEvent.DEPOSIT, message)
+    audit.record(AuditEvent.DELIVER, message)
+
+    entry = history(audit)[0]
+    assert entry.attachment_count == 1
+    assert "[图片 1]" in render_entry(entry).plain
 
 
 def test_history_merges_v0_messages_without_id(paths):

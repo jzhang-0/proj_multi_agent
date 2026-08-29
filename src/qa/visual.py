@@ -91,7 +91,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--keep", action="store_true", help="截完不关会话,方便继续手动看")
     parser.add_argument(
         "--fixture",
-        choices=("console", "member-cards", "controls", "health", "workspaces", "task-board"),
+        choices=(
+            "console",
+            "member-cards",
+            "controls",
+            "health",
+            "workspaces",
+            "task-board",
+            "task-compose",
+        ),
         default="console",
         help="取证入口;member-cards 同屏展示 CON-005 五态",
     )
@@ -160,6 +168,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "qa.task_board",
                 "--root",
                 str(bus_root),
+            ]
+        elif args.fixture == "task-compose":
+            command = [
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "qa.task_board",
+                "--root",
+                str(bus_root),
+                "--compose-demo",
             ]
         tmux(
             "new-session",

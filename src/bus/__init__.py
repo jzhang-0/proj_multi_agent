@@ -12,7 +12,7 @@
 
 from bus.ask import AskError, load_ask, load_reply, store_ask, store_reply, wait_for_reply
 from bus.hub import DeliveryOutcome, DeliveryResult, Hub
-from bus.message import MalformedMessage, Message
+from bus.message import Attachment, MalformedMessage, Message
 from bus.paths import BusPaths
 from bus.policy import (
     BACKLOG_CAP,
@@ -27,6 +27,7 @@ from bus.queue import archive, deposit, pending, quarantine, read_message
 from bus.sanitize import format_for_injection, format_for_screen, sanitize
 
 __all__ = [
+    "Attachment",
     "BACKLOG_CAP",
     "AskError",
     "BusPaths",

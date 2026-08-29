@@ -25,6 +25,7 @@ classifiers = [
   "Topic :: System :: Shells",
 ]
 dependencies = [
+  "pillow>=10.0",
   "textual>=1.0",
   "watchfiles>=0.24",
 ]

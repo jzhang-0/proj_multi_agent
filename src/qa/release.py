@@ -133,7 +133,7 @@ def _isolated_smoke(wheel: Path, version: str, *, offline: bool = False) -> None
                 [
                     str(venv / "bin" / "python"),
                     "-c",
-                    "import textual, watchfiles; print('release dependencies ok')",
+                    "import PIL, textual, watchfiles; print('release dependencies ok')",
                 ],
                 cwd=project,
                 env=env,

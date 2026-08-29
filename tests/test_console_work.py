@@ -1,4 +1,4 @@
-"""TEAM-002：任务看板是绑定团队工作区的主视图，群聊只作关联沟通。"""
+"""TEAM-002/007：任务看板为主视图，工作对话只作关联沟通。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from textual.widgets import ListView
 
-from bus import Message, deposit, pending, read_message
+from bus import Attachment, Message, deposit, pending, read_message
 from bus.audit import AuditLog
 from bus.paths import BusPaths
 from console.app import TIMELINE_ITEM_ID, WORK_ITEM_ID, ConsoleApp
@@ -98,7 +98,7 @@ def test_bound_team_opens_task_board_with_evidence_events_and_linked_chat(tmp_pa
                 "tests/test_login.py · 4 passed",
                 "不可覆盖事件流",
                 "进展 · sonnet",
-                "关联沟通",
+                "关联工作对话",
                 "fable → sonnet: 请确认登录页边界",
             ):
                 assert expected in detail
@@ -129,7 +129,18 @@ def test_task_navigation_f2_f3_and_plain_input_default_to_leader(tmp_path: Path)
             compose = app.query_one("#compose", ComposeInput)
             assert "Leader fable" in compose.placeholder
             assert "T-002" in compose.placeholder
+            assert "@成员自动补全" in compose.placeholder
+            assert "Ctrl+V图片" in compose.placeholder
             compose.focus()
+            attachment = Attachment(
+                path=str(workspace.state_dir / "attachments" / "layout.png"),
+                media_type="image/png",
+                name="layout.png",
+                width=800,
+                height=600,
+                size=2048,
+            )
+            compose.attach_image(attachment)
             compose.value = "请推进并给出证据"
             await pilot.press("enter")
             await pilot.pause()
@@ -141,8 +152,31 @@ def test_task_navigation_f2_f3_and_plain_input_default_to_leader(tmp_path: Path)
                 "请推进并给出证据",
             )
             assert message.task == "T-002"
+            assert message.attachments == (attachment,)
             audit = AuditLog(paths).entries()
             assert audit[-1]["task"] == "T-002"
+            assert audit[-1]["attachments"][0]["name"] == "layout.png"
+
+    asyncio.run(scenario())
+
+
+def test_task_input_at_shows_every_member_as_visible_completion(tmp_path: Path) -> None:
+    workspace, service, paths = _context(tmp_path)
+    app = _app(workspace, service, paths)
+
+    async def scenario() -> None:
+        async with app.run_test(size=(120, 30)) as pilot:
+            compose = app.query_one("#compose", ComposeInput)
+            compose.focus()
+            await pilot.press("@")
+            await pilot.pause()
+            assert compose.candidates == MEMBERS
+            suggestions = app.query_one("#suggestions")
+            assert suggestions.display
+            rendered = str(suggestions.render())
+            assert "自动补全 Tab/↑↓ 选择" in rendered
+            assert "[@fable]" in rendered
+            assert "@sol" in rendered
 
     asyncio.run(scenario())
 

@@ -1,4 +1,4 @@
-"""群聊时间线:总线流量怎么变成一行行画面。
+"""工作对话记录:总线流量怎么变成一行行画面。
 
 三个约定:
 
@@ -79,6 +79,7 @@ class TimelineEntry:
     outcome: str = "pending"
     reason: str = ""
     task_id: str = ""
+    attachment_count: int = 0
 
     @property
     def group(self) -> str:
@@ -98,6 +99,7 @@ class TimelineEntry:
             str(result.outcome),
             result.detail,
             str(message.task or ""),
+            len(message.attachments),
         )
 
     @classmethod
@@ -108,6 +110,8 @@ class TimelineEntry:
         # 免得历史和实时两种画法对同一条消息给出不同标记
         if outcome == "delivered" and to == "human":
             outcome = "shown"
+        attachments = entry.get("attachments")
+        attachment_count = len(attachments) if isinstance(attachments, list) else 0
         return cls(
             str(entry.get("ts", "")),
             str(entry.get("from") or "bus"),
@@ -116,6 +120,7 @@ class TimelineEntry:
             outcome,
             str(entry.get("reason", "")),
             str(entry.get("task", "")),
+            attachment_count,
         )
 
 
@@ -147,6 +152,7 @@ def history(audit: AuditLog, limit: int = HISTORY_LIMIT) -> list[TimelineEntry]:
                 entry.outcome,
                 entry.reason,
                 entry.task_id,
+                entry.attachment_count or previous.attachment_count,
             )
     return [merged[key] for key in order][-limit:]
 
@@ -173,6 +179,8 @@ def render_entry(entry: TimelineEntry) -> Text:
     line.append(sanitize(entry.to), style=member_color(entry.to))
     line.append(": ", style=palette.divider)
     line.append_text(highlight_mentions(sanitize(entry.text)))
+    if entry.attachment_count:
+        line.append(f" [图片 {entry.attachment_count}]", style=f"bold {palette.accent}")
     if entry.reason:
         line.append(f"  ({sanitize(entry.reason)})", style=palette.muted)
     if dimmed:

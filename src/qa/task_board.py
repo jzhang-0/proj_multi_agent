@@ -1,4 +1,4 @@
-"""TEAM-002 视觉夹具：稳定展示任务看板、证据、事件流与关联沟通。"""
+"""TEAM-002/007 视觉夹具：任务看板、工作对话输入与图片附件。"""
 
 from __future__ import annotations
 
@@ -6,9 +6,13 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from bus import Message, deposit
+from PIL import Image
+
+from bus import Attachment, Message, deposit
 from bus.paths import BusPaths
 from console.app import ConsoleApp
+from console.clipboard import ClipboardImageStore
+from console.compose import ComposeInput
 from console.members import MemberStatusService
 from team.binding import bind_team
 from team.store import DEFAULT_TEAM_ID, TeamStore
@@ -18,9 +22,27 @@ from workspace.store import Store
 MEMBERS = ("fable", "sonnet", "opus", "luna", "sol")
 
 
+class TaskComposeDemoApp(ConsoleApp):
+    """取证专用：挂载后把 @ 候选与一张待发图片同时放到输入区。"""
+
+    def __init__(self, *, demo_attachment: Attachment, **kwargs: object) -> None:
+        self.demo_attachment = demo_attachment
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        compose = self.query_one("#compose", ComposeInput)
+        compose.attach_image(self.demo_attachment)
+        compose.value = "@"
+        compose.cursor_position = 1
+        compose.refresh_candidates()
+        compose.focus()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="TEAM-002 任务主界面视觉夹具")
     parser.add_argument("--root", required=True)
+    parser.add_argument("--compose-demo", action="store_true")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
@@ -67,16 +89,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     for name in MEMBERS:
         status.override_state(name, "idle")
 
-    ConsoleApp(
-        paths,
-        workspace=workspace,
-        work_service=service,
-        deliver=lambda _message: True,
-        members=MEMBERS,
-        member_status=status,
-        pump_enabled=False,
-        fit_windows=False,
-    ).run()
+    app_kwargs: dict[str, object] = {
+        "paths": paths,
+        "workspace": workspace,
+        "work_service": service,
+        "deliver": lambda _message: True,
+        "members": MEMBERS,
+        "member_status": status,
+        "pump_enabled": False,
+        "fit_windows": False,
+    }
+    if args.compose_demo:
+        demo_image = Image.new("RGB", (800, 450), (32, 173, 212))
+        demo_attachment = ClipboardImageStore(
+            workspace.state_dir / "attachments",
+            grabber=lambda: demo_image,
+        ).paste()
+        TaskComposeDemoApp(
+            **app_kwargs,
+            demo_attachment=demo_attachment,
+        ).run()
+    else:
+        ConsoleApp(**app_kwargs).run()
     return 0
 
 

@@ -51,6 +51,7 @@ def test_conversation_list_then_one_stage_then_the_input(paths):
                 TIMELINE_ITEM_ID,
                 *(f"member-{name}" for name in MEMBERS),
             ]
+            assert "工作对话记录" in str(app.query_one(ConversationCard).render())
             # 会话列表只占窄窄一条,宽度全给主画面
             assert conversations.outer_size.width == 22
             assert timeline.size.width > 90

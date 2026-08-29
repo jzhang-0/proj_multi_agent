@@ -6,7 +6,7 @@
 ┌──────────┬─ 主画面 ─────────────────────────────────┐
 │◆ 任务    │ T-024 登录页 · 待验收 · 证据 2           │
 │Leader    │ 事件流:派工 → 提交 → 评审 → 验收         │
-│≡ 群聊    │  …或者切到群聊时间线                     │
+│≡ 对话    │  …或者切到工作对话记录                   │
 │○ claude  │  …或者选中成员时,这里是它的终端画面      │
 │○ codex   │                                          │
 ├──────────┴──────────────────────────────────────────┤
@@ -15,11 +15,11 @@
 ```
 
 绑定团队时左边首先是**任务与证据**，右边默认显示任务看板和选中任务的
-责任、证据、事件流与关联沟通。群聊时间线和每个成员终端仍是可切换的辅助
+责任、证据、事件流与关联沟通。工作对话记录和每个成员终端仍是可切换的辅助
 视图；没有绑定团队时保持原有会话列表行为。输入框在底部通栏。
 
 两条规则:主画面同一时刻只有一个内容(看不见的那个不刷新、不抓 tmux);
-在群聊之外的会话里,输入框直接把字**键入那个成员的终端**(要走群聊就用
+在工作对话之外的会话里,输入框直接把字**键入那个成员的终端**(要走总线就用
 `@名字` 开头),这样人不用 attach 出去就能和某个 AI 单独说话。
 
 退出路径只做两件事:停投递循环、关应用。**绝不动 tmux**——成员会话是
@@ -39,10 +39,11 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, ListItem, ListView, Static
 
-from bus import BusPaths, DeliveryOutcome, DeliveryResult, Message, deposit
+from bus import Attachment, BusPaths, DeliveryOutcome, DeliveryResult, Message, deposit
 from bus.audit import AuditLog
 from bus.hub import tmux_deliver
 from console.buspump import BusPump, MutePolicy
+from console.clipboard import ClipboardImageError, ClipboardImageStore, attachment_prompt
 from console.commands import CommandRunner, is_command
 from console.compose import ComposeInput, split_address
 from console.control import ConfirmControlScreen, ControlFeedback, MemberController
@@ -67,10 +68,10 @@ from workspace.session import NamespacedTmux, SessionNames, bind_tmux
 #: 最小可用尺寸(产品定义)
 MIN_SIZE = (80, 24)
 
-#: 会话列表里群聊那一项的 ID;其余项是 `member-<名字>`
+#: 会话列表里工作对话那一项的 ID;其余项是 `member-<名字>`
 TIMELINE_ITEM_ID = "conv-timeline"
 
-#: 绑定团队后，左栏第一项是任务与证据；群聊和成员终端退居辅助视图。
+#: 绑定团队后，左栏第一项是任务与证据；工作对话和成员终端退居辅助视图。
 WORK_ITEM_ID = "work-board"
 
 #: 小于这个尺寸就不去动成员窗口:把别人的终端压成一条缝比留白更糟
@@ -83,10 +84,10 @@ MIRROR_INTERVAL = 0.08
 
 
 class ConsoleApp(App[None]):
-    """一台机器上多个 AI CLI 的群聊与指挥中心。"""
+    """一台机器上多个 AI CLI 的工作对话与指挥中心。"""
 
     TITLE = "总控台"
-    SUB_TITLE = "本机 AI 群聊与指挥中心"
+    SUB_TITLE = "本机 AI 工作对话与指挥中心"
 
     CSS = """
     #body {
@@ -103,7 +104,7 @@ class ConsoleApp(App[None]):
         height: 2;
         padding: 0 1;
     }
-    /* 群聊那一项底下画一条线,和成员分开。选择器必须比 `#members > ListItem`
+    /* 工作对话那一项底下画一条线,和成员分开。选择器必须比 `#members > ListItem`
        更具体,否则 height 被那条规则压回 2,卡片第二行就被边框吃掉 */
     #members > #conv-timeline {
         height: 3;
@@ -130,7 +131,8 @@ class ConsoleApp(App[None]):
         border: tall $secondary;
     }
     #suggestions {
-        height: 1;
+        height: auto;
+        max-height: 2;
         padding: 0 1;
         background: $panel;
         color: $text-muted;
@@ -182,8 +184,8 @@ class ConsoleApp(App[None]):
         Binding("ctrl+c", "quit", "退出", priority=True, show=False),
         Binding("question_mark", "show_shortcuts", "帮助"),
         Binding("f1", "show_shortcuts", "帮助", show=False),
-        Binding("escape", "open_timeline", "回群聊"),
-        Binding("f2", "open_timeline", "回群聊", show=False),
+        Binding("escape", "open_timeline", "工作对话"),
+        Binding("f2", "open_timeline", "工作对话", show=False),
         Binding("f3", "open_work", "任务", show=False),
         Binding("t", "toggle_theme", "深浅主题"),
         Binding("pageup", "timeline_scroll('page_up')", "上翻", show=False),
@@ -208,6 +210,7 @@ class ConsoleApp(App[None]):
         Binding("f6", "terminate_selected", "终止"),
         Binding("f7", "restart_selected", "重启"),
         Binding("f8", "takeover_selected", "接管"),
+        Binding("ctrl+v", "paste_image", "粘贴图片", priority=True, show=False),
     ]
 
     def __init__(
@@ -224,10 +227,15 @@ class ConsoleApp(App[None]):
         fit_windows: bool = True,
         workspace: Workspace | None = None,
         work_service: WorkService | None = None,
+        clipboard_store: ClipboardImageStore | None = None,
     ) -> None:
         super().__init__()
         self.workspace = workspace
         self.paths = (paths or BusPaths.resolve()).ensure()
+        self._default_clipboard_store = clipboard_store is None
+        self.clipboard_store = clipboard_store or ClipboardImageStore(
+            self._attachment_root(workspace)
+        )
         self.work_service = work_service
         self.work_error = ""
         if self.work_service is None and workspace is not None:
@@ -286,9 +294,9 @@ class ConsoleApp(App[None]):
                 member_status.tmux,
             )
         self.health_monitor = health_monitor
-        #: 当前会话:None 表示看的是群聊时间线,否则是那个成员
+        #: 当前会话:None 表示看的是工作对话记录,否则是那个成员
         self.selected_member: str | None = None
-        #: 不在群聊会话里的这段时间过去了多少条流量(显示成未读数)
+        #: 不在工作对话里的这段时间过去了多少条流量(显示成未读数)
         self.unseen_traffic = 0
         #: 主画面上一次提示对应的成员;没变就别重写提示,否则每来一个
         #: Resize 都会把正在显示的画面刷成"取画面中…"
@@ -325,6 +333,10 @@ class ConsoleApp(App[None]):
             id=f"member-{name}",
         )
 
+    def _attachment_root(self, workspace: Workspace | None) -> Path:
+        state = workspace.state_dir if workspace is not None else self.paths.root
+        return state / "attachments"
+
     def _sidebar_items(self) -> tuple[ListItem, ...]:
         items: list[ListItem] = []
         if self.work_service is not None:
@@ -356,7 +368,7 @@ class ConsoleApp(App[None]):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="body"):
-            # 绑定团队时第一项是任务；未绑定时第一项仍是群聊时间线。
+            # 绑定团队时第一项是任务；未绑定时第一项仍是工作对话记录。
             yield ListView(
                 *self._sidebar_items(),
                 id="members",
@@ -424,10 +436,11 @@ class ConsoleApp(App[None]):
             timeline.note(f"[告警] 任务账本不可用:{self.work_error}")
         timeline.backfill(history(AuditLog(self.paths)))
         timeline.note(
-            "[总控台] ↑↓ 选任务/群聊/成员,F3 任务,Esc 回群聊,PgUp/PgDn 翻页;"
+            "[总控台] ↑↓ 选任务/工作对话/成员,F3 任务,Esc 回工作对话,"
+            "Ctrl+V 粘贴图片,PgUp/PgDn 翻页;"
             "q 或 Ctrl-C 退出"
         )
-        # 焦点先给左栏；绑定团队时首项是任务，旧工作区仍是群聊。
+        # 焦点先给左栏；绑定团队时首项是任务，旧工作区仍是工作对话。
         self.query_one("#members", ListView).focus()
         self.refresh_member_cards()
         self.set_interval(0.5, self.refresh_member_cards)
@@ -467,7 +480,7 @@ class ConsoleApp(App[None]):
         self._sync_unread()
 
     def _sync_unread(self) -> None:
-        """群聊那张卡上的未读数。"""
+        """工作对话卡片上的未读数。"""
         for card in self.query(ConversationCard):
             card.apply(self.unseen_traffic, watching=self.active_view == "timeline")
 
@@ -696,6 +709,8 @@ class ConsoleApp(App[None]):
         """把这一台 console 换绑到另一个工作区:总线、成员栏、时间线、标题一起换。"""
         self.workspace = workspace
         self.paths = BusPaths.for_workspace(workspace).ensure()
+        if self._default_clipboard_store:
+            self.clipboard_store = ClipboardImageStore(self._attachment_root(workspace))
         self.pump.rebind(self.paths)
         if self.health_monitor is not None:
             self.health_monitor.paths = self.paths
@@ -730,7 +745,7 @@ class ConsoleApp(App[None]):
         self.query_one("#members", ListView).focus()
 
     def _load_workspace_work(self, workspace: Workspace) -> None:
-        """切工作区时同步切换任务账本；未绑定团队则保留旧群聊主视图。"""
+        """切工作区时同步切换任务账本；未绑定团队则显示工作对话主视图。"""
         self.work_error = ""
         try:
             service = WorkService.for_workspace(workspace)
@@ -818,11 +833,11 @@ class ConsoleApp(App[None]):
         with contextlib.suppress(Exception):
             tmux.release_window_size(member)
 
-    # --- 主画面:群聊时间线 ⇄ 成员画面 --------------------------------------
+    # --- 主画面:工作对话记录 ⇄ 成员画面 ------------------------------------
 
     @property
     def detail_visible(self) -> bool:
-        """主画面上现在是不是成员画面(而不是群聊时间线)。"""
+        """主画面上现在是不是成员画面(而不是工作对话记录)。"""
         mirror = self._mirror()
         return bool(mirror is not None and mirror.display)
 
@@ -849,7 +864,7 @@ class ConsoleApp(App[None]):
                 detail.notice(f"成员详情 · {self.selected_member}(取画面中…)")
 
     def select_member(self, name: str | None) -> None:
-        """切会话:`None` 表示回群聊时间线。左栏高亮跟着走。"""
+        """切会话:`None` 表示回工作对话记录。左栏高亮跟着走。"""
         self.active_view = "timeline" if name is None else "member"
         self.selected_member = name
         mirror = self._mirror()
@@ -933,6 +948,15 @@ class ConsoleApp(App[None]):
     def on_compose_input_candidates_changed(self, event: ComposeInput.CandidatesChanged) -> None:
         self._sync_suggestions()
 
+    def on_compose_input_attachments_changed(
+        self, event: ComposeInput.AttachmentsChanged
+    ) -> None:
+        self._sync_suggestions()
+
+    def on_compose_input_paste_image(self, event: ComposeInput.PasteImage) -> None:
+        if event.compose.id == "compose":
+            self.action_paste_image()
+
     def on_input_submitted(self, event: ComposeInput.Submitted) -> None:
         if event.input.id == "compose":
             self.send_from_input(event.value)
@@ -944,19 +968,28 @@ class ConsoleApp(App[None]):
         self.press_member_key(self.selected_member, event.tmux_key, event.label)
 
     def _sync_suggestions(self) -> None:
-        """候选行:只在有候选时占一行,当前候选加方括号。"""
+        """候选/附件行：当前 @ 候选加方括号，待发图片始终可见。"""
         compose = self.query_one("#compose", ComposeInput)
         row = self.query_one("#suggestions", Static)
-        row.display = bool(compose.candidates)
-        if not compose.candidates:
+        row.display = bool(compose.candidates or compose.attachments)
+        if not row.display:
             return
-        current = compose.current_candidate
-        mark = "/" if compose.candidate_kind == "command" else ""
-        shown = " ".join(
-            f"[{mark}{name}]" if name == current else f"{mark}{name}"
-            for name in compose.candidates
-        )
-        row.update(f"Tab/↑↓ 选择:{shown}")
+        parts: list[str] = []
+        if compose.attachments:
+            latest = compose.attachments[-1]
+            parts.append(
+                f"待发图片 {len(compose.attachments)} 张 · "
+                f"{latest.width}×{latest.height} · Ctrl+V 继续添加"
+            )
+        if compose.candidates:
+            current = compose.current_candidate
+            mark = "/" if compose.candidate_kind == "command" else "@"
+            shown = " ".join(
+                f"[{mark}{name}]" if name == current else f"{mark}{name}"
+                for name in compose.candidates
+            )
+            parts.append(f"自动补全 Tab/↑↓ 选择: {shown}")
+        row.update("\n".join(reversed(parts)))
 
     def _update_placeholder(self) -> None:
         compose = self.query_one("#compose", ComposeInput)
@@ -967,15 +1000,50 @@ class ConsoleApp(App[None]):
             # 提示里只用等宽字体一定画得出的字符:⌨ 这类符号在不少终端字体里
             # 是缺字形的小方块,画出来反而像界面坏了
             compose.placeholder = (
-                f"直连 {self.selected_member}: 空↑↓/Del/Enter/Shift+Tab透传;Fn+↑↓回看"
+                f"直连 {self.selected_member}: @成员补全;Ctrl+V图片;"
+                "空↑↓/Del/Enter/Shift+Tab透传;Fn+↑↓回看"
             )
         elif self.active_view == "work" and self.work_service is not None:
             task = f" · 关联 {self.selected_task_id}" if self.selected_task_id else ""
-            compose.placeholder = f"对 Leader {self.work_service.team.leader} 说话{task}"
+            compose.placeholder = (
+                f"对 Leader {self.work_service.team.leader}{task} · "
+                "@成员自动补全 · Ctrl+V图片"
+            )
         elif self.last_target is None:
-            compose.placeholder = "@名字 说点什么,回车发送"
+            compose.placeholder = "@成员 自动补全 · Ctrl+V图片 · 回车发送"
         else:
-            compose.placeholder = f"回车发给 {self.last_target}(@名字 可改收件人)"
+            compose.placeholder = (
+                f"回车发给 {self.last_target}(@成员自动补全;Ctrl+V图片)"
+            )
+
+    def action_paste_image(self) -> None:
+        """统一的 `Ctrl+V` 入口；读取剪贴板放在线程里，避免卡住键入回显。"""
+        compose = self.query_one("#compose", ComposeInput)
+        if len(compose.attachments) >= 8:
+            self.notify("单条消息最多附加 8 张图片", severity="warning")
+            return
+        self.run_worker(self._paste_image_worker, thread=True, group="clipboard-image")
+
+    def _paste_image_worker(self) -> None:
+        try:
+            attachment = self.clipboard_store.paste()
+        except ClipboardImageError as exc:
+            self.call_from_thread(self._clipboard_failed, str(exc))
+            return
+        self.call_from_thread(self._clipboard_pasted, attachment)
+
+    def _clipboard_failed(self, message: str) -> None:
+        self.notify(message, severity="warning")
+
+    def _clipboard_pasted(self, attachment: Attachment) -> None:
+        compose = self.query_one("#compose", ComposeInput)
+        added = compose.attach_image(attachment)
+        if added:
+            self.notify(f"已附加图片 {attachment.width}×{attachment.height}")
+        else:
+            self.notify("这张图片已经在待发送列表中", severity="warning")
+        compose.focus()
+        self._sync_suggestions()
 
     def run_command(self, raw: str) -> None:
         """执行一条 `/` 命令,输出打到时间线上。"""
@@ -995,12 +1063,19 @@ class ConsoleApp(App[None]):
         compose.remember(raw)
         compose.value = ""
         compose.candidates = ()
+        compose.clear_attachments()
         self._sync_suggestions()
 
-    def type_into_member(self, member: str, raw: str, text: str) -> None:
+    def type_into_member(
+        self,
+        member: str,
+        raw: str,
+        text: str,
+        attachments: tuple[Attachment, ...] = (),
+    ) -> None:
         """把一行字直接键入成员终端——等于人在它自己的窗口里敲了这一行。
 
-        不加 `[群消息] 来自 human:` 前缀:这是人在跟这个 AI 单独说话,不是群聊
+        不加 `[群消息] 来自 human:` 前缀:这是人在跟这个 AI 单独说话,不是总线
         流量。动作照样落审计。
 
         注入放到工作线程里跑:文本和 Enter 之间必须留一口气(见
@@ -1008,12 +1083,14 @@ class ConsoleApp(App[None]):
         """
         timeline = self.query_one("#timeline", Timeline)
         if self.controller is None:
-            timeline.note("[总控台] 直连不可用(没接上 tmux),用 @名字 走群聊")
+            timeline.note("[总控台] 直连不可用(没接上 tmux),用 @成员 走工作对话")
             return
+        prompt = "；".join(part for part in (text, attachment_prompt(attachments)) if part)
         self._accept_input(raw)
-        timeline.note(f"[直连] → human → {member}: {text}")
+        image_note = f" [图片 {len(attachments)}]" if attachments else ""
+        timeline.note(f"[直连] → human → {member}: {text or '请查看附加图片。'}{image_note}")
         self.run_worker(
-            lambda: self._type_worker(member, text), thread=True, group="direct-type"
+            lambda: self._type_worker(member, prompt), thread=True, group="direct-type"
         )
 
     def _type_worker(self, member: str, text: str) -> None:
@@ -1035,7 +1112,7 @@ class ConsoleApp(App[None]):
         """直连态把空输入下的方向键、删除键等交给成员终端。"""
         timeline = self.query_one("#timeline", Timeline)
         if self.controller is None:
-            timeline.note("[总控台] 直连不可用(没接上 tmux),用 @名字 走群聊")
+            timeline.note("[总控台] 直连不可用(没接上 tmux),用 @成员 走工作对话")
             return
         timeline.note(f"[直连] → human → {member}: 按键 {label}")
         self.run_worker(
@@ -1057,21 +1134,23 @@ class ConsoleApp(App[None]):
     def send_from_input(self, raw: str) -> None:
         """把输入框里的一行送出去。
 
-        三条路,按优先级:`/` 开头是命令;`@名字` 开头是群聊消息(发件人永远
+        三条路,按优先级:`/` 开头是命令;`@名字` 开头是工作对话消息(发件人永远
         是 human);都不是的话——在成员会话里就**直接键入那个成员的终端**,在
-        群聊会话里还是发给上一个对话对象。
+        工作对话视图里还是发给上一个对话对象。
         """
         timeline = self.query_one("#timeline", Timeline)
+        compose = self.query_one("#compose", ComposeInput)
+        attachments = compose.attachments
         if is_command(raw):
             self.run_command(raw)
             return
         addressed, text = split_address(raw)
-        if not text:
+        if not text and not attachments:
             if addressed is None and self.selected_member is not None and not raw.strip():
                 self.press_member_key(self.selected_member, "Enter", "Enter")
             return
         if addressed is None and self.selected_member is not None:
-            self.type_into_member(self.selected_member, raw, text)
+            self.type_into_member(self.selected_member, raw, text, attachments)
             return
         default_target = self.last_target
         if self.active_view == "work" and self.work_service is not None:
@@ -1081,10 +1160,19 @@ class ConsoleApp(App[None]):
             timeline.note("[总控台] 还没有对话对象,先用 @名字 指定收件人")
             return
         try:
-            extra: dict[str, str] = {}
+            extra: dict[str, object] = {}
             if self.active_view == "work" and self.selected_task_id is not None:
                 extra["task"] = self.selected_task_id
-            deposit(Message.create(target, text, sender="human", **extra), self.paths)
+            deposit(
+                Message.create(
+                    target,
+                    text or "请查看附加图片。",
+                    sender="human",
+                    attachments=attachments,
+                    **extra,
+                ),
+                self.paths,
+            )
         except OSError as exc:
             timeline.note(f"[告警] bus 目录不可写:{type(exc).__name__}: {exc}")
             return
@@ -1107,7 +1195,7 @@ class ConsoleApp(App[None]):
         ):
             self.member_status.mark_working(result.message.to)
         self.query_one("#timeline", Timeline).add(TimelineEntry.from_result(result))
-        # 人在别的会话里时,群聊那张卡上记未读数
+        # 人在别的会话里时,工作对话那张卡上记未读数
         if self.active_view != "timeline":
             self.unseen_traffic += 1
             self._sync_unread()

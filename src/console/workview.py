@@ -95,7 +95,7 @@ class TaskCard(Static):
 
 
 class TaskDetail(RichLog):
-    """选中任务的责任、证据、事件流和关联群聊。"""
+    """选中任务的责任、证据、事件流和关联工作对话。"""
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(
@@ -154,7 +154,7 @@ class TaskDetail(RichLog):
             self.write(line)
             for detail in event_details(event):
                 self.write(Text(f"     {sanitize(detail)}", style=tokens().muted))
-        self.write(Text("关联沟通", style="bold"))
+        self.write(Text("关联工作对话", style="bold"))
         linked = list(communications)
         if not linked:
             self.write(Text("  （无；用 amux msg --task 关联讨论）", style=tokens().muted))
@@ -162,4 +162,7 @@ class TaskDetail(RichLog):
             sender = sanitize(str(entry.get("from") or "?"))
             to = sanitize(str(entry.get("to") or "?"))
             preview = sanitize(str(entry.get("preview") or ""))
-            self.write(f"  {sender} → {to}: {preview}")
+            attachments = entry.get("attachments")
+            has_images = isinstance(attachments, list) and bool(attachments)
+            image_note = f" [图片 {len(attachments)}]" if has_images else ""
+            self.write(f"  {sender} → {to}: {preview}{image_note}")

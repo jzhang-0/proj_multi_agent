@@ -121,6 +121,8 @@ class AuditLog:
             entry["replyTo"] = message.reply_to
         if message.task is not None:
             entry["task"] = sanitize(message.task)
+        if message.attachments:
+            entry["attachments"] = [item.to_dict() for item in message.attachments]
         if reason:
             entry["reason"] = reason
 

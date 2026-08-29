@@ -38,22 +38,22 @@ class MemberCard(Static):
 
 
 def render_conversation_card(unread: int, watching: bool) -> Text:
-    """会话列表第一项:群聊。两行,和成员卡片一样高一样对齐。"""
+    """会话列表第一项:工作对话记录。两行,和成员卡片一样高一样对齐。"""
     palette = tokens()
     rendered = Text()
     rendered.append("≡ ", style=f"bold {palette.human}")
-    rendered.append("群聊时间线", style="bold")
+    rendered.append("工作对话记录", style="bold")
     if unread:
         rendered.append(f"\n未读 {unread} 条", style=f"bold {palette.accent}")
     elif watching:
         rendered.append("\n在看", style=palette.muted)
     else:
-        rendered.append("\n全部流量", style=palette.muted)
+        rendered.append("\n全部对话", style=palette.muted)
     return rendered
 
 
 class ConversationCard(Static):
-    """群聊那一项;未读数原地刷新。"""
+    """工作对话那一项;未读数原地刷新。"""
 
     def __init__(self, **kwargs: object) -> None:
         self.unread = 0
@@ -76,7 +76,7 @@ class Divider:
 
 
 class Timeline(RichLog):
-    """群聊时间线。
+    """工作对话记录。
 
     三件 `RichLog` 不自带的事:按分钟写组头;人往上翻看历史时不要被新消息
     强行拽回底部(只有本来就贴着底的时候才跟着滚);宽度变了(切面板、详情

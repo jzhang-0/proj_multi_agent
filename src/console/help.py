@@ -23,9 +23,9 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
     (
         "导航与焦点",
         (
-            Shortcut("Tab / Shift+Tab", "群聊与非输入框焦点时在各区域间循环"),
-            Shortcut("↑ / ↓", "选择任务、群聊或成员；输入时选候选项或翻历史"),
-            Shortcut("Esc / F2", "回到群聊时间线"),
+            Shortcut("Tab / Shift+Tab", "工作对话与非输入框焦点时在各区域间循环"),
+            Shortcut("↑ / ↓", "选择任务、工作对话或成员；输入时选候选项或翻历史"),
+            Shortcut("Esc / F2", "回到工作对话记录"),
             Shortcut("F3", "打开任务看板；/task T-001 可直达详情"),
             Shortcut("PgUp / PgDn", "翻当前画面；MacBook 对应 Fn+↑ / Fn+↓"),
             Shortcut("Ctrl+↑ / Ctrl+↓", "逐行回看；macOS 若占用请用 Fn+↑ / Fn+↓"),
@@ -35,7 +35,8 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
     (
         "发言与命令",
         (
-            Shortcut("@ 成员", "指定收件人（走群聊总线）；Tab / ↑↓ 补全"),
+            Shortcut("@成员", "输入 @ 即列出成员；Tab / ↑↓ 选择，回车落定"),
+            Shortcut("Ctrl+V", "粘贴系统剪贴板图片，可随文字或单独发送"),
             Shortcut("/ 命令", "斜杠命令补全,含 /workspace；/task 打开任务"),
             Shortcut("Enter", "接受补全，再按一次发送或执行"),
             Shortcut("成员会话里直接打字", "不带 @ 就是直接键入该成员终端，等于在它窗口里敲"),

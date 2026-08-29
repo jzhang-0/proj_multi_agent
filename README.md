@@ -7,7 +7,7 @@ amux 是一个基于 tmux 的终端总控台。Claude Code、Codex、Cursor Agen
 消息投递和审计记录。
 
 当前版本为 **v0.1.0（Alpha）**，采用 [MIT License](LICENSE)。它适合愿意尝试本地多
-Agent 工作流的开发者；任务账本、Leader 验收和接管流程仍在继续开发，当前范围与路线图见
+Agent 工作流的开发者；当前已包含任务账本、Leader 验收和接管责任流，范围与完成证据见
 [产品定义](docs/product/product.md) 和 [Goal 清单](docs/goals/README.md)。
 
 ## 它解决什么问题
@@ -16,9 +16,10 @@ Agent 工作流的开发者；任务账本、Leader 验收和接管流程仍在�
 切窗口。amux 把这些操作收进一个界面：
 
 - 每个成员拥有独立 tmux 会话，并在当前项目目录中工作；
-- 一个界面查看群聊时间线、成员状态和成员终端画面；
+- 一个界面查看任务看板、验收证据、群聊时间线、成员状态和成员终端画面；
 - 可以向成员发消息、等待关联回复，或直接操作成员终端；
 - 消息、投递结果和控制动作写入审计日志；
+- 派工、进展、证据、评审、退回、接管、验收和 human 汇报写入不可覆盖任务账本；
 - 同一台机器可以登记多个项目，各自拥有独立成员和消息总线。
 
 amux 不替代 Claude Code、Codex 等工具，也不会绕过它们的账号、登录或权限机制。它只负责把
@@ -76,6 +77,7 @@ amux
 
 打开界面后：
 
+- 绑定团队时默认进入任务看板，`F3` 随时返回任务，`/task T-001` 直达详情；
 - `Esc` 或 `F2` 返回群聊；
 - 在成员画面中直接输入，可以操作该成员的终端；
 - PgUp/PgDn、`Ctrl+↑/Ctrl+↓` 或滚轮可以回看成员的 tmux 历史；
@@ -89,6 +91,7 @@ amux
 ```bash
 amux msg claude "检查当前项目并告诉我最值得先修的问题"
 amux msg --ask claude "测试是否已经通过？"
+amux msg --task T-001 claude "这条讨论关联到任务 T-001"
 ```
 
 ## 常用操作
@@ -138,6 +141,44 @@ amux team current
 激活；不想重启当前 Claude 会话时，也可在 Claude 内执行一次 `/tui default`（颜色环境仍需下次
 启动或重启才会生效）。
 
+### 使用任务账本
+
+绑定团队后，Leader、执行者和评审者在同一工作区运行以下命令。写操作从 `AGENT_NAME`
+识别当前成员；直接在普通终端运行时身份是 `human`，只能查看，不能绕过 Leader 改状态。
+
+```bash
+# Leader
+amux task create "修复登录页"
+amux task assign T-001 sonnet
+amux task review T-001 opus
+amux task accept T-001 "测试与风险均已检查"
+amux task report T-001 "已向 human 汇报结果和证据"
+
+# 执行者
+amux task progress T-001 "已定位回归"
+amux task evidence T-001 "tests/test_login.py · 4 passed"
+amux task submit T-001 "实现完成，请验收"
+
+# 指定评审者
+amux task approve T-001 "实现和证据可信"
+# 或：amux task return T-001 "缺少边界测试"
+
+# 任何人可回看
+amux task list
+amux task show T-001
+amux task events T-001
+```
+
+重新分派用 `amux task reassign`。Leader 接管时必须同时给出原因、范围、已有交付和后续验收：
+
+```bash
+amux task takeover T-001 \
+  --reason "成员反复卡在同一问题" \
+  --scope "补边界实现和回归测试" \
+  --delivered "已有分析、初版补丁和失败日志" \
+  --verify "Leader 补测后亲自验收"
+```
+
 ### 设置全局默认值
 
 ```bash
@@ -150,7 +191,9 @@ amux config show
 
 ## 界面与数据
 
-amux 的主界面由“会话列表 + 主画面 + 底部输入框”组成。选中群聊时，主画面显示时间线；
+amux 的主界面由“团队/任务/会话列表 + 主画面 + 底部输入框”组成。绑定团队时任务与证据是
+默认主画面，任务详情展示唯一 Leader、执行者、评审者、证据、不可覆盖事件流和关联沟通；
+选中群聊时，主画面显示时间线；
 选中成员时，主画面显示该成员的终端镜像。成员画面通过 `capture-pane` 回看 tmux 历史，不会
 切进 copy-mode；PgUp/PgDn 按页滚动（MacBook 是 `Fn+↑/Fn+↓`），`Ctrl+↑/Ctrl+↓` 在未被
 macOS 系统快捷键占用时可逐行回看，滚轮同样可用。直连输入为空且没有补全候选时，↑/↓ 会
@@ -166,7 +209,8 @@ macOS 系统快捷键占用时可逐行回看，滚轮同样可用。直连输�
 ├── workspace.toml   # 项目路径
 ├── members.toml     # 当前工作区成员
 ├── team.toml        # 当前绑定的团队
-└── bus/             # 消息队列、正文和审计日志
+├── bus/             # 消息队列、正文和审计日志
+└── work/events.jsonl # 哈希链保护的只追加任务账本
 ```
 
 项目之间的队列和成员会话相互隔离。成员 tmux 会话名采用 `<成员>@<工作区>`，因此同一个成员
@@ -218,6 +262,7 @@ uv run python -m qa.smoke
 | 路径 | 内容 |
 |---|---|
 | `src/console/` | Textual TUI 和命令入口 |
+| `src/work/` | 任务事件账本、状态投影和 Leader 责任流 |
 | `src/bus/` | 消息队列、投递、ask/reply 与审计 |
 | `src/tmuxctl/` | tmux 会话、画面和进程控制 |
 | `src/workspace/` | 多工作区登记与隔离 |

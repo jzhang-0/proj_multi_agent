@@ -28,6 +28,7 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 | TUI | Textual | 满足"漂亮 + 低延迟"且纯 Python;富组件、深浅色、CSS 式主题 |
 | 消息存储 | 文件队列(`bus/queue/` 一消息一文件,原子改名)+ `bus/processed/` 归档 + `bus/dead/` 死信 + `bus/log.jsonl` 审计(80 字符预览,全文另存 `bus/bodies/`,10MB 轮转);根目录可注入(`BUS_ROOT` 或显式参数,优先级最高)。已登记工作区的默认根是 `~/.amux/workspaces/<slug>/bus/`,互不串台;未登记时回落仓库根 `bus/` | 语言无关、可 tail、崩溃可恢复;规模(单机、几个成员)远够 |
 | 文件事件 | `watchfiles`,不可用时回退 0.2s 轮询 | 达成投递延迟预算 |
+| 任务存储 | 工作区 `work/events.jsonl` 只追加事件流 + SHA-256 哈希链 | 单机规模无需数据库；可直接审计，并能检测历史删改 |
 | tmux | ≥ 3.2,control mode(`tmux -C`)做输出流,普通命令做注入/控制 | 见 tmux Goal 卷 |
 | 测试 / Lint | pytest / ruff | 轻量,见 quality 卷 |
 
@@ -49,7 +50,7 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 3. **寻址**:工作区内收件人仍是短名(`claude`);tmux 会话名是 `<成员>@<slug>`,双向映射收口在 `workspace.session`(`bind_tmux` 是生产路径唯一入口)。`human` 是保留名,不投递、只上屏;`bus` 是总线自身的署名(防环拒收回执);`im:` 前缀是 IM 网关代投的远程身份(同样只上屏,由网关发回群)。这三者没有 tmux 会话,不参与 slug 拼接,成员不得占用这些名字。
 4. **运行时提示词**:`src/amux_runtime/prompts/` 是唯一事实来源；`common.md` 对所有成员生效，`leader.md` / `member.md` 根据工作区名册中的 `role` 追加。`team activate` 必须把团队 ID、角色、Leader、模型和职责完整投影并持久化，未绑定团队的成员只加载公共提示。为让共用 `~/.amux` 的 PyPI 0.1.0 仍能读取开发版生成的 `members.toml`，角色元数据编码在旧版已经允许的 `[custom.env]` 中(`AGENT_ROLE`、`AMUX_TEAM_*`、`AMUX_AGENT_*`)，不新增旧版会拒绝的顶层键；新代码加载时还原为类型化 `Member` 字段。正文不得复制进 Python、`AGENTS.md`、团队档案或名册(由 ROS-006/007、TEAM-006 钉住)。
 5. **团队档案**:`~/.amux/teams/<id>.toml` 是 Leader、成员、模型偏好、职责与经验证启动适配（`command`/`args`/`env`）的唯一来源；`workspaces/<slug>/team.toml` 只保存所选团队 ID。`amux team activate` 将已校验的团队适配完整投影为该工作区 `members.toml`，再由 `roster` 负责生命周期；无适配的团队不能激活。默认 Fable 团队的三个 Claude 成员通过 `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` 保留 tmux 回滚区，否则 Claude fullscreen 的 alternate screen 会令 `history_size=0`，`capture-pane -S` 没有历史可读；同一适配把 `NO_COLOR` 设为空，覆盖 amux 调用环境可能带入的 `NO_COLOR=1`，让 Claude 继续向 tmux 网格输出 ANSI 样式。颜色捕获仍统一走 TMX-004 的 `capture-pane -e`，console 不自行猜测或重绘成员配色。
-6. **任务事件(TEAM-002)**:任务的派工、提交、评审、退回、接管和最终验收必须追加到工作区账本。只有 Leader 可以最终验收；接管事件包含原因、范围和后续验收，不能覆盖先前事件。
+6. **任务事件(TEAM-002)**:任务的建立/拆分、派工、进展/阻塞/证据、提交、评审/退回、重新分派、接管、最终验收和 human 汇报必须追加到工作区 `work/events.jsonl`。事件以连续 `seq` 和 `prev/hash` 构成 SHA-256 哈希链；任务当前状态只由重放得到，不另存可覆盖快照。只有任务记录的唯一 Leader 可以建立、派工、接管、验收和最终汇报；执行者不能最终结项，评审者不能与执行者相同。接管事件必须包含原因、范围、原成员已交付内容和后续验收方式。总线可选 `task` 字段只用于把沟通关联进详情，不改变四个必备字段，也不能代替责任事件。
 
 ## §4 安全边界
 
@@ -72,6 +73,7 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
     team.toml                     # 当前工作区绑定的团队 ID(TEAM-001)
     members.toml                  # `team activate` 投影的成员角色、职责和启动适配(TEAM-003/006)
     bus/                          # 该工作区的队列、审计、ask/reply(WS-003)
+    work/events.jsonl             # 只追加任务事件、证据与责任链(TEAM-002)
 ```
 
 - **slug**:默认取项目目录名;两个项目同名时自动 `name-2`、`name-3`。显式 `--slug` 撞名则报错不覆盖。`:` 和 `.` 禁止出现在 slug 里(tmux 会静默吃掉,见工作区 Goal 卷「已知陷阱」)。

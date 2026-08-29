@@ -55,6 +55,8 @@ def format_for_injection(message: Message) -> str:
     """投递入口:清洗后拼成注入成员终端的那一行(单行)。"""
     text = sanitize(message.text)
     sender = sanitize(message.sender)
+    task = message.task
+    task_prefix = f"任务 {sanitize(task)} · " if isinstance(task, str) else ""
     if message.kind == "ask" and message.id is not None:
         ask_id = sanitize(message.id)
         return (
@@ -64,7 +66,10 @@ def format_for_injection(message: Message) -> str:
     if message.kind == "reply" and message.reply_to is not None:
         ask_id = sanitize(message.reply_to)
         return f"[群回复 ask {ask_id}] 来自 {sender}: {text}"
-    return f'[群消息] 来自 {sender}: {text} —— 如需回复,运行: amux msg {sender} "你的回复"'
+    reply = f'amux msg {sender} "你的回复"'
+    if isinstance(task, str):
+        reply = f'amux msg --task {sanitize(task)} {sender} "你的回复"'
+    return f"[{task_prefix}群消息] 来自 {sender}: {text} —— 如需回复,运行: {reply}"
 
 
 def format_for_screen(message: Message) -> str:

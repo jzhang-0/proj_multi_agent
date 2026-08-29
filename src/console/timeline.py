@@ -78,6 +78,7 @@ class TimelineEntry:
     text: str
     outcome: str = "pending"
     reason: str = ""
+    task_id: str = ""
 
     @property
     def group(self) -> str:
@@ -96,6 +97,7 @@ class TimelineEntry:
             message.text,
             str(result.outcome),
             result.detail,
+            str(message.task or ""),
         )
 
     @classmethod
@@ -113,6 +115,7 @@ class TimelineEntry:
             str(entry.get("preview", "")),
             outcome,
             str(entry.get("reason", "")),
+            str(entry.get("task", "")),
         )
 
 
@@ -143,6 +146,7 @@ def history(audit: AuditLog, limit: int = HISTORY_LIMIT) -> list[TimelineEntry]:
                 previous.text,
                 entry.outcome,
                 entry.reason,
+                entry.task_id,
             )
     return [merged[key] for key in order][-limit:]
 
@@ -162,6 +166,8 @@ def render_entry(entry: TimelineEntry) -> Text:
     mark, dimmed = OUTCOME_MARKS.get(entry.outcome, ("?", True))
     line = Text(no_wrap=False)
     line.append(f"{mark} ", style=palette.muted if dimmed else palette.divider)
+    if entry.task_id:
+        line.append(f"[{sanitize(entry.task_id)}] ", style=f"bold {palette.accent}")
     line.append(sanitize(entry.sender), style=f"bold {member_color(entry.sender)}")
     line.append(" → ", style=palette.divider)
     line.append(sanitize(entry.to), style=member_color(entry.to))

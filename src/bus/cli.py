@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import time
 from collections.abc import Sequence
@@ -43,12 +44,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="ask 等待秒数(默认 600)",
     )
     parser.add_argument("--bus-root", default=None, help="bus 运行时根目录(默认仓库根 bus/)")
+    parser.add_argument("--task", default=None, metavar="T-001", help="把沟通关联到任务账本")
     parser.add_argument("parts", nargs="*", help="收件人与正文,或 reply 正文")
     return parser
 
 
-def _ordinary_message(to: str, text: str, sender: str) -> Message:
+def _ordinary_message(to: str, text: str, sender: str, *, task_id: str | None = None) -> Message:
     """构造只有冻结四字段的普通消息。"""
+    if task_id is not None:
+        if re.fullmatch(r"T-[0-9]{3,}", task_id) is None:
+            raise AskError("--task 必须形如 T-001")
+        return Message.create(to, text, sender=sender, task=task_id)
     return Message(to=to, sender=sender, text=text, ts=time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
@@ -105,6 +111,8 @@ def main(
                 return 1
             if args.timeout != DEFAULT_ASK_TIMEOUT_SECONDS:
                 raise AskError("--timeout 只能与 --ask 一起使用")
+            if args.task is not None:
+                raise AskError("--task 暂不与 --reply 一起使用")
             text = " ".join(args.parts)
             reply = _submit_reply(args.reply, text, actual_sender, bus_paths)
             print(f"[msg] {actual_sender} -> {reply.to}: 已回复 ask {args.reply}", file=output)
@@ -118,10 +126,14 @@ def main(
         if not args.ask:
             if args.timeout != DEFAULT_ASK_TIMEOUT_SECONDS:
                 raise AskError("--timeout 只能与 --ask 一起使用")
-            deposit(_ordinary_message(to, text, actual_sender), bus_paths)
-            print(f"[msg] {actual_sender} -> {to}: 已进入队列", file=output)
+            message = _ordinary_message(to, text, actual_sender, task_id=args.task)
+            deposit(message, bus_paths)
+            linked = f" · {args.task}" if args.task else ""
+            print(f"[msg] {actual_sender} -> {to}: 已进入队列{linked}", file=output)
             return 0
 
+        if args.task is not None:
+            raise AskError("--task 暂不与 --ask 一起使用")
         ask = _submit_ask(to, text, actual_sender, bus_paths)
         print(f"[msg] {actual_sender} -> {to}: ask {ask.id} 已进入队列,等待回复", file=output)
         reply = wait_for_reply(ask.id or "", bus_paths, timeout=args.timeout)

@@ -57,6 +57,7 @@ packages = [
   "src/team",
   "src/tmuxctl",
   "src/workspace",
+  "src/work",
 ]
 
 [tool.hatch.build.targets.sdist]

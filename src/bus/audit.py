@@ -119,6 +119,8 @@ class AuditLog:
             entry["kind"] = message.kind
         if message.reply_to is not None:
             entry["replyTo"] = message.reply_to
+        if message.task is not None:
+            entry["task"] = sanitize(message.task)
         if reason:
             entry["reason"] = reason
 

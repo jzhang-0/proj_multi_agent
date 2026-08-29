@@ -31,6 +31,7 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     assert "Development Status :: 3 - Alpha" in project["classifiers"]
     packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/amux_runtime" in packages
+    assert "src/work" in packages
     license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
     assert "MIT License" in license_text
     assert "Copyright (c) 2026 jzhang-0" in license_text
@@ -77,6 +78,8 @@ def test_roster_and_prompts_fall_back_to_packaged_resources(monkeypatch) -> None
     assert "## 通用协作协议" in common
     assert "唯一 Leader" in leader
     assert "不能代替 Leader" in member
+    assert "amux task" in common
+    assert "amux task progress|block|evidence|submit" in member
     assert "只在被 @ 时响应" not in common
 
 

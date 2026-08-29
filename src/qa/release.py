@@ -52,6 +52,7 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "amux_runtime/prompts/leader.md",
         "amux_runtime/prompts/member.md",
         "amux_runtime/roster.toml",
+        "work/__init__.py",
         f"{dist_info}/licenses/LICENSE",
         f"{dist_info}/METADATA",
         f"{dist_info}/entry_points.txt",
@@ -85,6 +86,7 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "/src/amux_runtime/prompts/member.md",
         "/src/amux_runtime/prompts/README.md",
         "/src/amux_runtime/roster.toml",
+        "/src/work/__init__.py",
     )
     missing_sdist = [
         suffix for suffix in required_suffixes if not any(name.endswith(suffix) for name in names)

@@ -36,6 +36,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("mute", "<名字>", "临时拒收该成员的消息,再来一次取消"),
     CommandSpec("workspace", "<名字>", "切换绑定到该工作区"),
     CommandSpec("member", "add|rm <名字>", "增减本工作区成员"),
+    CommandSpec("task", "[任务ID]", "打开任务看板或指定任务详情"),
     CommandSpec("help", "", "列出全部命令"),
 )
 
@@ -90,6 +91,7 @@ class CommandRunner:
         remove_member: Callable[[str], list[str]] | None = None,
         list_members: Callable[[], list[str]] | None = None,
         on_roster_changed: Callable[[], None] | None = None,
+        open_task: Callable[[str | None], list[str]] | None = None,
     ) -> None:
         self.lifecycle = lifecycle
         self.adopter = adopter
@@ -100,6 +102,7 @@ class CommandRunner:
         self.add_member = add_member
         self.remove_member = remove_member
         self.list_members = list_members
+        self.open_task = open_task
 
     def run(self, line: str) -> list[str]:
         name, args = parse_command(line)
@@ -108,7 +111,7 @@ class CommandRunner:
         spec = BY_NAME.get(name)
         if spec is None:
             return [f"未知命令 /{name}{did_you_mean(name)}"]
-        if spec.arg and not args:
+        if spec.arg.startswith("<") and not args:
             return [f"用法:{spec.usage} —— {spec.help}"]
         if not spec.arg and args:
             return [f"/{name} 不接参数"]
@@ -176,6 +179,13 @@ class CommandRunner:
                 self.on_members_changed()
             return lines
         return ["用法:/member add|rm <名字> 或 /member list"]
+
+    def _do_task(self, task_id: str = "", *extra: str) -> list[str]:
+        if extra:
+            return ["用法:/task [任务ID]"]
+        if self.open_task is None:
+            return ["/task 不可用:当前工作区没有绑定团队"]
+        return self.open_task(task_id or None)
 
     def _do_help(self, *extra: str) -> list[str]:
         return ["可用命令:", *help_lines()]

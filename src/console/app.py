@@ -1,11 +1,12 @@
-"""总控台 TUI:会话列表 + 一块主画面。
+"""总控台 TUI：团队任务/会话列表 + 一块可切换主画面。
 
 布局:
 
 ```
 ┌──────────┬─ 主画面 ─────────────────────────────────┐
-│≡ 群聊    │ 12:01 human→claude: 写fizzbuzz           │
-│ 未读 3   │ 12:03 claude→codex: 请review             │
+│◆ 任务    │ T-024 登录页 · 待验收 · 证据 2           │
+│Leader    │ 事件流:派工 → 提交 → 评审 → 验收         │
+│≡ 群聊    │  …或者切到群聊时间线                     │
 │○ claude  │  …或者选中成员时,这里是它的终端画面      │
 │○ codex   │                                          │
 ├──────────┴──────────────────────────────────────────┤
@@ -13,9 +14,9 @@
 └─────────────────────────────────────────────────────┘
 ```
 
-左边是**会话列表**:第一项「群聊时间线」,后面每个成员一项——和聊天软件的
-联系人列表一个意思。右边是**同一块主画面**,选中谁就显示谁:群聊显示时间线,
-成员显示它的终端画面镜像。输入框在底部通栏。
+绑定团队时左边首先是**任务与证据**，右边默认显示任务看板和选中任务的
+责任、证据、事件流与关联沟通。群聊时间线和每个成员终端仍是可切换的辅助
+视图；没有绑定团队时保持原有会话列表行为。输入框在底部通栏。
 
 两条规则:主画面同一时刻只有一个内容(看不见的那个不刷新、不抓 tmux);
 在群聊之外的会话里,输入框直接把字**键入那个成员的终端**(要走群聊就用
@@ -53,10 +54,12 @@ from console.theme import THEMES, Tokens
 from console.theme import tokens as theme_tokens
 from console.timeline import TimelineEntry, history
 from console.widgets import ConversationCard, MemberCard, Timeline
+from console.workview import TaskCard, TaskDetail, TaskSummaryCard, render_task_card
 from roster import RosterError, load_effective_roster
 from roster.lifecycle import Lifecycle
 from tmuxctl import TmuxError
-from workspace.errors import WorkspaceNotFound
+from work import WorkError, WorkService, WorkSnapshot
+from workspace.errors import WorkspaceError, WorkspaceNotFound
 from workspace.model import Workspace
 from workspace.resolve import require_slug
 from workspace.session import NamespacedTmux, SessionNames, bind_tmux
@@ -66,6 +69,9 @@ MIN_SIZE = (80, 24)
 
 #: 会话列表里群聊那一项的 ID;其余项是 `member-<名字>`
 TIMELINE_ITEM_ID = "conv-timeline"
+
+#: 绑定团队后，左栏第一项是任务与证据；群聊和成员终端退居辅助视图。
+WORK_ITEM_ID = "work-board"
 
 #: 小于这个尺寸就不去动成员窗口:把别人的终端压成一条缝比留白更糟
 MIN_FIT_SIZE = (60, 15)
@@ -146,6 +152,29 @@ class ConsoleApp(App[None]):
     #detail:focus {
         background-tint: $accent 8%;
     }
+    #work {
+        width: 1fr;
+        height: 1fr;
+        display: none;
+    }
+    #tasks {
+        width: 34;
+        border-right: solid $primary-darken-2;
+        background: $surface;
+    }
+    #tasks > ListItem {
+        height: 3;
+        padding: 0 1;
+    }
+    #task-detail {
+        width: 1fr;
+        height: 1fr;
+        padding: 0 1;
+    }
+    #members > #work-board {
+        height: 5;
+        border-bottom: solid $primary-darken-2;
+    }
     """
 
     BINDINGS = [
@@ -155,6 +184,7 @@ class ConsoleApp(App[None]):
         Binding("f1", "show_shortcuts", "帮助", show=False),
         Binding("escape", "open_timeline", "回群聊"),
         Binding("f2", "open_timeline", "回群聊", show=False),
+        Binding("f3", "open_work", "任务", show=False),
         Binding("t", "toggle_theme", "深浅主题"),
         Binding("pageup", "timeline_scroll('page_up')", "上翻", show=False),
         Binding("pagedown", "timeline_scroll('page_down')", "下翻", show=False),
@@ -193,10 +223,31 @@ class ConsoleApp(App[None]):
         health_monitor: ConsoleHealthMonitor | None = None,
         fit_windows: bool = True,
         workspace: Workspace | None = None,
+        work_service: WorkService | None = None,
     ) -> None:
         super().__init__()
         self.workspace = workspace
         self.paths = (paths or BusPaths.resolve()).ensure()
+        self.work_service = work_service
+        self.work_error = ""
+        if self.work_service is None and workspace is not None:
+            try:
+                self.work_service = WorkService.for_workspace(workspace)
+            except (WorkspaceError, OSError) as exc:
+                self.work_service = None
+                if "尚未绑定团队" not in str(exc):
+                    self.work_error = str(exc)
+        try:
+            self.work_snapshot = (
+                self.work_service.snapshot() if self.work_service is not None else WorkSnapshot()
+            )
+        except (WorkError, OSError) as exc:
+            self.work_snapshot = WorkSnapshot()
+            self.work_error = str(exc)
+        self._work_digest = self._snapshot_digest(self.work_snapshot)
+        self._work_bus_stamp = self._audit_stamp()
+        self.selected_task_id = self._initial_task_id(self.work_snapshot)
+        self.active_view = "work" if self.work_service is not None else "timeline"
         #: 被 /mute 静音的成员;策略在投递前据此拒收
         self.muted: set[str] = set()
         self.pump = BusPump(
@@ -259,6 +310,7 @@ class ConsoleApp(App[None]):
             add_member=self._request_member_add,
             remove_member=self._request_member_rm,
             list_members=self._request_member_list,
+            open_task=self._request_task,
         )
 
     # --- 布局 -----------------------------------------------------------
@@ -273,20 +325,47 @@ class ConsoleApp(App[None]):
             id=f"member-{name}",
         )
 
+    def _sidebar_items(self) -> tuple[ListItem, ...]:
+        items: list[ListItem] = []
+        if self.work_service is not None:
+            items.append(
+                ListItem(
+                    TaskSummaryCard(
+                        self.work_snapshot,
+                        self.work_service.team.leader,
+                        id="card-work",
+                    ),
+                    id=WORK_ITEM_ID,
+                )
+            )
+        items.append(
+            ListItem(
+                ConversationCard(id="card-timeline", classes="conversation-card"),
+                id=TIMELINE_ITEM_ID,
+            )
+        )
+        items.extend(self._member_item(name) for name in self.members)
+        return tuple(items)
+
+    def _task_items(self) -> tuple[ListItem, ...]:
+        return tuple(
+            ListItem(TaskCard(task, classes="task-card"), id=f"task-{task.id}")
+            for task in self.work_snapshot.tasks
+        )
+
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="body"):
-            # initial_index=0:一起来停在群聊上,主画面直接是时间线
+            # 绑定团队时第一项是任务；未绑定时第一项仍是群聊时间线。
             yield ListView(
-                ListItem(
-                    ConversationCard(id="card-timeline", classes="conversation-card"),
-                    id=TIMELINE_ITEM_ID,
-                ),
-                *(self._member_item(name) for name in self.members),
+                *self._sidebar_items(),
                 id="members",
                 initial_index=0,
             )
             with Vertical(id="stage"):
+                with Horizontal(id="work"):
+                    yield ListView(*self._task_items(), id="tasks", initial_index=0)
+                    yield TaskDetail(id="task-detail")
                 yield Timeline(id="timeline")
                 yield Mirror(id="detail")
         yield Static("", id="suggestions", markup=False)
@@ -329,6 +408,10 @@ class ConsoleApp(App[None]):
         self.theme = token_set.name
         self.query_one("#timeline", Timeline).rerender()
         self.refresh_member_cards()
+        for card in self.query(TaskCard):
+            card.update(render_task_card(card.snapshot))
+        self._sync_work_summary()
+        self._render_task_detail()
 
     def on_mount(self) -> None:
         self._register_themes()
@@ -337,12 +420,18 @@ class ConsoleApp(App[None]):
         timeline = self.query_one("#timeline", Timeline)
         timeline.note(self._workspace_banner())
         timeline.note(f"[总控台] 总线目录 {self.paths.root}")
+        if self.work_error and self.work_service is None:
+            timeline.note(f"[告警] 任务账本不可用:{self.work_error}")
         timeline.backfill(history(AuditLog(self.paths)))
-        timeline.note("[总控台] ↑↓ 选会话(群聊/成员),Esc 回群聊,PgUp/PgDn 翻页;q 或 Ctrl-C 退出")
-        # 焦点先给会话列表:CON-002 的交互就是选会话。输入框的焦点规则在 CON-004/012。
+        timeline.note(
+            "[总控台] ↑↓ 选任务/群聊/成员,F3 任务,Esc 回群聊,PgUp/PgDn 翻页;"
+            "q 或 Ctrl-C 退出"
+        )
+        # 焦点先给左栏；绑定团队时首项是任务，旧工作区仍是群聊。
         self.query_one("#members", ListView).focus()
         self.refresh_member_cards()
         self.set_interval(0.5, self.refresh_member_cards)
+        self.set_interval(0.5, self._poll_work)
         if self.member_status.can_monitor:
             self.run_worker(self.member_status.run(), group="member-status", exclusive=True)
         if self.pump_enabled:
@@ -355,6 +444,7 @@ class ConsoleApp(App[None]):
             )
         self._start_mirror()
         self._sync_stage()
+        self._render_task_detail()
         self._connect_roster()
 
     def on_unmount(self) -> None:
@@ -379,7 +469,104 @@ class ConsoleApp(App[None]):
     def _sync_unread(self) -> None:
         """群聊那张卡上的未读数。"""
         for card in self.query(ConversationCard):
-            card.apply(self.unseen_traffic, watching=self.selected_member is None)
+            card.apply(self.unseen_traffic, watching=self.active_view == "timeline")
+
+    # --- 任务账本与责任主视图 --------------------------------------------
+
+    @staticmethod
+    def _snapshot_digest(snapshot: WorkSnapshot) -> str:
+        return snapshot.events[-1].digest if snapshot.events else ""
+
+    def _audit_stamp(self) -> tuple[int, int]:
+        try:
+            stat = AuditLog(self.paths).path.stat()
+        except OSError:
+            return (0, 0)
+        return (stat.st_mtime_ns, stat.st_size)
+
+    @staticmethod
+    def _initial_task_id(snapshot: WorkSnapshot) -> str | None:
+        active = [task for task in snapshot.tasks if not task.completed]
+        chosen = active[0] if active else (snapshot.tasks[0] if snapshot.tasks else None)
+        return None if chosen is None else chosen.id
+
+    def _sync_work_summary(self) -> None:
+        if self.work_service is None:
+            return
+        for card in self.query(TaskSummaryCard):
+            card.apply(self.work_snapshot, self.work_service.team.leader)
+
+    async def _poll_work(self) -> None:
+        if self.work_service is None:
+            return
+        try:
+            snapshot = await asyncio.to_thread(self.work_service.snapshot)
+        except (WorkError, OSError) as exc:
+            self.work_error = str(exc)
+            self._render_task_detail()
+            return
+        digest = self._snapshot_digest(snapshot)
+        audit_stamp = self._audit_stamp()
+        ledger_changed = digest != self._work_digest
+        communication_changed = audit_stamp != self._work_bus_stamp
+        if not ledger_changed and not communication_changed:
+            return
+        self.work_error = ""
+        self.work_snapshot = snapshot
+        self._work_digest = digest
+        self._work_bus_stamp = audit_stamp
+        if self.selected_task_id not in {task.id for task in snapshot.tasks}:
+            self.selected_task_id = self._initial_task_id(snapshot)
+        if ledger_changed:
+            await self._rebuild_task_list()
+            self._sync_work_summary()
+        self._render_task_detail()
+
+    async def _rebuild_task_list(self) -> None:
+        listing = self.query_one("#tasks", ListView)
+        await listing.clear()
+        for item in self._task_items():
+            await listing.append(item)
+        if self.selected_task_id is None:
+            return
+        for index, item in enumerate(listing.children):
+            if item.id == f"task-{self.selected_task_id}":
+                listing.index = index
+                return
+
+    def _render_task_detail(self) -> None:
+        found = self.query("#task-detail")
+        if not found or self.work_service is None:
+            return
+        detail = found.only_one(TaskDetail)
+        if self.work_error:
+            detail.show_error(self.work_error)
+            return
+        if self.selected_task_id is None:
+            detail.show_empty(self.work_service.team.leader)
+            return
+        try:
+            task = self.work_snapshot.get(self.selected_task_id)
+        except (WorkspaceError, OSError) as exc:
+            detail.show_error(str(exc))
+            return
+        communications = [
+            entry
+            for entry in AuditLog(self.paths).entries()
+            if entry.get("event") == "deposit" and entry.get("task") == task.id
+        ]
+        detail.show_task(self.work_snapshot, task, communications)
+
+    def _request_task(self, task_id: str | None) -> list[str]:
+        if self.work_service is None:
+            return ["/task 不可用:当前工作区没有绑定团队"]
+        if task_id is not None:
+            try:
+                self.work_snapshot.get(task_id)
+            except (WorkError, OSError) as exc:
+                return [f"/task 失败:{exc}"]
+        self.call_later(self.select_work, task_id)
+        return [f"[task] 打开 {task_id or '任务看板'}"]
 
     # --- 命令面板要用的名册/生命周期 ---------------------------------------
 
@@ -424,16 +611,11 @@ class ConsoleApp(App[None]):
             self.health_monitor.track(self.members)
         listing = self.query_one("#members", ListView)
         await listing.clear()
-        await listing.append(
-            ListItem(
-                ConversationCard(id="card-timeline", classes="conversation-card"),
-                id=TIMELINE_ITEM_ID,
-            )
-        )
-        for name in self.members:
-            await listing.append(self._member_item(name))
+        for item in self._sidebar_items():
+            await listing.append(item)
         self.query_one("#compose", ComposeInput).members = self.members
         self._sync_unread()
+        self._highlight_conversation(self.selected_member)
 
     def _roster_cwd(self) -> Path | None:
         return None if self.workspace is None else self.workspace.project_root
@@ -522,21 +704,20 @@ class ConsoleApp(App[None]):
         self._rebind_tmux(self._session_names())
         self._apply_workspace_chrome()
         self.members = member_names(cwd=workspace.project_root)
+        self._load_workspace_work(workspace)
         self.member_status.track(self.members)
         if self.health_monitor is not None:
             self.health_monitor.track(self.members)
         listing = self.query_one("#members", ListView)
         await listing.clear()
-        await listing.append(
-            ListItem(
-                ConversationCard(id="card-timeline", classes="conversation-card"),
-                id=TIMELINE_ITEM_ID,
-            )
-        )
-        for name in self.members:
-            await listing.append(self._member_item(name))
+        for item in self._sidebar_items():
+            await listing.append(item)
+        await self._rebuild_task_list()
         self.query_one("#compose", ComposeInput).members = self.members
-        self.select_member(None)
+        if self.work_service is not None:
+            self.select_work()
+        else:
+            self.select_member(None)
         self.unseen_traffic = 0
         self._sync_unread()
         timeline = self.query_one("#timeline", Timeline)
@@ -547,6 +728,26 @@ class ConsoleApp(App[None]):
         self._connect_roster()
         self.refresh_member_cards()
         self.query_one("#members", ListView).focus()
+
+    def _load_workspace_work(self, workspace: Workspace) -> None:
+        """切工作区时同步切换任务账本；未绑定团队则保留旧群聊主视图。"""
+        self.work_error = ""
+        try:
+            service = WorkService.for_workspace(workspace)
+        except (WorkspaceError, OSError) as exc:
+            self.work_service = None
+            self.work_snapshot = WorkSnapshot()
+            self.work_error = "" if "尚未绑定团队" in str(exc) else str(exc)
+        else:
+            self.work_service = service
+            try:
+                self.work_snapshot = service.snapshot()
+            except (WorkError, OSError) as exc:
+                self.work_snapshot = WorkSnapshot()
+                self.work_error = str(exc)
+        self._work_digest = self._snapshot_digest(self.work_snapshot)
+        self._work_bus_stamp = self._audit_stamp()
+        self.selected_task_id = self._initial_task_id(self.work_snapshot)
 
     # --- 成员详情:终端画面镜像 -------------------------------------------
 
@@ -630,12 +831,15 @@ class ConsoleApp(App[None]):
         detail = self._mirror()
         if detail is None:
             return
-        watching_member = self.selected_member is not None
+        watching_member = self.active_view == "member" and self.selected_member is not None
+        watching_work = self.active_view == "work" and self.work_service is not None
+        watching_timeline = not watching_member and not watching_work
         detail.display = watching_member
-        self.query_one("#timeline", Timeline).display = not watching_member
+        self.query_one("#work").display = watching_work
+        self.query_one("#timeline", Timeline).display = watching_timeline
         if self._mirror_timer is not None:
             self._mirror_timer.resume() if watching_member else self._mirror_timer.pause()
-        if not watching_member:
+        if watching_timeline:
             self.unseen_traffic = 0
         self._sync_unread()
         self._update_placeholder()
@@ -646,6 +850,7 @@ class ConsoleApp(App[None]):
 
     def select_member(self, name: str | None) -> None:
         """切会话:`None` 表示回群聊时间线。左栏高亮跟着走。"""
+        self.active_view = "timeline" if name is None else "member"
         self.selected_member = name
         mirror = self._mirror()
         if mirror is not None:
@@ -653,13 +858,38 @@ class ConsoleApp(App[None]):
         self._sync_stage()
         self._highlight_conversation(name)
 
+    def select_work(self, task_id: str | None = None) -> None:
+        if self.work_service is None:
+            self.select_member(None)
+            return
+        if task_id is not None:
+            self.selected_task_id = task_id
+        elif self.selected_task_id is None:
+            self.selected_task_id = self._initial_task_id(self.work_snapshot)
+        self.active_view = "work"
+        self.selected_member = None
+        self._sync_stage()
+        self._highlight_conversation(None)
+        self._render_task_detail()
+        self.call_after_refresh(self._render_task_detail)
+        tasks = self.query_one("#tasks", ListView)
+        tasks.focus()
+        if self.selected_task_id is not None:
+            for index, item in enumerate(tasks.children):
+                if item.id == f"task-{self.selected_task_id}":
+                    tasks.index = index
+                    break
+
     def _highlight_conversation(self, name: str | None) -> None:
         """把左栏高亮挪到当前会话上(用代码切会话时也要同步)。"""
         listing = self.query("#members")
         if not listing:
             return
         view = listing.only_one(ListView)
-        want = TIMELINE_ITEM_ID if name is None else f"member-{name}"
+        if self.active_view == "work":
+            want = WORK_ITEM_ID
+        else:
+            want = TIMELINE_ITEM_ID if name is None else f"member-{name}"
         for index, item in enumerate(view.children):
             if item.id == want:
                 if view.index != index:
@@ -669,12 +899,22 @@ class ConsoleApp(App[None]):
     def action_open_timeline(self) -> None:
         self.select_member(None)
 
+    def action_open_work(self) -> None:
+        self.select_work()
+
     def action_show_shortcuts(self) -> None:
         self.push_screen(ShortcutHelpScreen())
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         item = event.item
         if item is None or item.id is None:
+            return
+        if item.id == WORK_ITEM_ID:
+            self.select_work()
+            return
+        if item.id.startswith("task-"):
+            self.selected_task_id = item.id.removeprefix("task-")
+            self._render_task_detail()
             return
         if item.id == TIMELINE_ITEM_ID:
             self.select_member(None)
@@ -729,6 +969,9 @@ class ConsoleApp(App[None]):
             compose.placeholder = (
                 f"直连 {self.selected_member}: 空↑↓/Del/Enter/Shift+Tab透传;Fn+↑↓回看"
             )
+        elif self.active_view == "work" and self.work_service is not None:
+            task = f" · 关联 {self.selected_task_id}" if self.selected_task_id else ""
+            compose.placeholder = f"对 Leader {self.work_service.team.leader} 说话{task}"
         elif self.last_target is None:
             compose.placeholder = "@名字 说点什么,回车发送"
         else:
@@ -830,12 +1073,18 @@ class ConsoleApp(App[None]):
         if addressed is None and self.selected_member is not None:
             self.type_into_member(self.selected_member, raw, text)
             return
-        target = addressed or self.last_target
+        default_target = self.last_target
+        if self.active_view == "work" and self.work_service is not None:
+            default_target = self.work_service.team.leader
+        target = addressed or default_target
         if target is None:
             timeline.note("[总控台] 还没有对话对象,先用 @名字 指定收件人")
             return
         try:
-            deposit(Message.create(target, text, sender="human"), self.paths)
+            extra: dict[str, str] = {}
+            if self.active_view == "work" and self.selected_task_id is not None:
+                extra["task"] = self.selected_task_id
+            deposit(Message.create(target, text, sender="human", **extra), self.paths)
         except OSError as exc:
             timeline.note(f"[告警] bus 目录不可写:{type(exc).__name__}: {exc}")
             return
@@ -859,7 +1108,7 @@ class ConsoleApp(App[None]):
             self.member_status.mark_working(result.message.to)
         self.query_one("#timeline", Timeline).add(TimelineEntry.from_result(result))
         # 人在别的会话里时,群聊那张卡上记未读数
-        if self.selected_member is not None:
+        if self.active_view != "timeline":
             self.unseen_traffic += 1
             self._sync_unread()
 
@@ -872,6 +1121,17 @@ class ConsoleApp(App[None]):
         只有知道要按 Tab 的人才走得通)。
         """
         mirror = self._mirror()
+        if self.active_view == "work" and self.work_service is not None:
+            detail = self.query_one("#task-detail", TaskDetail)
+            {
+                "page_up": detail.scroll_page_up,
+                "page_down": detail.scroll_page_down,
+                "home": detail.scroll_home,
+                "end": detail.scroll_end,
+                "line_up": detail.scroll_up,
+                "line_down": detail.scroll_down,
+            }[direction]()
+            return
         if self.selected_member is not None and mirror is not None:
             {
                 "page_up": mirror.action_history_up,

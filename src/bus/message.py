@@ -1,7 +1,7 @@
 """消息 schema v1 的定义与校验。
 
 冻结契约(架构决策 §3):`to/from/text/ts` 四字段必备、含义不变;新能力
-只能加可选字段(`id`/`kind`/`replyTo`),读方必须容忍未知字段。所以这里
+只能加可选字段(`id`/`kind`/`replyTo`/`task`),读方必须容忍未知字段。所以这里
 的校验只拒绝"必备字段缺失或类型不对"和"已知可选字段类型不对",其余
 未知字段原样保留在 `extra` 里带着走。
 """
@@ -20,7 +20,7 @@ TS_FORMAT = "%Y-%m-%d %H:%M:%S"
 REQUIRED_FIELDS = ("to", "from", "text", "ts")
 
 #: 已知可选字段(JSON 里的名字)
-OPTIONAL_FIELDS = ("id", "kind", "replyTo")
+OPTIONAL_FIELDS = ("id", "kind", "replyTo", "task")
 
 #: 远程身份前缀:来自 IM 群的人是 `im:小明`。它不是 `human`,所以照样受
 #: 限频约束;作为收件人时也没有 tmux 会话,由网关代投(见 `bus.hub`)
@@ -64,6 +64,7 @@ class Message:
     id: str | None = None
     kind: str | None = None
     reply_to: str | None = None
+    task: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -77,6 +78,7 @@ class Message:
         reply_to: str | None = None,
         message_id: str | None = None,
         ts: str | None = None,
+        task: str | None = None,
         **extra: Any,
     ) -> Message:
         """新建一条消息,自动补 `ts` 和 `id`。"""
@@ -88,6 +90,7 @@ class Message:
             id=message_id or uuid.uuid4().hex,
             kind=kind,
             reply_to=reply_to,
+            task=task,
             extra=dict(extra),
         )
 
@@ -108,6 +111,7 @@ class Message:
             id=_optional_str(raw, "id"),
             kind=_optional_str(raw, "kind"),
             reply_to=_optional_str(raw, "replyTo"),
+            task=_optional_str(raw, "task"),
             extra={key: value for key, value in raw.items() if key not in known},
         )
 
@@ -119,7 +123,12 @@ class Message:
             "text": self.text,
             "ts": self.ts,
         }
-        for key, value in (("id", self.id), ("kind", self.kind), ("replyTo", self.reply_to)):
+        for key, value in (
+            ("id", self.id),
+            ("kind", self.kind),
+            ("replyTo", self.reply_to),
+            ("task", self.task),
+        ):
             if value is not None:
                 payload[key] = value
         payload.update(self.extra)

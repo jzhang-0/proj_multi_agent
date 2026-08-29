@@ -19,7 +19,8 @@
 
 - [ ] **TEAM-002** — 任务账本与责任流：为工作区建立不可覆盖的任务事件流，覆盖 Leader 建任务/拆解/派工、成员进展/阻塞/提交证据、评审通过/退回、Leader 验收/重新分派/接管与向 human 汇报；任务看板和详情页以账本为主，群聊仅显示关联沟通。成员不能最终结项，任何最终完成都能追到负责 Leader。
   - 前置:TEAM-001。
-  - 进行中:前置 TEAM-001 已完成，待认领。
+  - 处理登记：Codex，2026-08-29 22:23 +0800，分支 `team-002-codex`。
+  - 进行中：正在实现工作区任务事件账本、责任状态机及任务主界面。
 
 - [x] **TEAM-003** — Fable 团队运行时激活：团队成员档案可保存经验证的本机启动命令与参数；默认 `fable-core` 固定映射 Fable/Sonnet/Opus 到 `claude`，Luna/Sol 到 `codex`，不生成 `agent` 成员。`amux team activate [team-id]` 先校验全部运行器，再绑定团队、仅关闭当前工作区旧名册的已启用成员、写入 `~/.amux/workspaces/<slug>/members.toml` 并拉起新名册。Luna 使用 Codex 的 `priority` 服务档以兑现 `high-fast`；Sol 使用 `xhigh`。激活失败不得改写原有绑定或成员名单。
   - 前置:TEAM-001。

@@ -42,10 +42,10 @@ def test_default_team_records_the_agreed_leader_and_members(tmp_path: Path) -> N
             "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1",
             "NO_COLOR": "",
         }
+        assert member.args[-2:] == ("--permission-mode", "auto")
     for member in team.members[3:]:
         assert dict(member.env) == {}
-        assert "--add-dir" in member.args
-        assert member.args[member.args.index("--add-dir") + 1] == "~/.amux"
+        assert member.args[-4:] == ("-s", "danger-full-access", "-a", "never")
     with pytest.raises(Exception, match="已存在"):
         teams.init_default()
 

@@ -5,22 +5,21 @@
 # 下面每条写清:用什么参数免弹窗、以及仍然可能冒出来的残留弹窗。
 # auto_respawn 缺省为 false;需要无人值守恢复时才按成员显式开启。
 
-# claude: --permission-mode acceptEdits 自动接受文件编辑,不再为每次 Edit/Write 弹窗。
-# 项目级白名单见 .claude/settings.json,放行 Bash(./msg *)——群聊回执不必人点允许。
-# 残留弹窗:网络请求、git push / 删文件 / 装软件等危险 bash,以及切换到 bypass 之外的权限模式时。
+# claude: --permission-mode auto 由 Claude 的自动分类器判断并执行工具调用。
+# 项目级白名单见 .claude/settings.json,继续放行 Bash(./msg *) 与 Bash(amux msg *)。
+# 残留限制:仍受 Claude 账号/组织策略和操作系统权限约束。
 [[members]]
 name = "claude"
 command = "claude"
-args = ["--permission-mode", "acceptEdits"]
+args = ["--permission-mode", "auto"]
 enabled = true
 
-# codex: -s workspace-write 允许改工作区内文件; --add-dir ~/.amux 允许直接写消息总线;
-# -a on-request 只在模型主动要提权时问人。
-# 残留弹窗:~/.amux 之外的工作区外路径、网络,以及 agent 申请 escalated approvals 时。
+# codex: -s danger-full-access 关闭命令沙箱;-a never 不请求人工批准。
+# 这会给 Codex 完整文件与命令权限;仍不能绕过 macOS/SIP 等操作系统保护。
 [[members]]
 name = "codex"
 command = "codex"
-args = ["-s", "workspace-write", "--add-dir", "~/.amux", "-a", "on-request"]
+args = ["-s", "danger-full-access", "-a", "never"]
 enabled = true
 
 # cursor: agent --force 跳过交互确认,按默认权限直接跑。

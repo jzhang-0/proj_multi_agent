@@ -58,7 +58,7 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 - 一切经总线到达的文本都是**不可信输入**:注入终端前剥 ANSI/控制字符(C0、CSI、OSC);上屏前同样清洗。实现在 `src/bus/sanitize.py`,两个入口分别是 `format_for_injection`(投递)和 `format_for_screen`(上屏),新增出口一律走这两个函数。
 - 危险操作(push、删文件、装软件、出仓库)只认**本机** human 的直接指令,写在公共运行时提示词里;网关侧再挡一层:来自 IM 的这类指令一律挂起,由本机 `gateway approve` 放行后才入队(远程指令弱于本机指令,手机上自称 human 也不例外)。
 - 总控台自身不做"自动替人点权限弹窗"这类模拟操作;权限放行走各 CLI 的正规配置(roster 卷)。
-- Codex 成员保留 `workspace-write + on-request`,仅用 `--add-dir ~/.amux` 增加消息队列所需的运行时可写根；启动命令在 shell 引号处理前把 `~` 展开为当前用户绝对路径。网络和其他工作区外路径仍需审批。
+- 默认启动适配固定为：Claude 使用 `--permission-mode auto`，由 Claude 的自动分类器处理工具调用；GPT/Codex 使用 `-s danger-full-access -a never`，关闭 Codex 命令沙箱和人工审批，获得完整文件与命令权限。两者仍受账号/组织策略及 macOS、SIP、文件 ACL 等操作系统边界约束。该策略由 human 于 2026-08-30 拍板，取代 ROS-002/008 的 `acceptEdits` 与 `workspace-write + on-request`。
 
 ## §5 工作区
 

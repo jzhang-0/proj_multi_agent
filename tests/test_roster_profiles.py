@@ -8,23 +8,16 @@ from roster.load import load_roster
 from roster.paths import repo_root
 
 EXPECTED_ARGS = {
-    "claude": ("--permission-mode", "acceptEdits"),
-    "codex": (
-        "-s",
-        "workspace-write",
-        "--add-dir",
-        "~/.amux",
-        "-a",
-        "on-request",
-    ),
+    "claude": ("--permission-mode", "auto"),
+    "codex": ("-s", "danger-full-access", "-a", "never"),
     "cursor": ("--force",),
     "agy": ("--dangerously-skip-permissions", "-i"),
 }
 
 # 每家注释里必须同时出现「免弹窗手段」和「残留弹窗」两类信息的关键词。
 COMMENT_MARKERS = {
-    "claude": ("acceptEdits", "残留弹窗", ".claude/settings.json", "./msg"),
-    "codex": ("workspace-write", "--add-dir", "~/.amux", "on-request", "残留弹窗"),
+    "claude": ("--permission-mode auto", "残留限制", ".claude/settings.json", "amux msg"),
+    "codex": ("danger-full-access", "-a never", "完整文件与命令权限", "操作系统保护"),
     "cursor": ("--force", "残留弹窗"),
     "agy": ("--dangerously-skip-permissions", "残留弹窗"),
 }

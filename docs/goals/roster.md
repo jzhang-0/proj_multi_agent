@@ -6,7 +6,7 @@
   - 前置:无。
   - 验证:`uv run ruff check . && uv run pytest tests/test_roster_load.py -q`
   - 证据:`roster.toml` + `src/roster/{schema,load,start,__main__}.py`;`start.sh` 改为 `uv run python -m roster`;`tests/test_roster_load.py` 11 passed(四成员加载、路径注入、停用排除、保留名/重名/缺字段/类型错误、start.sh 不再内嵌 ROSTER 数组)。
-- [x] **ROS-002** — 四个真实成员的适配档案落进 roster.toml:claude(`--permission-mode acceptEdits` + 项目级 `./msg` 白名单)、codex(`-s workspace-write -a on-request`)、cursor(`agent --force`)、agy(`--dangerously-skip-permissions -i`);每家的免弹窗方式和残留弹窗写进注释。
+- [x] **ROS-002** — （历史启动策略，现行策略见 ROS-009）四个真实成员的适配档案落进 roster.toml:claude(`--permission-mode acceptEdits` + 项目级 `./msg` 白名单)、codex(`-s workspace-write -a on-request`)、cursor(`agent --force`)、agy(`--dangerously-skip-permissions -i`);每家的免弹窗方式和残留弹窗写进注释。
   - 前置:ROS-001。
   - 验证:`uv run ruff check . && uv run pytest tests/test_roster_profiles.py tests/test_roster_load.py -q`
   - 证据:`roster.toml` 四成员参数与免弹窗/残留弹窗注释;`.claude/settings.json` 放行 `Bash(./msg *)`;`tests/test_roster_profiles.py` 钉住 flags、注释关键词与白名单,连同 ROS-001 共 14 passed。
@@ -32,12 +32,14 @@
   - 验证:`uv run --offline ruff check . && uv run --offline pytest tests/test_roster_protocol.py tests/test_roster_lifecycle.py tests/test_release_package.py -q`
   - 证据:2026-08-23 在 `main` 实测 ruff 全绿、25 passed;`AGENTS.md` 与 `src/amux_runtime/protocol.md` 同步为 7 条「amux 协作协议」,`render_member_greeting()` 使用通用成员身份并保留 0.1.x 旧 API 兼容别名;`tests/test_roster_protocol.py` 明确拒绝固定成员、只在被 @、6 轮、30 秒/8 条、32KB/50 条等旧提示回归,真实 tmux 生命周期和 wheel 资源一致性均通过;另实际渲染 `sol@proj_fppt` 开场白检查了最终可见文本。
 
-- [x] **ROS-008** — Codex 成员可写 amux 运行时:普通 `codex` 预设及默认 `fable-core` 的 Luna/Sol 启动参数加入 `--add-dir ~/.amux`,让 `workspace-write` 内可直接执行会写消息队列的 `amux msg`；启动命令必须把 `~` 展开为当前用户绝对路径,避免 shell 引号阻止展开。源码名册、wheel 快照、团队档案、测试和文档同步；保留 `on-request` 对网络及其他工作区外路径的审批,不自动重启正在运行的成员。
+- [x] **ROS-008** — （历史启动策略，现行策略见 ROS-009）Codex 成员可写 amux 运行时:普通 `codex` 预设及默认 `fable-core` 的 Luna/Sol 启动参数加入 `--add-dir ~/.amux`,让 `workspace-write` 内可直接执行会写消息队列的 `amux msg`；启动命令必须把 `~` 展开为当前用户绝对路径,避免 shell 引号阻止展开。源码名册、wheel 快照、团队档案、测试和文档同步；保留 `on-request` 对网络及其他工作区外路径的审批,不自动重启正在运行的成员。
   - 前置:ROS-002、TEAM-003。
   - 验证（Codex，2026-08-23）:`uv run --offline ruff check src/roster/start.py src/team/store.py tests/test_roster_load.py tests/test_roster_profiles.py tests/test_teams.py tests/test_team_activation.py` 通过；`uv run --offline pytest tests/test_roster_load.py tests/test_roster_profiles.py tests/test_teams.py tests/test_team_activation.py tests/test_release_package.py -q` 为 `31 passed in 0.34s`；本机 `codex 0.149.0` 以 `-s workspace-write --add-dir /Users/jzhang/.amux -a on-request --help` 成功解析参数，实际渲染普通 codex 启动命令确认 `~/.amux` 展开为 `/Users/jzhang/.amux`。
   - 证据:`roster.toml` 与 `src/amux_runtime/roster.toml` 的 codex 预设、`src/team/store.py` 的 Luna/Sol 都加入 `--add-dir ~/.amux`；`src/roster/start.py` 仅对 `--add-dir` 后的路径调用 `Path.expanduser()`，再交给 `shlex.join`。测试钉住三类档案、wheel 快照一致性、团队激活投影和绝对路径启动命令；README 与架构说明新增权限边界。
   - 视觉例外（纯启动参数）:本 Goal 不改变 TUI 布局或渲染，不制造静态截图；可见效果是 Codex 成员执行 `amux msg` 不再因写 `~/.amux` 请求沙箱提权，需在成员下次启动或人工重启后生效。
 
-- [ ] **ROS-009** — 默认成员启动权限策略：所有 Claude 启动适配统一使用 `--permission-mode auto`；所有 GPT/Codex 启动适配统一使用 `-s danger-full-access -a never`，获得完整文件与命令权限且不再请求批准。同步源码名册、wheel 运行时快照、默认 `fable-core` 团队档案、架构说明与自动化测试；更新本机默认团队并重建 `proj_sv_1` 成员，实测 Claude 显示 auto mode、Luna 能在完整权限下启动并完成一轮。
+- [x] **ROS-009** — 默认成员启动权限策略：所有 Claude 启动适配统一使用 `--permission-mode auto`；所有 GPT/Codex 启动适配统一使用 `-s danger-full-access -a never`，获得完整文件与命令权限且不再请求批准。同步源码名册、wheel 运行时快照、默认 `fable-core` 团队档案、架构说明与自动化测试；更新本机默认团队并重建 `proj_sv_1` 成员，实测 Claude 显示 auto mode、Luna 能在完整权限下启动并完成一轮。
   - 前置：ROS-002、ROS-008、TEAM-003。
-  - 处理登记：Codex，2026-08-30 00:06 CST，分支 `ros-009-codex`。
+  - 验证（Codex，2026-08-30）：`uv run ruff check .` 通过；`uv run pytest tests/test_roster_load.py tests/test_roster_profiles.py tests/test_teams.py tests/test_team_activation.py tests/test_workspace_members.py tests/test_release_package.py -q` 为 `39 passed in 0.31s`；本机 `claude --permission-mode auto --help` 与 `codex -s danger-full-access -a never --help` 均成功解析参数；实际运行 `amux team init --force` 与 `amux team activate` 重建 `proj_sv_1` 五个成员。
+  - 证据：`roster.toml`、`src/amux_runtime/roster.toml` 与 `src/team/store.py` 分别更新普通预设、wheel 快照和默认 Fable 团队，测试钉住三个 Claude 及 Luna/Sol 的完整投影；README、产品定义和架构安全边界已删除过时的 `acceptEdits`、`workspace-write + on-request` 现行表述。真实 Fable pane 底栏显示 `auto mode on`；真实 Luna pane 显示 `permissions: YOLO mode`，进程命令行为 `-s danger-full-access -a never`，并实际执行 `pwd`、`git status --short --branch` 后回复 `READY` 与干净的 `main` 状态。
+  - 视觉例外（纯启动策略）：本 Goal 不改变 amux TUI 布局或渲染；真实 Claude/Codex pane 的模式文字与实际工具回合已经完成可见验证，不生成静态 fixture。

@@ -112,9 +112,9 @@ checkout
   → setup Node（固定项目要求的 LTS major）
   → npm ci --prefix web
   → npm run typecheck --prefix web
+  → npm run licenses --prefix web
   → npm run build --prefix web
   → npm run test:unit --prefix web
-  → npm run licenses --prefix web
   → uv sync --locked
   → uv run ruff check .
   → uv run pytest -q
@@ -129,10 +129,10 @@ checkout
 ```bash
 npm ci --prefix web
 npm run typecheck --prefix web
+npm run licenses --prefix web
 npm run build --prefix web
 npm run test:unit --prefix web
 npm run test:e2e --prefix web
-npm run licenses --prefix web
 uv run ruff check .
 uv run pytest tests/test_release_package.py -q
 uv run python -m qa.release --out-dir /tmp/amux-release
@@ -151,10 +151,11 @@ uv run python -m qa.release --out-dir /tmp/amux-release
 
 ### 许可证生成
 
-`scripts/licenses.mjs` 读取 `web/node_modules` 中生产依赖的 `package.json` 与许可证文件，按包名、版本、license、版权声明和许可证文本路径输出稳定排序的 `THIRD_PARTY_LICENSES.json`。它应在 `npm ci` 后运行，并在 CI 检查清单与工作树的差异：
+`scripts/licenses.mjs` 读取 `web/node_modules` 中生产依赖的 `package.json` 与许可证文件，按包名、版本、license、版权声明和许可证文本输出稳定排序的 `THIRD_PARTY_LICENSES.json`。它应在 `npm ci` 后、bundle 前运行；构建脚本将该 JSON 一并复制到 `web/dist`，使后续 wheel 映射携带完整通知，而不是留下开发机 `node_modules` 路径：
 
 ```bash
 npm run licenses --prefix web
+npm run build --prefix web
 git diff --check -- web/THIRD_PARTY_LICENSES.json
 git diff --exit-code -- web/THIRD_PARTY_LICENSES.json
 ```

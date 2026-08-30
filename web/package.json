@@ -1,0 +1,26 @@
+{
+  "name": "amux-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/serve.mjs",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "licenses": "node scripts/licenses.mjs",
+    "verify": "npm run typecheck && npm run test:unit && npm run licenses && npm run build"
+  },
+  "dependencies": {
+    "@xterm/xterm": "6.0.0",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.10.1",
+    "esbuild": "0.25.12",
+    "jsdom": "26.1.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

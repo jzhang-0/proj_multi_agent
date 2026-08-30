@@ -117,10 +117,11 @@ def test_session_and_vocabulary_work_without_a_workspace(
         assert resp.headers["cache-control"] == "no-store"
         body = resp.json()
         assert body["actor"] == "human"
+        assert isinstance(body["write_token"], str)
         assert body["capabilities"] == {
             "stream": True,
             "mirror": False,
-            "compose": False,
+            "compose": True,
             "control": False,
         }
 

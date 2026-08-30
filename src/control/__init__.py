@@ -1,6 +1,11 @@
 """TUI、Web 与 CLI 共用的控制面、读模型、租约和纯文本识别。"""
 
 from control.actions import ControlFeedback, MemberActionController
+from control.attachments import (
+    ContentAddressedImageStore,
+    ImageAttachmentError,
+    attachment_id_from_name,
+)
 from control.health import Fault, FaultEvent, FaultKind, HealthMonitor
 from control.lease import (
     DEFAULT_TTL_SECONDS,
@@ -19,6 +24,7 @@ from control.members import (
     member_names,
     pending_counts,
 )
+from control.messages import ComposeError, MessageComposeService, MessageReceipt, TargetNotFound
 from control.tasks import (
     TaskChildView,
     TaskCommunicationView,
@@ -49,12 +55,15 @@ from control.vocabulary import Vocabulary, vocabulary
 
 __all__ = [
     "ControlFeedback",
+    "ComposeError",
+    "ContentAddressedImageStore",
     "DEFAULT_TTL_SECONDS",
     "Fault",
     "FaultEvent",
     "FaultKind",
     "HealthMonitor",
     "HubDeliveryLease",
+    "ImageAttachmentError",
     "Lease",
     "LeaseDenied",
     "LeaseState",
@@ -63,12 +72,15 @@ __all__ = [
     "MemberSnapshotView",
     "MemberStatusService",
     "MemberLeaseManager",
+    "MessageComposeService",
+    "MessageReceipt",
     "TaskChildView",
     "TaskCommunicationView",
     "TaskDetailView",
     "TaskEventView",
     "TaskListItemView",
     "TaskSummaryView",
+    "TargetNotFound",
     "TimelineCategory",
     "TimelineEntry",
     "TimelineProjector",
@@ -80,6 +92,7 @@ __all__ = [
     "leases_dir",
     "leases_root",
     "member_names",
+    "attachment_id_from_name",
     "pending_counts",
     "selected_default_task_id",
     "task_board_view",

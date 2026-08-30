@@ -202,6 +202,9 @@ def timeline_entry_payload(entry: TimelineEntry) -> dict[str, Any]:
         "attachment_count": entry.attachment_count,
         "category": str(entry.resolved_category),
         "has_body": entry.has_body,
+        "kind": entry.kind or None,
+        "reply_to": entry.reply_to or None,
+        "attachment_ids": list(entry.attachment_ids),
     }
 
 
@@ -338,14 +341,20 @@ def health_dto(
     }
 
 
-def session_dto(tracker: RevisionTracker) -> dict[str, Any]:
+def session_dto(
+    tracker: RevisionTracker,
+    *,
+    actor: str = "human",
+    write_token: str | None = None,
+) -> dict[str, Any]:
     return {
-        "actor": "human",
+        "actor": actor,
         "epoch": tracker.epoch,
         "epoch_started_at": tracker.epoch_started_at,
         "server_time_at": time.time(),
         "revisions": tracker.revisions(),
-        "capabilities": {"stream": True, "mirror": False, "compose": False, "control": False},
+        "write_token": write_token,
+        "capabilities": {"stream": True, "mirror": False, "compose": True, "control": False},
     }
 
 
@@ -355,6 +364,9 @@ def bootstrap_dto(
     cache: TimelineCache,
     member_status: MemberStatusService,
     health_monitor: HealthMonitor | None = None,
+    *,
+    actor: str = "human",
+    write_token: str | None = None,
 ) -> dict[str, Any]:
     payload = {
         "workspace": workspace_dto(ctx, tracker),
@@ -363,7 +375,7 @@ def bootstrap_dto(
         "members": members_dto(ctx, tracker, member_status),
         "health": health_dto(ctx, tracker, health_monitor),
         "timeline": timeline_dto(ctx, tracker, cache),
-        "session": session_dto(tracker),
+        "session": session_dto(tracker, actor=actor, write_token=write_token),
     }
     payload["epoch"] = tracker.epoch
     payload["revisions"] = tracker.revisions()

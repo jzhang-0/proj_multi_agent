@@ -21,6 +21,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from control.health import HealthMonitor
 from control.members import MemberStatusService
+from web.actions import (
+    download_attachment,
+    read_image_body,
+    read_message_payload,
+    send_message,
+    upload_attachment,
+)
 from web.auth import COOKIE_NAME, WebSession
 from web.context import build_context
 from web.errors import ApiError, ApiJSONResponse, register_error_handlers
@@ -217,6 +224,14 @@ def create_app(
                 domain="web",
             )
 
+    def require_write_session(request: Request) -> None:
+        if not session.verify_cookie(request.headers.get("x-amux-session")):
+            raise ApiError(
+                "unauthorized",
+                "写操作缺少有效 X-Amux-Session",
+                status_code=401,
+            )
+
     api = APIRouter(
         prefix=API_PREFIX,
         dependencies=[Depends(require_session), Depends(require_runtime)],
@@ -225,7 +240,11 @@ def create_app(
 
     @api.get("/session")
     async def get_session() -> dict:
-        return session_dto(app.state.revisions)
+        return session_dto(
+            app.state.revisions,
+            actor=session.actor,
+            write_token=session.session_id,
+        )
 
     @api.get("/bootstrap")
     async def get_bootstrap() -> dict:
@@ -236,6 +255,8 @@ def create_app(
             app.state.timeline_cache,
             app.state.member_status,
             app.state.health_monitor,
+            actor=session.actor,
+            write_token=session.session_id,
         )
 
     @api.get("/vocabulary")
@@ -301,6 +322,22 @@ def create_app(
     async def get_health() -> dict:
         ctx = build_context(tmux=app.state.tmux)
         return health_dto(ctx, app.state.revisions, app.state.health_monitor)
+
+    @api.post("/attachments", dependencies=[Depends(require_write_session)])
+    async def post_attachment(request: Request) -> dict:
+        ctx = build_context(tmux=app.state.tmux)
+        return upload_attachment(ctx, await read_image_body(request))
+
+    @api.get("/attachments/{attachment_id}")
+    async def get_attachment(attachment_id: str) -> Response:
+        ctx = build_context(tmux=app.state.tmux)
+        return download_attachment(ctx, attachment_id)
+
+    @api.post("/messages", dependencies=[Depends(require_write_session)])
+    async def post_message(request: Request) -> dict:
+        ctx = build_context(tmux=app.state.tmux)
+        payload = await read_message_payload(request)
+        return send_message(ctx, actor=session.actor, payload=payload)
 
     app.include_router(api)
 

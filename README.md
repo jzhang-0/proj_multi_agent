@@ -135,6 +135,16 @@ amux team current
 ```
 
 团队档案记录 Leader、成员、模型偏好和职责。激活后，amux 会把团队成员投影到当前工作区名册。
+需要扩展已保存团队时，可用 `add-member` 追加成员；它只修改团队档案，不启动进程或修改工作区名册，完成后再显式激活：
+
+```bash
+amux team add-member fable-core reviewer \
+  --model "Review Model" --responsibility "检查实现与证据" \
+  --command reviewer-cli
+amux team activate fable-core
+```
+
+也可用 `--preset claude|codex` 套用默认团队同类启动适配：runner、环境变量和固定权限参数来自预设，而 `--model`/`--effort` 会按本次参数生成；再用 `--command`/`--arg`/`--env` 覆盖。命令会先确认启动器存在于本机。
 启动时所有人读取公共提示词，Leader 与普通成员再分别读取自己的角色提示；Leader 还会拿到完整
 团队能力名册用于派工。提示正文集中维护在 [`src/amux_runtime/prompts/`](src/amux_runtime/prompts/README.md)，
 修改 Markdown 即可，不需要改 Python。

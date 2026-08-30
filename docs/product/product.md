@@ -72,7 +72,7 @@
 - 工作区内部的寻址方式不变:成员之间仍然 `msg claude`,短名在边界层解析到本工作区。
 - 在某个目录敲 `amux`,就在**这个目录**里工作(未登记则自动登记);不会跳到 amux 自己的仓库。
 - 成员不默认四个。仓库根 `roster.toml` 只是预设,工作区用 `amux member add|rm` 自己增减。
-- 工作区可绑定一个保存于 `~/.amux/teams/` 的团队档案；档案说明 Leader、成员、模型偏好、职责及经验证的启动适配（含环境变量）。默认 `fable-core` 的 Claude 系列由 `claude --permission-mode auto` 启动，关闭 alternate screen 以让 tmux 保留可供总控台回看的历史，并以空 `NO_COLOR` 避免 amux 调用环境意外关闭成员颜色；Luna/Sol 由 `codex -s danger-full-access -a never` 启动，拥有完整文件与命令权限且不请求批准；Cursor `agent` 只有在另行配置 Cursor 自有模型时才会加入名册。
+- 工作区可绑定一个保存于 `~/.amux/teams/` 的团队档案；档案说明 Leader、成员、模型偏好、职责及经验证的启动适配（含环境变量）。可用 `amux team add-member` 追加成员，命令先以 `team_from_dict` 全量校验并原子更新档案，不启动进程、不修改工作区名册，需再次 `team activate` 才投影并拉起。默认 `fable-core` 的 Claude 系列由 `claude --permission-mode auto` 启动，关闭 alternate screen 以让 tmux 保留可供总控台回看的历史，并以空 `NO_COLOR` 避免 amux 调用环境意外关闭成员颜色；Luna/Sol 由 `codex -s danger-full-access -a never` 启动，拥有完整文件与命令权限且不请求批准；Cursor `agent` 只有在另行配置 Cursor 自有模型时才会加入名册。
 
 工程拆分见 [工作区 Goal 卷](../goals/workspace.md)。原「一个仓库一组成员」的形态是它的单工作区特例。
 

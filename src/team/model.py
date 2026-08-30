@@ -10,6 +10,7 @@ from typing import Any
 from workspace.errors import WorkspaceError
 
 _TEAM_ID = re.compile(r"^[a-z][a-z0-9-]*$")
+_RESERVED_MEMBER_NAMES = frozenset({"human", "bus"})
 _ROLES = frozenset({"leader", "member"})
 _EFFORTS = frozenset({"low", "medium", "high", "xhigh"})
 _SPEEDS = frozenset({"standard", "fast"})
@@ -54,6 +55,15 @@ def validate_team_id(value: str) -> str:
     if not isinstance(value, str) or not _TEAM_ID.fullmatch(value):
         raise TeamValidationError("团队 ID 必须是小写字母开头的字母、数字或连字符")
     return value
+
+
+def validate_member_id(value: str) -> str:
+    """校验团队成员 ID，拒绝总线/人类及网关身份。"""
+    if isinstance(value, str) and (
+        value in _RESERVED_MEMBER_NAMES or value.startswith("im:")
+    ):
+        raise TeamValidationError(f"成员 ID {value!r} 是保留名，不能加入团队")
+    return validate_team_id(value)
 
 
 def team_from_dict(raw: Any, *, source: str) -> Team:
@@ -112,7 +122,7 @@ def _member(raw: Any, *, source: str) -> TeamMember:
     unknown = sorted(set(raw) - allowed)
     if unknown:
         raise TeamValidationError(f"{source} 的成员含未知字段: {', '.join(unknown)}")
-    member_id = validate_team_id(_string(raw, "id", source))
+    member_id = validate_member_id(_string(raw, "id", source))
     role = _string(raw, "role", source)
     if role not in _ROLES:
         raise TeamValidationError(f"{source} 的成员 {member_id} 的 role 必须是 leader 或 member")

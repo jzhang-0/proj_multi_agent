@@ -271,6 +271,15 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
         if raw.get("action") != "acquire":
             return
         force = bool(raw.get("force", False))
+        # 评审(opus):force 抢占成功后，抢占方也该知道"刚把谁踢下来了"，不能
+        # 只有原持有者单方面收到 lease_lost。读一次当前持有者是尽力而为的
+        # 快照(和后面的 acquire 之间有极小窗口)，只用于 UI 提示，不影响
+        # acquire 本身的正确性。
+        previous = None
+        if force:
+            current = await asyncio.to_thread(lease_manager.holder, member)
+            if current is not None and current.owner != owner:
+                previous = _lease_payload(current)
         try:
             leased = await asyncio.to_thread(lease_manager.acquire, member, owner, force=force)
         except LeaseDenied as exc:
@@ -279,7 +288,11 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
             )
             return
         has_lease = True
-        await websocket.send_json({"type": "lease_acquired", "holder": _lease_payload(leased)})
+        payload: dict[str, Any] = {"type": "lease_acquired", "holder": _lease_payload(leased)}
+        if previous is not None:
+            payload["preempted"] = True
+            payload["previous_holder"] = previous
+        await websocket.send_json(payload)
 
     async def handle_scroll(raw: dict[str, Any]) -> None:
         try:
@@ -353,7 +366,17 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
         accum_text.append(text)
 
     async def handle_submit() -> None:
-        if not lease_manager.holds(member, owner) or state.history_offset != 0:
+        # 评审(opus):submit 是用户敲回车的离散动作，不能像 text 片段那样静默
+        # 丢弃——那等于"发送的消息凭空消失，界面毫无反馈"。明确拒绝，且
+        # accum_text 原样保留(不清空):文字仍留在 tmux 输入框里(send_keys
+        # 早已发过)，回到直连态后可以再次 submit 提交同一段话；这样审计里
+        # `type` 记的 detail 永远是"实际提交成功的那段"，不会因为半路被拦
+        # 而和真实送进 tmux 的内容错位(§7.4)。
+        if not lease_manager.holds(member, owner):
+            await websocket.send_json({"type": "denied", "reason": "no-lease"})
+            return
+        if state.history_offset != 0:
+            await websocket.send_json({"type": "denied", "reason": "scrolled-back"})
             return
         await asyncio.sleep(LIVE_SUBMIT_GAP_S)
         await asyncio.to_thread(state.tmux.send_keys, member, "Enter")

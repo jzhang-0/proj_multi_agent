@@ -123,7 +123,9 @@ def test_preemption_notifies_the_previous_holder(
             assert denied["holder"]["owner"] == ack_a["holder"]["owner"]
 
             conn_b.send_json({"type": "lease", "action": "acquire", "force": True})
-            _wait_for(conn_b, "lease_acquired")
+            ack_b = _wait_for(conn_b, "lease_acquired")
+            assert ack_b["preempted"] is True
+            assert ack_b["previous_holder"]["owner"] == ack_a["holder"]["owner"]
 
             _wait_for(conn_a, "lease_lost")
 
@@ -167,21 +169,25 @@ def test_disconnect_releases_the_lease(
             _wait_for(conn_b, "lease_acquired")
 
 
-def test_rejects_bad_origin_without_accepting(
+def test_rejects_bad_origin_with_explicit_close_code(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_tmux: Tmux
 ) -> None:
+    """评审(opus)实测指出:`close()` 若在 `accept()` 之前调用，真实 ASGI 服务器
+    会把它变成握手阶段的 HTTP 403，浏览器 JS 完全看不到状态码(`onclose` 只
+    拿到 1006)。已改成先 `accept()` 再 `close(code=, reason=)`——真实
+    uvicorn + `websockets` 客户端验证过这样能送达；这里用 TestClient 钉住
+    同一行为:连接先被接受(`with` 正常进入)，第一次 `receive` 才看到关闭。
+    """
     _bound_project(tmp_path, monkeypatch)
     isolated_tmux.new_session(SESSION_NAME, command="cat")
     app, session = _make_app(monkeypatch, isolated_tmux)
 
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client:
         client.get(f"/?token={session.token}")
-        with (
-            pytest.raises(WebSocketDisconnect) as exc_info,
-            client.websocket_connect(
-                f"/api/v1/terminal/{MEMBER}/mirror",
-                headers={"host": f"127.0.0.1:{PORT}", "origin": "http://evil.example"},
-            ),
-        ):
-            pass
+        with client.websocket_connect(
+            f"/api/v1/terminal/{MEMBER}/mirror",
+            headers={"host": f"127.0.0.1:{PORT}", "origin": "http://evil.example"},
+        ) as conn, pytest.raises(WebSocketDisconnect) as exc_info:
+            conn.receive_json()
         assert exc_info.value.code == 4401
+        assert exc_info.value.reason == "unauthorized"

@@ -285,27 +285,38 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
         """WEB-007 §2/§4-§7:镜像 + 租约串行直连输入,单一端点承载全部消息类型。
 
         HTTP 中间件不拦截 WebSocket scope(Starlette 的 `@app.middleware("http")`
-        只挂 `http` scope)，Host/Origin/cookie 三项鉴权必须在这里手动做完再
-        `accept()`；握手失败一律不建立连接，不产生任何进程/订阅。
+        只挂 `http` scope)，Host/Origin/cookie 三项鉴权必须在这里手动做完。
+
+        评审(opus)实测指出:`close()` 若在 `accept()` 之前调用,ASGI 服务器
+        (uvicorn)会把它变成握手阶段的 HTTP 403——浏览器 `WebSocket` API 不
+        暴露失败握手的状态码/正文给 JS,`onclose` 只会拿到无信息量的 1006。
+        必须先 `accept()` 再 `close(code=...)`,自定义关闭码才能真正送达
+        客户端(已用真实 uvicorn + `websockets` 客户端验证)。接受后立即关闭
+        不产生订阅/租约/进程,不算真正建立连接。
         """
+
+        async def reject(code: int, reason: str) -> None:
+            await websocket.accept()
+            await websocket.close(code=code, reason=reason)
+
         host = websocket.headers.get("host", "")
         origin = websocket.headers.get("origin", "")
         if host not in hosts or origin not in origins:
-            await websocket.close(code=WS_CLOSE_UNAUTHORIZED)
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
             return
         if not session.verify_cookie(websocket.cookies.get(COOKIE_NAME)):
-            await websocket.close(code=WS_CLOSE_UNAUTHORIZED)
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
             return
 
         ctx = build_context(tmux=app.state.tmux)
         if ctx.workspace is None or ctx.tmux is None or app.state.lease_manager is None:
-            await websocket.close(code=WS_CLOSE_UNAVAILABLE)
+            await reject(WS_CLOSE_UNAVAILABLE, "unavailable")
             return
         if member not in ctx.names:
-            await websocket.close(code=WS_CLOSE_NOT_FOUND)
+            await reject(WS_CLOSE_NOT_FOUND, "member-not-found")
             return
         if not await asyncio.to_thread(ctx.tmux.has_session, member):
-            await websocket.close(code=WS_CLOSE_NOT_FOUND)
+            await reject(WS_CLOSE_NOT_FOUND, "session-not-found")
             return
 
         await websocket.accept()

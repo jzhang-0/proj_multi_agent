@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import contextlib
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -107,16 +106,31 @@ def format_line(message: Message) -> str:
 def tmux_deliver(message: Message) -> bool:
     """把消息"打字"进同名 tmux 会话并回车。
 
-    注入交给 TMX-002 的 `KeyInjector.deliver()`:一次 tmux 调用发完文本和
-    Enter。投递路径上每多一次 tmux 进程启动就多几十毫秒(P95 < 200ms 的预算
-    经不起),所以注入前不再抓画面,提交是否真的生效改由 `confirm_submitted()`
-    在这一轮投递之后确认。
+    注入交给 TMX-002 的 `KeyInjector.deliver()`：文本与 Enter 分开发送并
+    留出成员 CLI 的粘贴判定时间。提交是否真的生效由 `confirm_submitted()`
+    在归档前确认。
     """
-    from tmuxctl import KeyInjector, TmuxCommandError, TmuxError
+    from tmuxctl import (
+        KeyInjector,
+        TmuxCommandError,
+        TmuxError,
+        submission_still_pending,
+    )
 
     line = format_line(message)
     try:
         tmux = _tmux_client()
+        awaiting = _PENDING_SUBMITS.get(message.to)
+        if awaiting is not None:
+            return awaiting == line
+
+        # Hub 重启后内存状态会丢，但队列文件仍在。若同一条消息已经卡在
+        # composer，只恢复确认状态，绝不能再注入一份副本。
+        snapshot, cursor_y = tmux.capture_with_cursor(message.to)
+        if submission_still_pending(snapshot, cursor_y, line):
+            _PENDING_SUBMITS[message.to] = line
+            return True
+
         KeyInjector(tmux).deliver(message.to, line)
     except TmuxCommandError:
         return False  # 会话不在(或窗格没了):算投递失败,不是崩溃
@@ -133,16 +147,19 @@ def confirm_submitted(target: str) -> bool:
     一下 Enter 没生效,消息就卡在输入框里等人手动回车。这一步不在投递延迟的
     预算里——它跑在一轮投递之后,不占"入队 → 注入终端"的时间。
     """
-    line = _PENDING_SUBMITS.pop(target, None)
+    line = _PENDING_SUBMITS.get(target)
     if line is None:
         return True
     from tmuxctl import KeyInjector, TmuxError
 
     try:
         tmux = _tmux_client()
-        return KeyInjector(tmux).ensure_submitted(target, line).submitted
+        submitted = KeyInjector(tmux).ensure_submitted(target, line).submitted
     except TmuxError:
         return False
+    if submitted and _PENDING_SUBMITS.get(target) == line:
+        del _PENDING_SUBMITS[target]
+    return submitted
 
 
 class Hub:
@@ -165,8 +182,11 @@ class Hub:
         self.on_result = on_result
         self.poll_interval = poll_interval
         self.policy = policy if policy is not None else OutboundPolicy()
-        #: 最近一轮的提交确认线程(见 `_confirm_submits`)
-        self._confirm_thread: threading.Thread | None = None
+        #: 已注入但尚未确认提交的队列文件。文件留在 queue，下一轮只补确认，
+        #: 不重复注入正文。
+        self._awaiting_confirmation: dict[Path, Message] = {}
+        #: 同一条确认失败只记一次审计，避免轮询期间刷屏。
+        self._reported_confirmation_failures: set[Path] = set()
         #: 实际跑起来用的是 watch 还是 poll,起循环后才有值
         self.mode: str | None = None
 
@@ -190,6 +210,12 @@ class Hub:
             self.audit.record_malformed(path, str(exc))
             return DeliveryResult(path, DeliveryOutcome.MALFORMED, detail=str(exc))
 
+        # 上一轮已经注入过正文，只是没能证明 Enter 生效。此时只能继续确认，
+        # 不能重新跑策略或再次注入同一条消息。
+        awaiting = self._awaiting_confirmation.get(path)
+        if awaiting is not None:
+            return self._finish_confirmation(path, awaiting)
+
         unread_backlog = 0
         if queued_before is not None:
             unread_backlog = queued_before.get(message.to, 0)
@@ -198,9 +224,8 @@ class Hub:
         verdict = self.policy.check(message, unread_backlog=unread_backlog)
         if not verdict.ok:
             return self._reject(path, message, verdict.reason)
-        self.policy.record(message)
-
         if is_screen_only(message.to):
+            self.policy.record(message)
             archive(path, self.paths)
             return DeliveryResult(path, DeliveryOutcome.SHOWN, message)
 
@@ -209,9 +234,38 @@ class Hub:
             detail = "" if ok else "没有这个 tmux 会话"
         except Exception as exc:  # 投递失败不能中断循环
             ok, detail = False, f"{type(exc).__name__}: {exc}"
+        if not ok:
+            # 明确的 tmux 投递失败仍按既有契约归档；这不是“文字已经在输入框
+            # 但没提交”的可恢复状态。
+            self.policy.record(message)
+            archive(path, self.paths)
+            return DeliveryResult(path, DeliveryOutcome.FAILED, message, detail)
+
+        if self.confirm is not None:
+            return self._finish_confirmation(path, message)
+
+        self.policy.record(message)
         archive(path, self.paths)
-        outcome = DeliveryOutcome.DELIVERED if ok else DeliveryOutcome.FAILED
-        return DeliveryResult(path, outcome, message, detail)
+        return DeliveryResult(path, DeliveryOutcome.DELIVERED, message)
+
+    def _finish_confirmation(self, path: Path, message: Message) -> DeliveryResult:
+        """同步确认提交；失败时保留 queue 文件供下一轮重试。"""
+        assert self.confirm is not None
+        try:
+            submitted = self.confirm(message.to)
+            detail = "" if submitted else "注入后补 Enter 仍卡在输入框，保留队列重试"
+        except Exception as exc:
+            submitted = False
+            detail = f"提交确认失败，保留队列重试: {type(exc).__name__}: {exc}"
+        if not submitted:
+            self._awaiting_confirmation[path] = message
+            return DeliveryResult(path, DeliveryOutcome.FAILED, message, detail)
+
+        self._awaiting_confirmation.pop(path, None)
+        self._reported_confirmation_failures.discard(path)
+        self.policy.record(message)
+        archive(path, self.paths)
+        return DeliveryResult(path, DeliveryOutcome.DELIVERED, message)
 
     def _audit(self, result: DeliveryResult) -> None:
         """把处理结果记进审计日志;记日志失败不许影响投递。"""
@@ -220,65 +274,40 @@ class Hub:
         event = _OUTCOME_EVENTS.get(result.outcome)
         if event is None:
             return
+        if result.path in self._awaiting_confirmation:
+            if result.path in self._reported_confirmation_failures:
+                return
+            self._reported_confirmation_failures.add(result.path)
         with contextlib.suppress(OSError):
             self.audit.record(event, result.message, result.detail)
 
-    def _confirm_worker(self, pairs: list[tuple[str, Message]]) -> None:
-        """逐个收件人确认「注入的那行字真的提交出去了」,确认不了记一笔审计。"""
-        assert self.confirm is not None
-        for target, message in pairs:
-            try:
-                ok = self.confirm(target)
-            except Exception:  # 确认出岔子不能中断循环
-                ok = False
-            if ok:
-                continue
-            with contextlib.suppress(OSError):
-                self.audit.record(AuditEvent.DELIVER_FAILED, message, "注入后补 Enter 仍卡在输入框")
-
-    def _confirm_submits(self, results: list[DeliveryResult]) -> None:
-        """把这一轮的提交确认交给后台线程。
-
-        确认要给成员 CLI 一点处理时间(~0.1 秒)再抓画面,挂在投递循环上会把
-        下一条消息的投递延迟一起抬高(实测 P95 194ms → 345ms)。指纹只认自己
-        注入的那行字,所以后台线程即使和新的注入撞上,也不会替别人乱敲 Enter。
-        确认结果不改这一轮已经报给调用方的投递结果。
-        """
-        if self.confirm is None:
-            return
-        latest: dict[str, Message] = {}
-        for result in results:
-            if result.outcome is not DeliveryOutcome.DELIVERED or result.message is None:
-                continue
-            latest[result.message.to] = result.message
-        if not latest:
-            return
-        thread = threading.Thread(
-            target=self._confirm_worker,
-            args=(list(latest.items()),),
-            name="bus-confirm",
-            daemon=True,
-        )
-        self._confirm_thread = thread
-        thread.start()
-
     def wait_for_confirms(self, timeout: float = 5.0) -> None:
-        """等后台确认线程收工(测试和一次性收口用;循环本身不等它)。"""
-        thread = self._confirm_thread
-        if thread is not None:
-            thread.join(timeout)
+        """兼容旧调用；TMX-008 起确认已在 ``drain_once`` 内同步完成。"""
 
     def drain_once(self) -> list[DeliveryResult]:
         """处理当前队列里的全部消息,返回逐条结果。"""
         results = []
         queued_before: dict[str, int] = {}
+        blocked_targets: set[str] = set()
         for path in pending(self.paths):
+            if blocked_targets:
+                try:
+                    queued = read_message(path)
+                except MalformedMessage:
+                    queued = None
+                if queued is not None and queued.to in blocked_targets:
+                    continue
             result = self._handle(path, queued_before)
             results.append(result)
+            repeated_confirmation_failure = (
+                path in self._awaiting_confirmation
+                and path in self._reported_confirmation_failures
+            )
             self._audit(result)
-            if self.on_result is not None:
+            if self.on_result is not None and not repeated_confirmation_failure:
                 self.on_result(result)
-        self._confirm_submits(results)
+            if path in self._awaiting_confirmation and result.message is not None:
+                blocked_targets.add(result.message.to)
         return results
 
     def run(self, stop: Callable[[], bool] | None = None, watch: bool = True) -> None:

@@ -8,7 +8,15 @@ from collections.abc import Iterator
 
 import pytest
 
-from tmuxctl import KeyInjector, Tmux, cursor_line_holds, last_line_uncommitted
+from tmuxctl import (
+    DEFAULT_SUBMIT_GAP_S,
+    KeyInjector,
+    Tmux,
+    cursor_line_holds,
+    framed_composer_holds,
+    last_line_uncommitted,
+    submission_still_pending,
+)
 
 
 class FakeTmux:
@@ -34,10 +42,6 @@ class FakeTmux:
 
     def send_keys(self, target: str, *keys: str, literal: bool = False) -> None:
         self.calls.append((target, keys, literal))
-
-    def send_line(self, target: str, text: str) -> None:
-        self.calls.append((target, (text, "Enter"), True))
-
 
 class FakeClock:
     def __init__(self) -> None:
@@ -152,6 +156,41 @@ CURSOR_SUBMITTED = "\n".join(
     ]
 )
 
+# 取自 2026-08-30 的真实 Opus/Claude pane。新版 Claude 把终端光标留在底部
+# 状态区，不能再用 cursor_y 判断输入框内是否还有待提交文字。
+RULE = "─" * 80
+CLAUDE_STUCK = "\n".join(
+    [
+        "* Cooked for 1m 3s · done 12:18 AM",
+        RULE,
+        "❯ [群消息] 来自 fable: 三点已转给 sonnet 并写入任务书。评审时请沿用",
+        "  这三点作检查项。 —— 如需回复,运行: amux msg fable",
+        '  "你的回复"',
+        "",
+        RULE,
+        "🤖 Opus 5 (high) | auto mode on",
+        "proj_sv_1",
+    ]
+)
+CLAUDE_SUBMITTED = "\n".join(
+    [
+        "❯ [群消息] 来自 fable: 三点已转给 sonnet 并写入任务书。评审时请沿用",
+        "  这三点作检查项。 —— 如需回复,运行: amux msg fable",
+        '  "你的回复"',
+        "* Brewing…",
+        RULE,
+        "❯ ",
+        "",
+        RULE,
+        "🤖 Opus 5 (high) | auto mode on",
+        "proj_sv_1",
+    ]
+)
+CLAUDE_MSG = (
+    "[群消息] 来自 fable: 三点已转给 sonnet 并写入任务书。评审时请沿用"
+    '这三点作检查项。 —— 如需回复,运行: amux msg fable "你的回复"'
+)
+
 
 def test_cursor_line_holds_detects_stuck_input() -> None:
     assert cursor_line_holds(CURSOR_STUCK, 1, MSG) is True
@@ -172,10 +211,33 @@ def test_cursor_line_holds_out_of_range() -> None:
     assert cursor_line_holds("$ ", 99, MSG) is False
 
 
-def test_deliver_is_one_tmux_call() -> None:
+def test_claude_frame_detects_stuck_input_with_cursor_in_status_area() -> None:
+    assert framed_composer_holds(CLAUDE_STUCK, CLAUDE_MSG) is True
+    assert submission_still_pending(CLAUDE_STUCK, 8, CLAUDE_MSG) is True
+
+
+def test_claude_frame_ignores_submitted_transcript_echo() -> None:
+    assert framed_composer_holds(CLAUDE_SUBMITTED, CLAUDE_MSG) is False
+    assert submission_still_pending(CLAUDE_SUBMITTED, 8, CLAUDE_MSG) is False
+
+
+def test_claude_frame_does_not_confuse_same_reply_suffix() -> None:
+    other = (
+        "[群消息] 来自 fable: 这是另一条尚未注入的消息。 —— "
+        '如需回复,运行: amux msg fable "你的回复"'
+    )
+    assert framed_composer_holds(CLAUDE_STUCK, other) is False
+
+
+def test_deliver_separates_text_and_enter_with_gap() -> None:
+    clock = FakeClock()
     tmux = FakeTmux("$ ")
-    KeyInjector(tmux).deliver("claude", MSG)
-    assert tmux.calls == [("claude", (MSG, "Enter"), True)]
+    KeyInjector(tmux, clock=clock.now, sleeper=clock.sleep).deliver("claude", MSG)
+    assert tmux.calls == [
+        ("claude", (MSG,), True),
+        ("claude", ("Enter",), False),
+    ]
+    assert clock.t == DEFAULT_SUBMIT_GAP_S
 
 
 def test_ensure_submitted_quiet_when_committed() -> None:
@@ -198,6 +260,17 @@ def test_ensure_submitted_presses_enter_until_committed() -> None:
     )
     assert (outcome.submitted, outcome.retries) == (True, 1)
     assert tmux.calls == [("cursor", ("Enter",), False)]
+
+
+def test_ensure_submitted_rescues_real_claude_composer() -> None:
+    clock = FakeClock()
+    tmux = FakeTmux("$ ")
+    tmux.cursor_views = [(CLAUDE_STUCK, 8), (CLAUDE_SUBMITTED, 8)]
+    outcome = KeyInjector(tmux, clock=clock.now, sleeper=clock.sleep).ensure_submitted(
+        "opus", CLAUDE_MSG
+    )
+    assert (outcome.submitted, outcome.retries) == (True, 1)
+    assert tmux.calls == [("opus", ("Enter",), False)]
 
 
 def test_ensure_submitted_gives_up_and_reports() -> None:

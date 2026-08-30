@@ -15,7 +15,8 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 
 - 模块放在 `src/` 下,`team`/`work`/`workspace`/`bus`/`tmuxctl`/`roster` 不允许 import `console`(单向依赖)。`team` 可以读取 `workspace` 的状态目录，`work` 只能依赖 `team` 与下层模块。
 - `tmuxctl` 是拼装 tmux 命令的唯一出口。启动时探测 tmux ≥ 3.2,不满足则明确报错;会话存在性/结束使用 `=name` 精确匹配,`send-keys` 使用普通会话名(tmux 不接受 `send-keys -t =name`)。
-- 长文本注入走 `KeyInjector`:先按 capture-pane 末行启发式判断是否有未提交输入,有则等待,超时则先 Enter 换行隔离再注入,避免拼接到半行字上。
+- 通用长文本注入走 `KeyInjector.text`:先按 capture-pane 末行启发式判断是否有未提交输入,有则等待,超时则先 Enter 换行隔离再注入,避免拼接到半行字上。
+- 总线向成员投递走 `KeyInjector.deliver`：字面文本与 Enter 分成两次 tmux 注入，默认间隔 10ms，避免 Claude/Codex 把 Enter 吞进同一次粘贴突发。该间隔已在真实 Claude 2.1.251 pane 验证；每条消息在归档前还必须确认 composer 已清空。Claude 双横线输入框按整块内容识别，其他 CLI 才回退光标行指纹。同一收件人严格串行，未确认的队首消息留在 queue 重试且只记一次失败审计，不得继续追加或提前记成 `deliver`；其他收件人不受阻塞。
 - `console` 内嵌 hub 的投递循环,但投递循环必须能脱离 TUI 独立运行(headless hub,兼容现在的 `python3 hub.py` 用法)。
 - v0 的 `hub.py`、`msg`、`start.sh` 在对应 Goal 完成前保持可用;完成后 `hub.py`/`start.sh` 变成新实现的薄入口,`msg` 接口永不变。`start.sh` 已改为读仓库根 `roster.toml`(见 `src/roster`)。
 
@@ -27,7 +28,7 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 | 运行环境 | `uv` 管理的项目 venv(`uv sync` / `uv run`) | 系统 python 是 3.8(miniconda),不满足要求;不污染系统环境 |
 | TUI | Textual | 满足"漂亮 + 低延迟"且纯 Python;富组件、深浅色、CSS 式主题 |
 | 剪贴板图片 | Pillow `ImageGrab` + PNG 内容寻址文件 | `Ctrl+V` 由总控台统一读取系统剪贴板；不依赖不同成员 CLI 的粘贴按键实现 |
-| 消息存储 | 文件队列(`bus/queue/` 一消息一文件,原子改名)+ `bus/processed/` 归档 + `bus/dead/` 死信 + `bus/log.jsonl` 审计(80 字符预览,全文另存 `bus/bodies/`,10MB 轮转);根目录可注入(`BUS_ROOT` 或显式参数,优先级最高)。已登记工作区的默认根是 `~/.amux/workspaces/<slug>/bus/`,互不串台;未登记时回落仓库根 `bus/` | 语言无关、可 tail、崩溃可恢复;规模(单机、几个成员)远够 |
+| 消息存储 | 文件队列(`bus/queue/` 一消息一文件,原子改名)+ `bus/processed/` 归档 + `bus/dead/` 死信 + `bus/log.jsonl` 审计(80 字符预览,全文另存 `bus/bodies/`,10MB 轮转);成员消息只有在终端确认提交后才从 queue 归档并记录 `deliver`;根目录可注入(`BUS_ROOT` 或显式参数,优先级最高)。已登记工作区的默认根是 `~/.amux/workspaces/<slug>/bus/`,互不串台;未登记时回落仓库根 `bus/` | 语言无关、可 tail、崩溃可恢复;规模(单机、几个成员)远够 |
 | 文件事件 | `watchfiles`,不可用时回退 0.2s 轮询 | 达成投递延迟预算 |
 | 任务存储 | 工作区 `work/events.jsonl` 只追加事件流 + SHA-256 哈希链 | 单机规模无需数据库；可直接审计，并能检测历史删改 |
 | tmux | ≥ 3.2,control mode(`tmux -C`)做输出流,普通命令做注入/控制 | 见 tmux Goal 卷 |
@@ -88,5 +89,5 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
   4. 两者都没有时,采用全局 `config.toml` 的 `default_members`;全局文件也没有时才是空名册。
   5. `[env]` 覆盖到每个启用成员的 env,项目侧同名键赢。
 - **成员 cwd**:`Lifecycle` / `HealthSupervisor` 默认落到当前工作区项目根。
-- **CLI**:`amux workspace add|list|rm|current|gc|migrate`;`amux member add|rm|list`;`amux config init|show`;`amux` 按 cwd 自动选工作区(未登记则登记当前目录),`--workspace <slug>` 显式指定;`amux msg` 从 cwd 定位工作区总线。控制台标题栏显示当前 slug 与项目根,`/workspace <名字>` 切换绑定(成员栏与时间线跟着换)。IM 网关按房间名(或 `workspace` 字段)把消息投进对应工作区总线,白名单可按 `[workspaces.<slug>]` 分开放。`rm` 先关掉该区 `<成员>@<slug>` 会话再删状态目录,不碰用户项目文件;`gc` 回收已经没了登记的孤儿会话。并发上限写在 `~/.amux/limits.toml`,超限只告警不拒绝。从旧布局升级:`amux workspace migrate` 把仓库根 `bus/` 拷进 `~/.amux/workspaces/<slug>/bus/`,源目录先留着,核对后可删;回退是 `amux workspace migrate --rollback`,把工作区总线拷回仓库根 `bus/`。两条都是拷贝,谁都不自动删对方。`uv run console` / `roster` / `hub.py` / `start.sh` 在单工作区下用法不变;显式 `--bus-root` 永远最高优先,未登记时仍回落仓库根 `bus/`。
+- **CLI**:`amux workspace add|list|rm|current|gc|migrate`;`amux member add|rm|list`;`amux config init|show`;`amux` 按 cwd 自动选工作区(未登记则登记当前目录),`--workspace <slug>` 显式指定;`amux msg` 从 cwd 定位工作区总线。控制台标题栏显示当前 slug 与项目根,`/workspace <名字>` 切换绑定(成员栏与工作对话记录跟着换)。IM 网关按房间名(或 `workspace` 字段)把消息投进对应工作区总线,白名单可按 `[workspaces.<slug>]` 分开放。`rm` 先关掉该区 `<成员>@<slug>` 会话再删状态目录,不碰用户项目文件;`gc` 回收已经没了登记的孤儿会话。并发上限写在 `~/.amux/limits.toml`,超限只告警不拒绝。从旧布局升级:`amux workspace migrate` 把仓库根 `bus/` 拷进 `~/.amux/workspaces/<slug>/bus/`,源目录先留着,核对后可删;回退是 `amux workspace migrate --rollback`,把工作区总线拷回仓库根 `bus/`。两条都是拷贝,谁都不自动删对方。`uv run console` / `roster` / `hub.py` / `start.sh` 在单工作区下用法不变;显式 `--bus-root` 永远最高优先,未登记时仍回落仓库根 `bus/`。
 - 同一成员允许同时在多个工作区各跑一份(产品定义已拍板)。并发上限不设硬封顶,只告警(WS-009)。

@@ -15,12 +15,15 @@ from tmuxctl.errors import (
     TmuxVersionError,
 )
 from tmuxctl.inject import (
+    DEFAULT_SUBMIT_GAP_S,
     InjectOutcome,
     KeyInjector,
     SubmitOutcome,
     cursor_line_holds,
+    framed_composer_holds,
     inject_text,
     last_line_uncommitted,
+    submission_still_pending,
 )
 from tmuxctl.lifecycle import CrashEvent, CrashKind, CrashMonitor
 from tmuxctl.output import PaneOutputStream, decode_control_data, subscribe_pane
@@ -47,6 +50,7 @@ __all__ = [
     "CrashEvent",
     "CrashKind",
     "CrashMonitor",
+    "DEFAULT_SUBMIT_GAP_S",
     "MIN_VERSION",
     "InjectOutcome",
     "KeyInjector",
@@ -70,9 +74,11 @@ __all__ = [
     "is_missing_target_error",
     "build_process_tree",
     "cursor_line_holds",
+    "framed_composer_holds",
     "decode_control_data",
     "last_line_uncommitted",
     "probe",
     "read_processes",
     "subscribe_pane",
+    "submission_still_pending",
 ]

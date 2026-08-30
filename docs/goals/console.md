@@ -101,3 +101,7 @@
   - 验证（Codex，2026-08-30）:`uv run ruff check .` 通过；`uv run pytest tests/test_console_mirror.py tests/test_console_control.py tests/test_console_compose.py tests/test_console_clipboard.py tests/test_console_keyboard.py tests/test_console_app.py tests/test_visual_evidence.py -q` 为 `59 passed in 18.91s`；视觉命令使用 `live-input` 安全夹具分别运行 120×30 与 80×24 的 `--keys Down --click <成员输入行>` 场景。
   - 证据:`src/console/mirror.py` 只识别当前画面的 Claude 双横线 composer 与 Codex 底部 `›` prompt，输出区、无法确认的区域和回滚画面不激活；`src/console/app.py` 用单消费者队列按序转发文字/编辑键/Enter，相邻文字合并并在 80ms 镜像刷新内回显，Esc 只退实时态；`src/console/control.py` 对完整提交记一条 `type` 审计而不制造逐字符噪声。测试覆盖 q 不退出、Tab/Shift+Tab、四向键、两类删除、Enter、误点击、即时回显和 Ctrl+V 继续走统一图片流。
   - 视觉自验证:`tests/baseline/con-017-click-live-input-120x30.txt`/`.ansi` 与 `tests/baseline/con-017-click-live-input-min-80x24.txt`/`.ansi`。两种尺寸都在 Claude 原生输入行上完成真实鼠标事件后显示高对比「实时直连 claude · Esc退出 · Ctrl+V图片 · F8完整接管」状态；成员画面、工作对话入口、底部输入框和边界无错位，安全夹具未向真实成员终端发送按键。
+
+- [ ] **CON-018** — 工作对话记录分类与任务时序:工作对话记录按结构化来源区分 human 往来、AI 内部协作、任务事件和终端控制，并提供可点击且可纯键盘切换的分类筛选与计数；不得靠正文关键词猜分类。任务账本事件按时间合入记录，至少显示任务 ID、标题、动作、分派/评审对象与事件详情，任务结项明确显示完成时间；任务详情同时显示创建、更新和完成时间。历史回填与实时新增必须使用同一分类规则，切换分类不丢记录、不打乱时间顺序；按键事件等控制噪声可单独查看，不再与 AI 协作正文混成一类。同步产品/架构/帮助并用任务安全夹具完成 120×30 与 80×24 视觉验证。
+  - 前置:CON-003、CON-012、TEAM-002、TEAM-007。
+  - 处理登记:Codex，2026-08-30 14:30 CST，分支 `con-018-codex`。

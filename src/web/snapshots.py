@@ -13,13 +13,19 @@ from bus.sanitize import sanitize
 from control.health import HealthMonitor
 from control.members import MemberStatusService, pending_counts
 from control.tasks import task_board_view, task_detail_view
-from control.timeline import HISTORY_LIMIT, TimelineCategory, TimelineEntry, from_audit
+from control.timeline import (
+    HISTORY_LIMIT,
+    TimelineCache,
+    TimelineCategory,
+    TimelineEntry,
+    from_audit,
+)
 from control.vocabulary import vocabulary as build_vocabulary
 from team.model import TeamValidationError
 from team.store import TeamNotFound
 from web.context import SnapshotContext, load_bound_team, require_paths, require_workspace
 from web.errors import ApiError
-from web.state import RevisionTracker, TimelineCache, timeline_revision_fingerprint
+from web.state import RevisionTracker, timeline_revision_fingerprint
 from work import WorkError, WorkSnapshot, WorkValidationError
 from work.model import validate_task_id
 from work.service import WorkService

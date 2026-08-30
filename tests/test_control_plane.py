@@ -22,6 +22,7 @@ from control.tasks import task_board_view, task_detail_view
 from control.terminal import terminal_input_rows
 from control.timeline import (
     HISTORY_LIMIT,
+    TimelineCache,
     TimelineCategory,
     TimelineEntry,
     TimelineProjector,
@@ -31,7 +32,6 @@ from control.timeline import (
     timeline_snapshot_view,
 )
 from control.vocabulary import vocabulary
-from web.state import TimelineCache
 from work import EventKind, Task, TaskStatus, WorkEvent, WorkSnapshot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -243,18 +243,25 @@ def test_task_communication_seq_matches_merged_timeline(
 def test_timeline_seq_agrees_across_snapshot_view_cache_and_task_detail(
     tmp_path: Path,
 ) -> None:
-    """T-022(T-017 遗留):同一账本状态下,三条各自独立的读取路径必须给出同一个
-    seq——TUI 的 `timeline_snapshot_view`(接自己持有的 `TimelineProjector`,
-    对齐 `ConsoleApp.timeline_projector` 的真实用法)、Web `/api/v1/timeline`
-    背后的 `TimelineCache`、以及 Web `/api/v1/work/tasks/{id}` 的
-    `communications.timeline_seq`(复用 `TimelineCache.get()` 投影结果，同
-    `web/snapshots.py` 的真实接线)。三者都用各自生产路径上真实持有的对象
-    取值，不是三次独立调用 `history_from_entries` 后比对结果——那只能证明
-    算法自洽，证明不了确实同源(opus 评审意见)。
+    """T-022(T-017 遗留，opus 复审退回后的场景重写):新调用方接同一个
+    `TimelineCache` 才能保证 seq 与缓存的其它使用者一致——只给一个"全新的"
+    projector/cache 不够,因为 `history_from_entries` 的批处理到达序(审计
+    条目在前、work 事件在后)与缓存长期累积出来的历史到达序可能不同,同一
+    个 key 会算出不同的 seq。
+
+    复现条件缺一不可:缓存必须先有历史状态(这里是只有 work 事件、还没有
+    任何审计条目时取一次),之后再追加一条审计条目取第二次——两次全新推导
+    互相巧合一致的场景(账本状态从头到尾固定不变)测不出这个问题，只能证明
+    算法自洽(opus 评审原话)。
     """
-    snapshot = _work_snapshot()
+    snapshot = _work_snapshot()  # 含 work:event-progress，此时还没有任何审计条目
     paths = BusPaths.resolve(tmp_path / "bus").ensure()
     audit = AuditLog(paths)
+
+    cache = TimelineCache()
+    _, warm = cache.get(paths, work_events=snapshot.events, snapshot=snapshot)
+    event_seq_before = next(e.seq for e in warm if e.key == "work:event-progress")
+
     linked = Message.create(
         "sol",
         "关联 T-003",
@@ -266,28 +273,32 @@ def test_timeline_seq_agrees_across_snapshot_view_cache_and_task_detail(
     audit.record(AuditEvent.DEPOSIT, linked)
     audit.record(AuditEvent.DELIVER, linked)
 
-    # 源1:TUI——`timeline_snapshot_view` 接自己的 `TimelineProjector`。
-    tui_projector = TimelineProjector()
-    tui_view = timeline_snapshot_view(
-        audit,
-        work_events=snapshot.events,
-        snapshot=snapshot,
-        projector=tui_projector,
-    )
-    tui_entry = next(entry for entry in tui_view.entries if entry.key == linked.id)
-
-    # 源2:Web `/api/v1/timeline`——`TimelineCache.get()`。
-    cache = TimelineCache()
-    raw_entries, projected = cache.get(
+    # 源1:Web `/api/v1/timeline`——缓存有历史状态，再取一次。
+    raw_entries, cache_projected = cache.get(
         paths, work_events=snapshot.events, snapshot=snapshot
     )
-    web_entry = next(entry for entry in projected if entry.key == linked.id)
+    cache_seq = {entry.key: entry.seq for entry in cache_projected}
+    assert cache_seq["work:event-progress"] == event_seq_before  # 老 key 编号没被挤动
 
-    # 源3:Web `/api/v1/work/tasks/{id}`——复用源2 的 `projected`(真实接线见
-    # `web/snapshots.py:159-160`)。
-    detail = task_detail_view(snapshot, snapshot.tasks[0], raw_entries, timeline=projected)
+    # 源2:另一个 Web 侧新调用方(比如新开一个 HTTP 端点)——传同一个 cache,
+    # 而不是自己另建一个空的 projector。这正是本次修复要保证的路径。
+    view = timeline_snapshot_view(
+        audit, work_events=snapshot.events, snapshot=snapshot, cache=cache
+    )
+    view_seq = {entry.key: entry.seq for entry in view.entries}
+    assert view_seq == cache_seq
 
-    assert tui_entry.seq == web_entry.seq == detail.communications[0].timeline_seq
+    # 源3:Web `/api/v1/work/tasks/{id}`——复用源1 的 `cache_projected`(真实
+    # 接线见 `web/snapshots.py:159-160`)。
+    detail = task_detail_view(snapshot, snapshot.tasks[0], raw_entries, timeline=cache_projected)
+    assert detail.communications[0].timeline_seq == cache_seq["linked-message"]
+
+    # 反证:不传 cache/projector、各自独立全新推导，会因为到达序不同而分叉
+    # ——证明上面的一致不是巧合，是因为真的接到了同一份历史状态。
+    fresh_view = timeline_snapshot_view(audit, work_events=snapshot.events, snapshot=snapshot)
+    fresh_seq = {entry.key: entry.seq for entry in fresh_view.entries}
+    assert fresh_seq != cache_seq
+    assert fresh_seq["work:event-progress"] != cache_seq["work:event-progress"]
 
 
 def test_history_window_preserves_full_timeline_seq(tmp_path: Path) -> None:

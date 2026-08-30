@@ -22,6 +22,7 @@ from bus.hub import watchfiles_available
 from control.health import FaultEvent, HealthMonitor
 from control.members import MemberStatusService
 from control.tasks import task_event_view
+from control.timeline import TimelineCache
 from web.auth import COOKIE_NAME, WebSession
 from web.context import SnapshotContext, build_context
 from web.errors import ApiError
@@ -34,7 +35,7 @@ from web.snapshots import (
     work_dto,
     workspace_dto,
 )
-from web.state import DOMAINS, RevisionTracker, TimelineCache
+from web.state import DOMAINS, RevisionTracker
 
 CLOSE_UNAUTHORIZED = 4401
 CLOSE_NOT_FOUND = 4404

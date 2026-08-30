@@ -25,6 +25,7 @@ from bus.audit import AuditLog
 from control.health import HealthMonitor
 from control.lease import MemberLeaseManager, leases_root
 from control.members import MemberStatusService
+from control.timeline import TimelineCache
 from web.actions import (
     download_attachment,
     read_image_body,
@@ -48,7 +49,7 @@ from web.snapshots import (
     work_dto,
     workspace_dto,
 )
-from web.state import RevisionTracker, TimelineCache
+from web.state import RevisionTracker
 from web.stream import EventHub, StreamSettings, handle_stream
 from web.terminal import HEARTBEAT_INTERVAL, ConnectionState, MirrorHub, run_mirror_connection
 

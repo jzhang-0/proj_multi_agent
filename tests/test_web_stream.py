@@ -18,13 +18,13 @@ from starlette.websockets import WebSocketDisconnect
 from bus import BusPaths, Message, deposit
 from control.health import Fault, FaultKind, HealthMonitor
 from control.members import MemberStatusService
-from control.timeline import TimelineEntry
+from control.timeline import TimelineCache, TimelineEntry
 from team.binding import bind_team
 from team.store import DEFAULT_TEAM_ID, TeamStore
 from tmuxctl.client import PaneInfo
 from web.app import create_app
 from web.auth import COOKIE_NAME, WebSession
-from web.state import RevisionTracker, TimelineCache, timeline_revision_fingerprint
+from web.state import RevisionTracker, timeline_revision_fingerprint
 from web.stream import (
     CLOSE_NOT_FOUND,
     CLOSE_SLOW,

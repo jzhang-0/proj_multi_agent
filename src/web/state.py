@@ -1,38 +1,24 @@
-"""进程内 epoch/revision 计数与全量时间线投影缓存。
+"""进程内 epoch/revision 计数。
 
 `revision` 语义(架构 §3)：同一 epoch 内每个域从 0 起严格 +1，只在内容指纹
-变化时才 bump——不持久化，进程重启即随新 epoch 归零。`TimelineCache` 只是
-避免 §4.7/§4.8 在同一份审计日志未变的情况下重复跑一次 `history_from_entries`
-全量重建(fable 复审 T-003 时指出：2 万行审计单次重建约 0.28s，高频端点不该
-每请求都算一遍)；它不做后台监视，仍是每请求按需、同步计算的一次性读。
+变化时才 bump——不持久化，进程重启即随新 epoch 归零。
+
+`TimelineCache`(单槽全量时间线投影缓存)已下沉到 `control.timeline`(T-022)：
+它是与 UI 无关的共享控制面组件，Web 需要时直接 `from control.timeline
+import TimelineCache`，不在这里 re-export。
 """
 
 from __future__ import annotations
 
 import secrets
 import time
-from dataclasses import dataclass, field
 from typing import Any
 
 from bus import BusPaths
-from bus.audit import AuditLog
-from control.timeline import TimelineEntry, TimelineProjector, history_from_entries
-from work import WorkEvent, WorkSnapshot
+from control.timeline import TimelineEntry, log_fingerprint, work_fingerprint
+from work import WorkSnapshot
 
 DOMAINS = ("workspace", "team", "roster", "work", "timeline", "member", "health")
-
-
-def _log_fingerprint(paths: BusPaths | None) -> tuple[int, int]:
-    if paths is None or not paths.log.exists():
-        return (0, 0)
-    stat = paths.log.stat()
-    return (stat.st_mtime_ns, stat.st_size)
-
-
-def _work_fingerprint(snapshot: WorkSnapshot | None) -> str | None:
-    if snapshot is None or not snapshot.events:
-        return None
-    return snapshot.events[-1].digest
 
 
 def timeline_revision_fingerprint(
@@ -49,8 +35,8 @@ def timeline_revision_fingerprint(
     全量投影长度。
     """
     return (
-        _log_fingerprint(paths),
-        _work_fingerprint(snapshot),
+        log_fingerprint(paths),
+        work_fingerprint(snapshot),
         len(projected),
         projected[-1].key if projected else "",
         projected[-1].outcome if projected else "",
@@ -95,59 +81,3 @@ class RevisionTracker:
             self._fingerprints[domain] = fingerprint
             self._revisions[domain] += 1
         return self._revisions[domain]
-
-
-@dataclass(frozen=True)
-class _TimelineCacheEntry:
-    fingerprint: tuple[Any, ...]
-    raw_entries: list[dict[str, Any]] = field(repr=False)
-    entries: list[TimelineEntry] = field(repr=False)
-
-
-class TimelineCache:
-    """单槽缓存：审计日志与任务事件都未变时复用上一次的全量投影。
-
-    进程内持有 ``TimelineProjector``，指纹变化后重建时已知 key 的 seq 不变。
-    """
-
-    def __init__(self) -> None:
-        self._entry: _TimelineCacheEntry | None = None
-        self._projector = TimelineProjector()
-        self._root: str | None = None
-
-    def reset(self) -> None:
-        """epoch 换代或工作区切换时丢掉投影与 seq 分配。"""
-        self._entry = None
-        self._projector = TimelineProjector()
-        self._root = None
-
-    def get(
-        self,
-        paths: BusPaths,
-        *,
-        work_events: tuple[WorkEvent, ...],
-        snapshot: WorkSnapshot | None,
-    ) -> tuple[list[dict[str, Any]], list[TimelineEntry]]:
-        root = str(paths.root)
-        if self._root is not None and self._root != root:
-            self.reset()
-        self._root = root
-        fingerprint = (
-            root,
-            _log_fingerprint(paths),
-            _work_fingerprint(snapshot),
-        )
-        cached = self._entry
-        if cached is not None and cached.fingerprint == fingerprint:
-            return cached.raw_entries, cached.entries
-        audit = AuditLog(paths)
-        raw_entries = audit.entries()
-        projected = history_from_entries(
-            raw_entries,
-            max(1, len(raw_entries) + len(work_events)),
-            work_events=work_events,
-            snapshot=snapshot,
-            projector=self._projector,
-        )
-        self._entry = _TimelineCacheEntry(fingerprint, raw_entries, projected)
-        return raw_entries, projected

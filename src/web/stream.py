@@ -191,20 +191,29 @@ def _watch_paths(ctx: SnapshotContext) -> list[Path]:
 
 def _timeline_ops(
     old: dict[int, dict[str, Any]], new_entries: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | None:
+    """按 key 对齐。同一 epoch 内 seq 被重排则返回 None，调用方改发 resync。
+
+    ``history_from_entries`` 是先对全量赋 seq 再截窗；插在中间的任务事件
+    会改写后面所有 seq，按旧 seq 打 update 会错位。
+    """
+    old_by_key = {item["key"]: item for item in old.values() if item.get("key")}
     ops: list[dict[str, Any]] = []
     for entry in new_entries:
-        seq = int(entry["seq"])
-        prev = old.get(seq)
+        key = entry.get("key")
+        prev = old_by_key.get(key) if key else None
         if prev is None:
             ops.append({"op": "append", "entry": entry})
-        elif prev.get("outcome") != entry.get("outcome") or prev.get("reason") != entry.get(
+            continue
+        if prev.get("seq") != entry.get("seq"):
+            return None
+        if prev.get("outcome") != entry.get("outcome") or prev.get("reason") != entry.get(
             "reason"
         ):
             ops.append(
                 {
                     "op": "update",
-                    "seq": seq,
+                    "seq": entry["seq"],
                     "outcome": entry.get("outcome"),
                     "reason": entry.get("reason", ""),
                 }
@@ -385,6 +394,18 @@ class EventHub:
         payloads = [timeline_entry_payload(entry) for entry in projected]
         ops = _timeline_ops(self._last_timeline, payloads)
         self._last_timeline = {int(item["seq"]): item for item in payloads}
+        if ops is None:
+            self._emit(
+                "timeline",
+                {
+                    "type": "resync",
+                    "epoch": self.tracker.epoch,
+                    "domain": "timeline",
+                    "revision": revision,
+                    "reason": "gap",
+                },
+            )
+            return
         self._emit(
             "timeline",
             {

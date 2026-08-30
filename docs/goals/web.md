@@ -67,5 +67,5 @@
 - [ ] **WEB-011** — 跨前端共享终端采集：TUI(`console/mirror.py`，MIRROR_INTERVAL=0.08)与 Web 镜像通道(≈10 Hz)同看一个成员时是两条互不感知的 tmux 采集回路，叠加负载；terminal-protocol §4.3「多观看者共享单一订阅」未覆盖跨前端。把采集下沉到 `src/control`（或 tmuxctl 侧）的单一订阅源，TUI 与 Web 都作为观看者接入，帧率/背压语义不变；§4.2「无观看者停采集」判据改为跨前端总观看者计数，最后一个观看者(不论 TUI 还是 Web)退出才停采集；TUI 视觉基线与 test_console_mirror 不变。
   - 前置:WEB-007。
 
-- [ ] **WEB-009** — 全功能矩阵与发布收口：逐行勾验 inventory §2 全部条目(未完成项如实保留)；更新产品、架构、README、CLI 帮助与安全说明；前端产物进 sdist/wheel；`qa.release` 源码外联网安装并启动 Web，验证不依赖 Node/源码路径/CDN；复查「退出」只关 Web 会话不关成员。
+- [ ] **WEB-009** — 全功能矩阵与发布收口：逐行勾验 inventory §2 全部条目(未完成项如实保留)；更新产品、架构、README、CLI 帮助与安全说明；前端产物进 sdist/wheel；`qa.release` 源码外联网安装并启动 Web，验证不依赖 Node/源码路径/CDN；复查「退出」只关 Web 会话不关成员。 收口清单追加：(a) `control.timeline_snapshot_view` 自建 projector，seq 可能与 TimelineCache/delta 流不一致——接 projector 或 docstring 注明限制(T-017 遗留)；(b) 评估依赖由 `uvicorn[standard]` 改显式 `websockets` 以减小安装体积，若改需重跑真实握手冒烟并同步 test_release_package 断言(T-013 遗留)。
   - 前置:WEB-006、WEB-008。

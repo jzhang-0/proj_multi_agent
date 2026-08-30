@@ -108,6 +108,8 @@
   - 证据:`src/console/timeline.py` 用收发端、`control` 审计与 `WorkEvent` 类型投影四类记录并合并排序，不解析正文；`src/console/widgets.py` 提供带计数的点击筛选和 ←/→ 键盘切换，筛选只重绘而不丢历史；`src/console/app.py` 在启动回填与账本实时新增时复用同一投影；`src/console/workview.py` 展示任务创建、更新、完成时间。测试覆盖四类判定、重复控制事件、账本合并、派工/完成详情、筛选计数、鼠标与键盘切换、筛选后历史保留和实时任务事件。
   - 视觉自验证:`tests/baseline/con-018-categorized-records-120x30.txt`/`.ansi` 与 `tests/baseline/con-018-categorized-records-min-80x24.txt`/`.ansi` 同屏显示 `human 2 / AI 1 / 任务 17 / 控制 2`，任务完成行、AI 内部消息、human 往来和按键/输入控制均有独立徽标，120×30 与 80×24 下边界和中文换行无错位；`tests/baseline/con-018-human-filter-120x30.txt`/`.ansi` 实际点击 human 分类后只显示两条面向 human 的记录；`tests/baseline/con-018-completed-task-detail-120x30.txt`/`.ansi` 显示已完成任务的创建/更新/完成时间及派工、证据、提交、验收、汇报事件链。
 
-- [ ] **CON-019** — 待发图片撤销:输入框存在待发图片且本地文字为空时，Backspace/Delete 优先移除最后加入的一张图片，不得误发图片或把删除键透传到成员终端；有多张时可逐张撤销，文字非空时删除键继续只编辑文字，图片全部移除后成员直连的空 Delete/Backspace 恢复原透传语义。待发图片提示行与快捷键帮助必须明确显示删除方式；只移除本次待发引用，不删除内容寻址文件。同步产品、架构、README，并完成 120×30 与 80×24 视觉验证。
+- [x] **CON-019** — 待发图片撤销:输入框存在待发图片且本地文字为空时，Backspace/Delete 优先移除最后加入的一张图片，不得误发图片或把删除键透传到成员终端；有多张时可逐张撤销，文字非空时删除键继续只编辑文字，图片全部移除后成员直连的空 Delete/Backspace 恢复原透传语义。待发图片提示行与快捷键帮助必须明确显示删除方式；只移除本次待发引用，不删除内容寻址文件。同步产品、架构、README，并完成 120×30 与 80×24 视觉验证。
   - 前置:CON-015、TEAM-007。
-  - 处理登记:Codex，2026-08-30 15:27 CST，分支 `con-019-codex`。
+  - 验证（Codex，2026-08-30）:`uv run ruff check .` 通过；`uv run pytest tests/test_console_clipboard.py tests/test_console_compose.py tests/test_console_keyboard.py tests/test_console_app.py tests/test_console_work.py tests/test_console_mirror.py tests/test_visual_evidence.py -q` 为 `62 passed in 20.86s`。
+  - 证据:`src/console/compose.py` 新增逐张撤销并按“本地文字 → 待发图片 → 成员终端”处理 Backspace/Delete，撤销只修改附件元组、不删除文件；`src/console/app.py` 的待发提示和 `src/console/help.py` 的快捷键说明明确显示删除入口。`tests/test_console_clipboard.py` 覆盖两张图片逆序撤销、撤销期间零终端按键、文件保留、全部撤销后恢复 BSpace 透传，以及有文字时只编辑文字。
+  - 视觉自验证:`tests/baseline/con-019-pending-image-remove-120x30.txt`/`.ansi` 与 `tests/baseline/con-019-pending-image-remove-min-80x24.txt`/`.ansi` 均显示“待发图片 1 张 · 800×450 · 空输入 Backspace/Delete 撤销末张 · Ctrl+V 添加”；120×30 与 80×24 下提示完整可读，候选行、输入框、任务三栏和底栏边界无覆盖或错位。

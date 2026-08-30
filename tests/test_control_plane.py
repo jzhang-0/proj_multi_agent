@@ -31,6 +31,7 @@ from control.timeline import (
     timeline_snapshot_view,
 )
 from control.vocabulary import vocabulary
+from web.state import TimelineCache
 from work import EventKind, Task, TaskStatus, WorkEvent, WorkSnapshot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -237,6 +238,56 @@ def test_task_communication_seq_matches_merged_timeline(
         "work:event-progress",
         "linked-message",
     ]
+
+
+def test_timeline_seq_agrees_across_snapshot_view_cache_and_task_detail(
+    tmp_path: Path,
+) -> None:
+    """T-022(T-017 遗留):同一账本状态下,三条各自独立的读取路径必须给出同一个
+    seq——TUI 的 `timeline_snapshot_view`(接自己持有的 `TimelineProjector`,
+    对齐 `ConsoleApp.timeline_projector` 的真实用法)、Web `/api/v1/timeline`
+    背后的 `TimelineCache`、以及 Web `/api/v1/work/tasks/{id}` 的
+    `communications.timeline_seq`(复用 `TimelineCache.get()` 投影结果，同
+    `web/snapshots.py` 的真实接线)。三者都用各自生产路径上真实持有的对象
+    取值，不是三次独立调用 `history_from_entries` 后比对结果——那只能证明
+    算法自洽，证明不了确实同源(opus 评审意见)。
+    """
+    snapshot = _work_snapshot()
+    paths = BusPaths.resolve(tmp_path / "bus").ensure()
+    audit = AuditLog(paths)
+    linked = Message.create(
+        "sol",
+        "关联 T-003",
+        sender="fable",
+        message_id="linked-message",
+        task="T-003",
+        ts="2026-08-30 15:00:00",
+    )
+    audit.record(AuditEvent.DEPOSIT, linked)
+    audit.record(AuditEvent.DELIVER, linked)
+
+    # 源1:TUI——`timeline_snapshot_view` 接自己的 `TimelineProjector`。
+    tui_projector = TimelineProjector()
+    tui_view = timeline_snapshot_view(
+        audit,
+        work_events=snapshot.events,
+        snapshot=snapshot,
+        projector=tui_projector,
+    )
+    tui_entry = next(entry for entry in tui_view.entries if entry.key == linked.id)
+
+    # 源2:Web `/api/v1/timeline`——`TimelineCache.get()`。
+    cache = TimelineCache()
+    raw_entries, projected = cache.get(
+        paths, work_events=snapshot.events, snapshot=snapshot
+    )
+    web_entry = next(entry for entry in projected if entry.key == linked.id)
+
+    # 源3:Web `/api/v1/work/tasks/{id}`——复用源2 的 `projected`(真实接线见
+    # `web/snapshots.py:159-160`)。
+    detail = task_detail_view(snapshot, snapshot.tasks[0], raw_entries, timeline=projected)
+
+    assert tui_entry.seq == web_entry.seq == detail.communications[0].timeline_seq
 
 
 def test_history_window_preserves_full_timeline_seq(tmp_path: Path) -> None:

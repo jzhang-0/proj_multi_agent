@@ -6,6 +6,7 @@ import {
   fetchVocabulary,
   type Fetcher,
 } from "./api";
+import { ComposeBar, replyContext, type ReplyContext } from "./compose";
 import { formatTime, memberColor, minuteGroup, relativeActivity, vocabularyItem } from "./format";
 import { applyTimelineDelta, connectEventStream, type StreamStatus } from "./stream";
 import {
@@ -342,11 +343,15 @@ function TimelineView({
   vocabulary,
   fetcher,
   onSeen,
+  actor,
+  onReply,
 }: {
   snapshot: TimelineSnapshot;
   vocabulary?: VocabularySnapshot;
   fetcher: Fetcher;
   onSeen: (seq: number) => void;
+  actor: string;
+  onReply: (entry: TimelineEntry) => void;
 }) {
   const [category, setCategory] = useState<TimelineCategory>("all");
   const [page, setPage] = useState(snapshot);
@@ -473,11 +478,26 @@ function TimelineView({
                     <div><strong>{entry.sender}</strong><span>→ {entry.to}</span>{entry.task_id ? <em>{entry.task_id}</em> : null}</div>
                     <p>{entry.text}</p>
                     {entry.reason ? <small>{entry.reason}</small> : null}
+                    {entry.attachment_ids.length ? (
+                      <div class="timeline-attachments">
+                        {entry.attachment_ids.map((attachmentId, attachmentIndex) => (
+                          <a
+                            href={`/api/v1/attachments/${encodeURIComponent(attachmentId)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            key={attachmentId}
+                          >查看图片 {attachmentIndex + 1}</a>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <div class="timeline-entry__meta">
                     <span>#{entry.seq}</span>
                     <small class={outcome.dim ? "is-dim" : ""}>{outcome.glyph} {outcome.label}</small>
                     {entry.attachment_count ? <small>附件 {entry.attachment_count}</small> : null}
+                    {entry.kind === "ask" && entry.to === actor ? (
+                      <button class="timeline-reply" onClick={() => onReply(entry)}>回复 ask</button>
+                    ) : null}
                   </div>
                 </article>
               </div>
@@ -527,7 +547,7 @@ function HelpView() {
         <div><kbd>T</kbd><span><strong>切换主题</strong><small>深色 / 浅色</small></span></div>
         <div><kbd>Esc</kbd><span><strong>返回</strong><small>关闭帮助视图</small></span></div>
       </section>
-      <p class="help-note">Web 控制台当前为只读观察端。退出只关闭本页显示，不会终止成员会话。</p>
+      <p class="help-note">工作对话支持 @成员、Ask/Reply 与图片粘贴；任务责任动作仍以不可覆盖账本为准。退出只关闭本页显示，不会终止成员会话。</p>
     </div>
   );
 }
@@ -765,6 +785,7 @@ export function App({
   const [nowMs, setNowMs] = useState(Date.now());
   const [exited, setExited] = useState(false);
   const [streamStatus, setStreamStatus] = useState<StreamStatus>("offline");
+  const [replying, setReplying] = useState<ReplyContext | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const saved = localStorage.getItem(THEME_KEY);
     if (saved === "light" || saved === "dark") return saved;
@@ -815,12 +836,16 @@ export function App({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === "t" && !(event.target instanceof HTMLInputElement)) {
+      const target = event.target;
+      const typing = target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || (target instanceof HTMLElement && target.isContentEditable);
+      if (!typing && event.key.toLowerCase() === "t") {
         setTheme((current) => current === "dark" ? "light" : "dark");
-      } else if (event.key === "F3") {
+      } else if (!typing && event.key === "F3") {
         event.preventDefault();
         navigate({ view: "task", taskId: selectedTask });
-      } else if (event.key === "F1" || event.key === "?") {
+      } else if (!typing && (event.key === "F1" || event.key === "?")) {
         event.preventDefault();
         navigate({ view: "help" });
       } else if (event.key === "Escape" && route.view === "help") {
@@ -1036,12 +1061,22 @@ export function App({
         <Sidebar snapshot={snapshot} vocabulary={vocabulary} selectedTask={selectedTask} unread={unread} nowMs={nowMs} onNavigate={navigate} />
         <section class="content-surface">
           {route.view === "task" ? <TaskView detail={detail} loading={loadingDetail} error={error} vocabulary={vocabulary} onNavigate={navigate} /> : null}
-          {route.view === "timeline" ? <TimelineView snapshot={snapshot.timeline} vocabulary={vocabulary} fetcher={fetcher} onSeen={markSeen} /> : null}
+          {route.view === "timeline" ? <TimelineView snapshot={snapshot.timeline} vocabulary={vocabulary} fetcher={fetcher} onSeen={markSeen} actor={snapshot.session.actor} onReply={(entry) => setReplying(replyContext(entry))} /> : null}
           {route.view === "workspace" ? <WorkspaceView snapshot={snapshot} /> : null}
           {route.view === "help" ? <HelpView /> : null}
           {route.view === "terminal" ? <TerminalView member={route.member} /> : null}
         </section>
       </div>
+      {snapshot.session.capabilities.compose && (route.view === "task" || route.view === "timeline") ? (
+        <ComposeBar
+          snapshot={snapshot}
+          taskId={route.view === "task" ? selectedTask : null}
+          preferLeader={route.view === "task"}
+          reply={replying}
+          onReplyChange={setReplying}
+          fetcher={fetcher}
+        />
+      ) : null}
     </main>
   );
 }

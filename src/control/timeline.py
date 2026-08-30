@@ -11,6 +11,7 @@ from typing import Any
 from bus import DeliveryResult
 from bus.audit import AuditLog
 from bus.sanitize import sanitize
+from control.attachments import attachment_id_from_name
 from control.time import audit_timestamp, work_timestamp
 from work import EventKind, WorkEvent, WorkSnapshot
 from work.presentation import EVENT_LABELS, event_details
@@ -53,6 +54,9 @@ class TimelineEntry:
     seq: int = 0
     key: str = ""
     has_body: bool = False
+    kind: str = ""
+    reply_to: str = ""
+    attachment_ids: tuple[str, ...] = ()
 
     @property
     def resolved_category(self) -> TimelineCategory:
@@ -178,6 +182,13 @@ def from_result(result: DeliveryResult) -> TimelineEntry:
         at=audit_timestamp(message.ts),
         key=key,
         has_body=bool(message.text),
+        kind=sanitize(str(message.kind or "")),
+        reply_to=sanitize(str(message.reply_to or "")),
+        attachment_ids=tuple(
+            attachment_id
+            for item in message.attachments
+            if (attachment_id := attachment_id_from_name(item.name)) is not None
+        ),
     )
 
 
@@ -190,6 +201,13 @@ def from_audit(entry: dict[str, Any], *, index: int | None = None) -> TimelineEn
         outcome = "shown"
     attachments = entry.get("attachments")
     attachment_count = len(attachments) if isinstance(attachments, list) else 0
+    attachment_items = attachments if isinstance(attachments, list) else []
+    attachment_ids = tuple(
+        attachment_id
+        for item in attachment_items if isinstance(item, dict)
+        if isinstance(item.get("name"), str)
+        if (attachment_id := attachment_id_from_name(str(item["name"]))) is not None
+    )
     preview = sanitize(str(entry.get("preview", "")))
     reason = sanitize(str(entry.get("reason", "")))
     category = None
@@ -228,6 +246,9 @@ def from_audit(entry: dict[str, Any], *, index: int | None = None) -> TimelineEn
         audit_timestamp(ts),
         key=key,
         has_body=isinstance(entry.get("body"), str),
+        kind=sanitize(str(entry.get("kind") or "")),
+        reply_to=sanitize(str(entry.get("replyTo") or "")),
+        attachment_ids=attachment_ids,
     )
 
 
@@ -332,19 +353,16 @@ def history_from_entries(
             order.append(key)
             continue
         if entry.outcome != "pending":
-            merged[key] = TimelineEntry(
-                previous.ts,
-                previous.sender,
-                previous.to,
-                previous.text,
-                entry.outcome,
-                entry.reason,
-                entry.task_id,
-                entry.attachment_count or previous.attachment_count,
-                previous.category,
-                previous.at,
-                key=previous.key,
+            merged[key] = replace(
+                previous,
+                outcome=entry.outcome,
+                reason=entry.reason,
+                task_id=entry.task_id,
+                attachment_count=entry.attachment_count or previous.attachment_count,
                 has_body=entry.has_body or previous.has_body,
+                kind=entry.kind or previous.kind,
+                reply_to=entry.reply_to or previous.reply_to,
+                attachment_ids=entry.attachment_ids or previous.attachment_ids,
             )
     arrived = [merged[key] for key in order]
     if work_events and snapshot is not None:
@@ -361,8 +379,15 @@ def timeline_snapshot_view(
     *,
     work_events: tuple[WorkEvent, ...] = (),
     snapshot: WorkSnapshot | None = None,
+    projector: TimelineProjector | None = None,
 ) -> TimelineSnapshotView:
-    """返回分页条目和由完整投影计算的分类计数。"""
+    """返回分页条目和由完整投影计算的分类计数。
+
+    `projector` 用法与 `history_from_entries` 一致(T-022)：传入调用方持有的
+    `TimelineProjector`(如 TUI 的 `ConsoleApp.timeline_projector`、Web 的
+    `TimelineCache` 内部实例)，同一 key 的 seq 与该调用方其他投影路径保持
+    一致；不传则各调用一次独立分配，不跨调用共享。
+    """
     if limit <= 0:
         raise ValueError("limit 必须大于 0")
     raw_entries = audit.entries()
@@ -371,6 +396,7 @@ def timeline_snapshot_view(
         max(1, len(raw_entries) + len(work_events)),
         work_events=work_events,
         snapshot=snapshot,
+        projector=projector,
     )
     counts = {"all": len(all_entries), **{str(category): 0 for category in TimelineCategory}}
     for entry in all_entries:

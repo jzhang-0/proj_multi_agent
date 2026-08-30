@@ -569,9 +569,9 @@ class ConsoleApp(App[None]):
             AuditLog(self.paths),
             work_events=self.work_snapshot.events,
             snapshot=self.work_snapshot,
+            projector=self.timeline_projector,
         )
         entries = list(timeline_view.entries)
-        self.timeline_projector.seed(entries)
         timeline.backfill(by_display_time(entries), source=source)
         self._sync_timeline_filter_counts()
         timeline.note(
@@ -906,13 +906,17 @@ class ConsoleApp(App[None]):
         source = "bus/log.jsonl"
         if self.work_snapshot.events:
             source += " + work/events.jsonl"
+        # 换工作区就是换 epoch:旧 seq 分配作废，否则新工作区的 key 可能撞上
+        # 上一个工作区遗留在 _seq_by_key 里的编号(Web 侧 TimelineCache.reset()
+        # 同一语义)。
+        self.timeline_projector.reset()
         timeline_view = timeline_snapshot_view(
             AuditLog(self.paths),
             work_events=self.work_snapshot.events,
             snapshot=self.work_snapshot,
+            projector=self.timeline_projector,
         )
         entries = list(timeline_view.entries)
-        self.timeline_projector.seed(entries)
         timeline.backfill(by_display_time(entries), source=source)
         self._sync_timeline_filter_counts()
         self._connect_roster()

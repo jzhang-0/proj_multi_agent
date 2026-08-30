@@ -22,7 +22,7 @@ function mount() {
         initialBootstrap={bootstrapFixture}
         initialVocabulary={vocabularyFixture}
         initialTaskDetail={taskDetailFixture}
-        initialRoute={{ view: "task", taskId: "T-014" }}
+        initialRoute={{ view: "task", taskId: "T-016" }}
         pollMs={0}
         fetcher={fetcher}
       />,
@@ -48,13 +48,15 @@ describe("snapshot console", () => {
   it("renders task, members, evidence and immutable events from snapshots", () => {
     const root = mount();
 
-    expect(root.querySelector("h2")?.textContent).toContain("WEB-005");
+    expect(root.querySelector("h2")?.textContent).toContain("WEB-006");
     expect(root.textContent).toContain("任务态势");
-    expect(root.textContent).toContain("tests/baseline/web-005-task-board-1440x1000.png");
+    expect(root.textContent).toContain("tests/baseline/web-006-compose-1440x1000.png");
     expect(root.textContent).toContain("不可覆盖事件流");
     expect(root.textContent).toContain("关联沟通");
     expect(root.querySelectorAll(".member-card")).toHaveLength(4);
     expect(root.querySelectorAll(".event-stream li")).toHaveLength(4);
+    expect(root.querySelector('[aria-label="工作对话输入"]')).not.toBeNull();
+    expect(root.textContent).toContain("关联 T-016");
   });
 
   it("navigates to timeline, filters categories, and clears client-local unread", async () => {
@@ -67,6 +69,10 @@ describe("snapshot console", () => {
     expect(root.querySelector("h2")?.textContent).toBe("工作对话时间线");
     expect(window.location.pathname).toBe("/timeline");
     expect(root.querySelector(".unread-badge")?.textContent).toBe("0");
+    const reply = [...root.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "回复 ask");
+    await act(async () => reply?.click());
+    expect(root.textContent).toContain("回复 ask · msg-37");
 
     const control = [...root.querySelectorAll<HTMLButtonElement>(".filter-bar button")]
       .find((button) => button.textContent?.includes("控制事件"));

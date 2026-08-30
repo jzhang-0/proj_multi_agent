@@ -15,7 +15,7 @@
 
 “只读”表示 Web 只展示状态；“操作”表示会写队列、账本、名册、审计或控制 tmux；“只读 + 操作”表示同一面板同时有两类能力。来源列中的接口均为当前实现中的可复用入口。
 
-下表是 2026-08-30 `main` 的 WEB-009 前半逐行核对结果。`已实现`表示已有 Web 实现和对应 Goal 证据；`进行中`表示能力仍属于尚未结项的 WEB-006/WEB-008；`部分实现/待验证`表示页面已有行为，但 WEB-009 的后半仍需验证其最终安全语义。发布制品验证不在本表本次范围内。
+下表是合入 WEB-006 后的 `main` 状态核对结果。`已实现`表示已有 Web 实现和对应 Goal 证据；`已实现/待验收`表示实现已合入但仍需 Leader 验收；`进行中`表示能力仍属于尚未结项的 WEB-008；`部分实现/待验证`表示页面已有行为，但 WEB-009 的后半仍需验证其最终安全语义。发布制品验证不在本表本次范围内。
 
 | TUI 面板/能力 | 当前行为 | 交互类型 | Web 对齐所需来源 | 难度 | 当前状态 |
 |---|---|---|---|---|---|
@@ -31,11 +31,11 @@
 | 工作对话记录时间线 | 实时追加总线流量；启动时从 `bus/log.jsonl` 回填；显示结局、原因、@ 高亮、分钟分组 | 只读 | `AuditLog.entries()`、`AuditLog.read_body()`、`DeliveryResult`；`TimelineEntry` / `history()` | 中 | 已实现（WEB-004/005） |
 | 时间线分类筛选 | `全部 / human / AI / 任务 / 控制`，显示各分类计数；点击或左右键切换；不靠正文猜分类 | 只读 + 操作（筛选） | `TimelineEntry.resolved_category`（收发端/审计事件/WorkEvent 类型）`；`ConversationFilter` / `Timeline.set_category()` | 低 | 已实现（WEB-005） |
 | 时间线滚动 | PgUp/PgDn、Home/End、Ctrl+↑/↓；不在底部时新消息不强行拉回 | 只读 + 操作（视图滚动） | 前端滚动状态；历史来自 `AuditLog` 与 `WorkLedger` | 低 | 已实现（WEB-005） |
-| 工作对话输入框 | 回车发送；绑定团队时默认发 Leader 并自动关联选中任务；无 @ 时发上一个对话对象 | 操作 | `Message.create()`、`deposit()`、`BusPaths`；`WorkService.team.leader`；`ComposeInput` | 中 | 进行中（WEB-006） |
-| @ 成员补全 | 输入 @ 展示全体成员，Tab/↑↓ 选择，回车落定；支持中文成员名 | 操作（本地 UI，最终可发送） | `member_names()` / `Roster.enabled_members()`、`ComposeInput` 的 `matching_members()` | 低 | 进行中（WEB-006） |
-| 发送 ask/reply | 总线支持 ask id、关联回复和阻塞等待；成员收到回复指引 | 操作 | `bus.ask.store_ask()` / `store_reply()` / `wait_for_reply()`；`Message.kind/reply_to` | 中 | 进行中（WEB-006） |
-| 图片粘贴/发送 | Ctrl+V 读取系统剪贴板图片；PNG 内容寻址落盘；支持纯图片或图文；最多 8 张 | 操作 | `ClipboardImageStore`、`Attachment`、`Message.attachments`、工作区 `attachments/` | 中（浏览器上传协议需设计） | 进行中（WEB-006） |
-| 待发图片撤销 | 文字为空时 Backspace/Delete 逐张撤销引用；不删除内容寻址文件 | 操作（本地 UI） | `ComposeInput.remove_last_attachment()`；附件文件由 `ClipboardImageStore` 管理 | 低 | 进行中（WEB-006） |
+| 工作对话输入框 | 回车发送；绑定团队时默认发 Leader 并自动关联选中任务；无 @ 时发上一个对话对象 | 操作 | `Message.create()`、`deposit()`、`BusPaths`；`WorkService.team.leader`；`ComposeInput` | 中 | 已实现/待验收（WEB-006） |
+| @ 成员补全 | 输入 @ 展示全体成员，Tab/↑↓ 选择，回车落定；支持中文成员名 | 操作（本地 UI，最终可发送） | `member_names()` / `Roster.enabled_members()`、`ComposeInput` 的 `matching_members()` | 低 | 已实现/待验收（WEB-006） |
+| 发送 ask/reply | 总线支持 ask id、关联回复和阻塞等待；成员收到回复指引 | 操作 | `bus.ask.store_ask()` / `store_reply()` / `wait_for_reply()`；`Message.kind/reply_to` | 中 | 已实现/待验收（WEB-006） |
+| 图片粘贴/发送 | Ctrl+V 读取系统剪贴板图片；PNG 内容寻址落盘；支持纯图片或图文；最多 8 张 | 操作 | `ClipboardImageStore`、`Attachment`、`Message.attachments`、工作区 `attachments/` | 中（浏览器上传协议需设计） | 已实现/待验收（WEB-006） |
+| 待发图片撤销 | 文字为空时 Backspace/Delete 逐张撤销引用；不删除内容寻址文件 | 操作（本地 UI） | `ComposeInput.remove_last_attachment()`；附件文件由 `ClipboardImageStore` 管理 | 低 | 已实现/待验收（WEB-006） |
 | 成员终端镜像 | 选中成员后显示带 ANSI 颜色的 tmux 当前画面；活跃刷新 ≤100ms；不可见时停止拉取 | 只读 | `PaneSnapshotter.capture(member, color=True)`、`PaneSnapshot.text`；`Mirror.show_screen()` | **高** | 已实现（WEB-007） |
 | 成员终端回滚 | PgUp/PgDn、Home/End、滚轮、Ctrl+↑/↓ 读取成员自身 `capture-pane -S` 历史；回滚时禁用实时输入 | 只读 + 操作（视图滚动） | `PaneSnapshotter.capture(..., start=...)`、`Mirror.history_offset` | **高** | 已实现（WEB-007） |
 | 终端窗口适配 | 镜像可见时按 Web 主画面尺寸 `fit_window`；离开/attach 前释放尺寸；小尺寸不调节 | 操作（后台副作用） | `Tmux.fit_window()` / `release_window_size()`；`ConsoleApp._fit_member_window()` | **高** | 已实现（WEB-007） |
@@ -195,10 +195,10 @@ Web 层可以把现有接口投影成以下几类资源；名称是建议，不�
 
 ### 5.4 WEB-009 后半收口清单
 
-以下两项不在本次前半实现范围内，等 WEB-006/008 合入后由后半任务处理：
+以下两项的处理状态如下；WEB-009 后半仍需在 WEB-008 合入后收口：
 
-1. **T-017：`control.timeline_snapshot_view`**。先确认它是否应直接复用 `TimelineCache`/delta 流的 projector；若保留独立投影，必须在 docstring 和 API 文档明确其 `seq` 可能与实时流不一致，不能把两个序列当成同一游标。
-2. **T-013：显式 `websockets` 依赖**。评估从 `uvicorn[standard]` 拆出显式 `websockets` 是否能在不破坏真实握手的前提下缩小安装体积；若调整，必须重跑真实 WebSocket 握手冒烟并同步 `tests/test_release_package.py` 的依赖断言。本次只记录建议，不改依赖。
+1. **T-017：`control.timeline_snapshot_view`** 已由 T-022 接入共享 projector 并在 `main` 验证；后续只需随 WEB-009 收口复查，不再作为未处理遗留。
+2. **T-013：显式 `websockets` 依赖** 仍待评估。确认从 `uvicorn[standard]` 拆出显式 `websockets` 是否能在不破坏真实握手的前提下缩小安装体积；若调整，必须重跑真实 WebSocket 握手冒烟并同步 `tests/test_release_package.py` 的依赖断言。本次只记录建议，不改依赖。
 
 ## 6. 调研依据与验证
 

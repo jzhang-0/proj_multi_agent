@@ -21,6 +21,7 @@ class WebSession:
 
     token: str = field(repr=False)
     session_id: str = field(repr=False)
+    actor: str = "human"
 
     @classmethod
     def generate(cls) -> WebSession:

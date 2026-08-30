@@ -124,20 +124,26 @@ epoch 的存在正是为了让 revision 可以是**进程内内存计数器，�
 | `/api/v1/members` | `member` | 左栏成员卡片 |
 | `/api/v1/health` | `health` | 健康告警 |
 
+WEB-006 另增加 `POST /api/v1/messages`、`POST /api/v1/attachments` 与
+`GET /api/v1/attachments/{id}`，写入与下载契约见 §6.5；它们不是 snapshot 资源。
+
 ### 4.1 `GET /api/v1/session`
 
 ```json
 {
   "actor": "human",
+  "write_token": "<当前进程会话 id>",
   "epoch": "9f3c1ab27de40561",
   "epoch_started_at": 1756512000.0,
   "server_time_at": 1756512034.5,
   "revisions": {"workspace": 0, "team": 0, "roster": 2, "work": 7, "timeline": 41, "member": 118, "health": 0},
-  "capabilities": {"stream": true, "mirror": false, "compose": false, "control": false}
+  "capabilities": {"stream": true, "mirror": false, "compose": true, "control": false}
 }
 ```
 
 `capabilities` 让 SPA 在 WEB-005～008 逐步落地期间能按能力开关界面，而不是靠版本号猜。WEB-003 交付时除 `stream` 外全 `false`。
+`write_token` 仅在有效 HttpOnly cookie 会话内返回，SPA 原样放进 §6.3 的
+`X-Amux-Session`；它不持久化，进程退出即失效。
 
 ### 4.2 `GET /api/v1/bootstrap`
 
@@ -406,6 +412,31 @@ WS 握手校验(会话 cookie、`Host`、`Origin`，见 §6.3)失败时，**必�
 - 请求的 actor 恒为会话身份(首版 `human`)，**不读请求体里的 actor 字段**；出现该字段直接 400 `invalid-request`，不静默忽略 —— 静默忽略会让客户端误以为自报生效。
 - 路径、tmux target、成员名、任务 ID 全部按领域校验器过一遍(`validate_task_id`、成员名须在名册/adopt 集合内)，不拼接进任何命令行。
 - 任务权限声明(谁是 leader / assignee / reviewer)只信账本投影，不信客户端。
+
+### 6.5 WEB-006 消息与附件
+
+三个端点均要求有效会话 cookie；两个 `POST` 还必须带
+`X-Amux-Session: <session.write_token>`，否则返回 `unauthorized/401`。
+
+- `POST /api/v1/attachments`：请求 body 是原始图片字节，`Content-Type` 必须为
+  `image/*`。服务端实际解码、检查 20 MiB/4000 万像素上限，再规范化为 PNG，写入
+  工作区既有 `attachments/clipboard-<sha256前16位>.png` 内容寻址存储（0600）。响应只给
+  `{"attachment":{"id","name","media_type","width","height","size","download_url"}}`；
+  不返回、也不接受任何本机路径。同一内容重复上传返回同一 id。
+- `GET /api/v1/attachments/{id}`：只接受 16 位小写十六进制内容 id，从当前工作区附件根
+  精确解析后返回 `image/png`；响应头仅含安全文件名，不含绝对路径。
+- `POST /api/v1/messages`：JSON 字段白名单为
+  `to/text/kind/task_id/reply_to/attachment_ids`。普通消息 `kind=message`；省略 `to` 时
+  服务端从当前绑定团队取唯一 Leader。`kind=ask` 不得带 `task_id`；`kind=reply` 必须带
+  `reply_to`，不得带 `to/task_id`，收件人由服务端读取原 ask 索引反查。图片单独发送时
+  服务端沿用 TUI 文案补成“请查看附加图片。”。所有路径都经 `Message.create()` +
+  `deposit()`，ask/reply 同时用既有 `store_ask()` / `store_reply()` 保证关联与首答语义。
+
+请求出现 `actor` / `from` / `path` 或任何未知字段直接返回 `invalid-request/400`；消息
+`from` 恒取认证会话 actor（首版 `human`）。`attachment_ids` 在服务端解析成冻结总线 schema
+需要的绝对本机路径，浏览器始终只持有 id。待发图片撤销只移除客户端引用，不删除可被其他
+消息复用的内容寻址文件。SPA 在任务视图把当前选中 task 关联到普通消息；ask/reply 模式清除
+task，显式 `@成员` 覆盖目标，成功发送后记住上次对象。
 
 ## 7. 对 inventory §2 的覆盖对照
 

@@ -39,7 +39,7 @@
   - 前置:WEB-001。
 
 - [x] **WEB-004** — versioned 实时事件流：WebSocket 推送 work/bus/team/roster/member 的 invalidation 或 delta(watchfiles 或领域动作触发)；`epoch/revision` 断档时客户端全量 resync；每客户端有界队列，慢客户端不积压。实时验收针对「左栏工作对话记录卡」未读数、「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。以测试客户端验证，不依赖 SPA。
-  - 验证(Grok，2026-08-30):`uv run ruff check .` 通过；`uv run pytest tests/test_web_stream.py tests/test_web_snapshots.py tests/test_web_auth.py tests/test_control_plane.py tests/test_console_members.py tests/test_console_health.py -q`；`tests/test_web_stream.py` 连续三次复跑。
+  - 验证(Grok，2026-08-30):`uv run ruff check .` 通过；`uv run pytest tests/test_web_stream.py tests/test_web_snapshots.py tests/test_web_auth.py tests/test_control_plane.py tests/test_console_members.py tests/test_console_health.py -q` 为 65 passed；`tests/test_web_stream.py` 连续三次复跑均 20 passed。
   - 证据:`src/web/stream.py` 实现 `/api/v1/stream`：hello / invalidation / delta / resync / epoch_changed / ping；`EventHub` 用 watchfiles(debounce 50ms，失败回退轮询) 盯 work/bus/team/roster，成员 0.5s 指纹变化才 bump，`HealthMonitor` 边沿走 health delta；每连接有界队列满则域 overflow resync → 全域 resync → close 1013。握手失败先 `accept` 再 `close`：4401 未授权 / 4404 不存在 / 4503 暂不可用（与 WEB-007 一致）。`src/web/app.py` lifespan 常驻 EventHub+HealthMonitor；`capabilities.stream=true`。T-009 遗留：`MemberStatusService.track()` 会为运行中新增成员补 `_watch_member`。实现合入 `197d6c7`。评审续作：timeline 指纹含日志+work 哈希链+投影长度；`_timeline_ops` 用 key→seq 映射重排则 resync gap；`_UNSET` 哨兵避免首扫误 `reset_epoch`；`wait_primed` 上限 1s，超时仍发 hello；delta/resync 入环；全域 overflow 后再入队 1013。未改 `control/timeline.py`。
   - 前置:WEB-003。
 
@@ -60,7 +60,7 @@
 - [ ] **WEB-010** — 时间线 seq 按到达顺序分配：当前 `control/timeline.py` 按 `at` 排序后位置赋 seq，与 api-protocol §4.8「按进入顺序分配的单调整数」不等价；bus 审计 ts 为秒粒度，同秒内消息与任务事件重排是常态，导致 WEB-004 delta 产出 update+append 错位、只能靠 resync 兜底。改为按到达顺序分配单调 seq(不落盘：进程启动时按账本+审计到达顺序重建，每个 epoch 内自洽即可，不建第二套状态库)，保持单一 seq 空间、窗口不重编号(T-003 已验收语义)，TUI 展示顺序不变；定死两条并写进 api-protocol.md §4.8(现 :241)与 §5.4：(1) seq 一经分配对该 key 永久不变，只按记录进入服务端的顺序递增，不随重排改变；(2) seq 不再等于时间顺序，前端排序一律用 `at`，不得拿 seq 当时序；并说明 §4.9 未读数(head_seq − last_seen_seq)以此为前提。WEB-004 的 seq 重排 resync 路径保留为防御。以 test_control_plane/test_console_timeline/test_web_stream 回归。
   - 前置:WEB-004。
 
-- [ ] **WEB-011** — 跨前端共享终端采集：TUI(`console/mirror.py`，MIRROR_INTERVAL=0.08)与 Web 镜像通道(≈10 Hz)同看一个成员时是两条互不感知的 tmux 采集回路，叠加负载；terminal-protocol §4.3「多观看者共享单一订阅」未覆盖跨前端。把采集下沉到 `src/control`（或 tmuxctl 侧）的单一订阅源，TUI 与 Web 都作为观看者接入，帧率/背压语义不变；TUI 视觉基线与 test_console_mirror 不变。
+- [ ] **WEB-011** — 跨前端共享终端采集：TUI(`console/mirror.py`，MIRROR_INTERVAL=0.08)与 Web 镜像通道(≈10 Hz)同看一个成员时是两条互不感知的 tmux 采集回路，叠加负载；terminal-protocol §4.3「多观看者共享单一订阅」未覆盖跨前端。把采集下沉到 `src/control`（或 tmuxctl 侧）的单一订阅源，TUI 与 Web 都作为观看者接入，帧率/背压语义不变；§4.2「无观看者停采集」判据改为跨前端总观看者计数，最后一个观看者(不论 TUI 还是 Web)退出才停采集；TUI 视觉基线与 test_console_mirror 不变。
   - 前置:WEB-007。
 
 - [ ] **WEB-009** — 全功能矩阵与发布收口：逐行勾验 inventory §2 全部条目(未完成项如实保留)；更新产品、架构、README、CLI 帮助与安全说明；前端产物进 sdist/wheel；`qa.release` 源码外联网安装并启动 Web，验证不依赖 Node/源码路径/CDN；复查「退出」只关 Web 会话不关成员。

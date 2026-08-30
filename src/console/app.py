@@ -1173,7 +1173,8 @@ class ConsoleApp(App[None]):
             latest = compose.attachments[-1]
             parts.append(
                 f"待发图片 {len(compose.attachments)} 张 · "
-                f"{latest.width}×{latest.height} · Ctrl+V 继续添加"
+                f"{latest.width}×{latest.height} · 空输入 Backspace/Delete 撤销末张 · "
+                "Ctrl+V 添加"
             )
         if compose.candidates:
             current = compose.current_candidate

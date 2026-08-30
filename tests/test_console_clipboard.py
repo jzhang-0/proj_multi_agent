@@ -90,7 +90,8 @@ def test_ctrl_v_shows_pending_image_and_at_can_send_image_only(tmp_path: Path) -
             suggestion = app.query_one("#suggestions", Static)
             assert suggestion.display
             assert "待发图片 1 张" in str(suggestion.render())
-            assert "Ctrl+V 继续添加" in str(suggestion.render())
+            assert "空输入 Backspace/Delete 撤销末张" in str(suggestion.render())
+            assert "Ctrl+V 添加" in str(suggestion.render())
 
             compose.value = "@codex"
             await pilot.press("enter")
@@ -104,6 +105,73 @@ def test_ctrl_v_shows_pending_image_and_at_can_send_image_only(tmp_path: Path) -
     assert clipboard.calls == 1
     audit = AuditLog(paths).entries()
     assert audit[-1]["attachments"][0]["path"] == attachment.path
+
+
+def test_empty_delete_removes_pending_images_before_direct_key_passthrough(
+    tmp_path: Path,
+) -> None:
+    class RecordingController:
+        def __init__(self) -> None:
+            self.keys: list[tuple[str, str]] = []
+
+        def press_key(self, target: str, key: str) -> None:
+            self.keys.append((target, key))
+
+    first = _attachment(tmp_path)
+    second_path = tmp_path / "clipboard-second.png"
+    Image.new("RGB", (48, 27), "teal").save(second_path)
+    second = Attachment(
+        path=str(second_path),
+        media_type="image/png",
+        name=second_path.name,
+        width=48,
+        height=27,
+        size=second_path.stat().st_size,
+    )
+    controller = RecordingController()
+    app = ConsoleApp(
+        BusPaths.resolve(tmp_path / "bus").ensure(),
+        deliver=lambda _message: True,
+        members=("codex",),
+        controller=controller,  # type: ignore[arg-type]
+        pump_enabled=False,
+    )
+
+    async def scenario() -> None:
+        async with app.run_test(size=(120, 30)) as pilot:
+            app.select_member("codex")
+            compose = app.query_one("#compose", ComposeInput)
+            compose.attach_image(first)
+            compose.attach_image(second)
+            compose.focus()
+
+            await pilot.press("backspace")
+            assert compose.attachments == (first,)
+            assert controller.keys == []
+            assert first.path and Path(first.path).exists()
+            assert second_path.exists()  # 只撤销待发引用，不删除内容寻址文件
+
+            await pilot.press("delete")
+            assert compose.attachments == ()
+            assert controller.keys == []
+            assert Path(first.path).exists()
+
+            # 图片全撤完以后，直连空输入删除键才恢复终端透传。
+            await pilot.press("backspace")
+            assert await _wait_for(
+                pilot, lambda: controller.keys == [("codex", "BSpace")]
+            )
+
+            # 本地有文字时仍只编辑文字，不撤销图片，也不透传。
+            compose.attach_image(first)
+            compose.value = "x"
+            await pilot.press("end")
+            await pilot.press("backspace")
+            assert compose.value == ""
+            assert compose.attachments == (first,)
+            assert controller.keys == [("codex", "BSpace")]
+
+    asyncio.run(scenario())
 
 
 def test_ctrl_v_direct_member_sends_readable_path(tmp_path: Path) -> None:

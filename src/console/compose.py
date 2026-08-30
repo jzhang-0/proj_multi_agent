@@ -110,6 +110,15 @@ class ComposeInput(Input):
         self.attachments = ()
         self.post_message(self.AttachmentsChanged(self))
 
+    def remove_last_attachment(self) -> Attachment | None:
+        """撤销最后加入的待发图片；内容寻址文件可能被复用，不在这里删除。"""
+        if not self.attachments:
+            return None
+        removed = self.attachments[-1]
+        self.attachments = self.attachments[:-1]
+        self.post_message(self.AttachmentsChanged(self))
+        return removed
+
     # --- 补全 -----------------------------------------------------------
 
     def _completion_source(self) -> tuple[str, tuple[str, ...], str] | None:
@@ -191,6 +200,14 @@ class ComposeInput(Input):
     async def _on_key(self, event: events.Key) -> None:
         if event.key == "ctrl+v":
             self.post_message(self.PasteImage(self))
+            event.prevent_default()
+            event.stop()
+            return
+        if not self.value and self.attachments and event.key in {"backspace", "delete"}:
+            # 删除键的优先级是：先编辑本地文字，再撤销待发图片，最后才在
+            # 成员直连的纯空状态下透传给终端。这里只移除引用，不能删除可能
+            # 已被其他消息复用的内容寻址图片文件。
+            self.remove_last_attachment()
             event.prevent_default()
             event.stop()
             return

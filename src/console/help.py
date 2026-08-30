@@ -38,6 +38,7 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
         (
             Shortcut("@成员", "输入 @ 即列出成员；Tab / ↑↓ 选择，回车落定"),
             Shortcut("Ctrl+V", "粘贴系统剪贴板图片，可随文字或单独发送"),
+            Shortcut("Backspace / Delete", "输入为空且有待发图片时删除最后一张"),
             Shortcut("/ 命令", "斜杠命令补全,含 /workspace；/task 打开任务"),
             Shortcut("Enter", "接受补全，再按一次发送或执行"),
             Shortcut("成员会话里直接打字", "不带 @ 就是直接键入该成员终端，等于在它窗口里敲"),

@@ -196,7 +196,7 @@ Web 层可以把现有接口投影成以下几类资源；名称是建议，不�
 ### 5.4 WEB-009 收口清单（T-023 终验，2026-08-30）
 
 1. **(a) T-017：`control.timeline_snapshot_view`**——已收口。T-022 接入共享 `projector`/`TimelineCache`，`tests/test_control_plane.py` 有同进程三处 seq 同源用例；`main` 已验证，无遗留。
-2. **(b) T-013：显式 `websockets` 依赖**——已收口，结论为**不改**：`uvicorn[standard]` 已含 `websockets`(真实浏览器 WS 升级需要，纯 ASGI-server 不带；WEB-007 曾因缺它导致真实握手失败，测试内存传输当时掩盖了问题)，拆出显式依赖只省安装体积、不省运行时行为，而每次改动都要求重跑真实握手冒烟+同步 `tests/test_release_package.py` 断言，收益不足以覆盖这个持续维护成本。维持现状，不改 `pyproject.toml`。
+2. **(b) T-013：显式 `websockets` 依赖**——已收口，结论为**不改**：`uvicorn[standard]` 已含 `websockets`(真实浏览器 WS 升级需要，纯 ASGI-server 不带；WEB-004/T-013 当初就是因为缺它导致 `/api/v1/stream` 在真实服务器下 404、`TestClient` 内存传输掩盖了问题，才把依赖从 `uvicorn` 换成 `uvicorn[standard]`)，拆出显式依赖只省安装体积、不省运行时行为，而每次改动都要求重跑真实握手冒烟+同步 `tests/test_release_package.py` 断言，收益不足以覆盖这个持续维护成本。维持现状，不改 `pyproject.toml`。
 3. **(c) 附件存储无配额/清理策略**——已收口。`ContentAddressedImageStore` 新增 `max_store_bytes`(默认 500MB)总容量上限，达到上限拒绝新上传(`ImageAttachmentError`，同现有单文件超限一样映射到 `invalid-request`/400)；不做自动淘汰——内容寻址文件可能仍被历史消息引用，删除会让回看时间线里的图片永久 404，安全的淘汰需要先知道哪些附件还被引用，这是跨切面的更大改动，作为已知限制记录，不在本次范围内实现。`tests/test_control_attachments.py` 覆盖到达上限拒绝新内容、同内容去重不占二次配额。
 4. **(d) 写端点与 WS 票据的 §6.3 合规复查**——已收口，无新增未合规项。T-019/opus 已对 WEB-008 落地时的 8 个写路由与 `attach_token`/`direct_token`(`ConfirmationStore`：CSPRNG ≥128 位熵、绑定 actor/member/action、单次消费、30s 过期)做过完整审计；T-023 在同一 `main` 提交(`e70eea3`)上复核，写路由数量与挂载的 `require_write_session` 依赖均未变化，无需重新走一遍审计，直接引用 T-019 证据。
 

@@ -40,6 +40,7 @@ from control.timeline import (
     TimelineProjector,
     TimelineSnapshotView,
     history,
+    history_from_entries,
     timeline_snapshot_view,
 )
 from control.vocabulary import Vocabulary, vocabulary
@@ -73,6 +74,7 @@ __all__ = [
     "Vocabulary",
     "WorkBoardView",
     "history",
+    "history_from_entries",
     "leases_root",
     "member_names",
     "pending_counts",

@@ -7,8 +7,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from bus.sanitize import sanitize
-from control.time import audit_timestamp, work_timestamp
-from work import Task, TaskStatus, WorkSnapshot
+from control.time import work_timestamp
+from control.timeline import from_audit, history_from_entries
+from work import Task, TaskStatus, WorkEvent, WorkSnapshot
 from work.presentation import DETAIL_FIELDS
 
 ACTIVE_STATES = (
@@ -167,25 +168,33 @@ def _event_details(data: Mapping[str, object]) -> dict[str, str]:
 def task_communications(
     entries: Iterable[Mapping[str, object]],
     task_id: str,
+    *,
+    work_events: tuple[WorkEvent, ...] = (),
+    snapshot: WorkSnapshot | None = None,
 ) -> tuple[TaskCommunicationView, ...]:
     """从总线审计中过滤任务关联 deposit，保留最近 20 条。"""
+    raw_entries = [dict(entry) for entry in entries]
+    timeline = history_from_entries(
+        raw_entries,
+        max(1, len(raw_entries) + len(work_events)),
+        work_events=work_events,
+        snapshot=snapshot,
+    )
+    seq_by_key = {entry.key: entry.seq for entry in timeline}
     linked: list[TaskCommunicationView] = []
-    for timeline_seq, entry in enumerate(entries, start=1):
+    for index, entry in enumerate(raw_entries):
         if entry.get("event") != "deposit" or entry.get("task") != task_id:
             continue
-        attachments = entry.get("attachments")
-        ts = str(entry.get("ts") or "")
+        timeline_entry = from_audit(entry, index=index)
         linked.append(
             TaskCommunicationView(
-                timeline_seq=timeline_seq,
-                sender=sanitize(str(entry.get("from") or "?")),
-                to=sanitize(str(entry.get("to") or "?")),
-                text=sanitize(str(entry.get("preview") or "")),
-                attachment_count=(
-                    len(attachments) if isinstance(attachments, list) else 0
-                ),
-                at=audit_timestamp(ts),
-                ts=ts,
+                timeline_seq=seq_by_key[timeline_entry.key],
+                sender=timeline_entry.sender,
+                to=timeline_entry.to,
+                text=timeline_entry.text,
+                attachment_count=timeline_entry.attachment_count,
+                at=timeline_entry.at,
+                ts=timeline_entry.ts,
             )
         )
     return tuple(linked[-20:])
@@ -235,5 +244,10 @@ def task_detail_view(
         description=sanitize(task.description),
         evidence=tuple(sanitize(reference) for reference in task.evidence),
         events=events,
-        communications=task_communications(communications, task.id),
+        communications=task_communications(
+            communications,
+            task.id,
+            work_events=snapshot.events,
+            snapshot=snapshot,
+        ),
     )

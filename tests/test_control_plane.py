@@ -21,6 +21,7 @@ from control.members import MemberStatusService
 from control.tasks import task_board_view, task_detail_view
 from control.terminal import terminal_input_rows
 from control.timeline import (
+    HISTORY_LIMIT,
     TimelineCategory,
     TimelineEntry,
     TimelineProjector,
@@ -170,6 +171,91 @@ def test_task_dtos_normalize_times_filter_event_data_and_link_audit(tmp_path: Pa
     assert detail.communications[0].text == "请处理"
     assert detail.communications[0].at > 1_000_000_000
     assert "internal_secret" not in json.dumps(detail_payload, ensure_ascii=False)
+
+
+def test_task_communication_seq_matches_merged_timeline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _work_snapshot()
+    paths = BusPaths.resolve(tmp_path / "bus").ensure()
+    audit = AuditLog(paths)
+    first = Message.create(
+        "sol",
+        "第一条无关消息",
+        sender="fable",
+        message_id="noise-1",
+        ts="2026-08-30 13:00:00",
+    )
+    second = Message.create(
+        "sol",
+        "第二条无关消息",
+        sender="fable",
+        message_id="noise-2",
+        ts="2026-08-30 14:00:00",
+    )
+    linked = Message.create(
+        "sol",
+        "关联 T-003",
+        sender="fable",
+        message_id="linked-message",
+        ts="2026-08-30 15:00:00",
+        task="T-003",
+    )
+    audit_times = iter(
+        (
+            "2026-08-30 13:00:00",
+            "2026-08-30 13:00:01",
+            "2026-08-30 14:00:00",
+            "2026-08-30 14:00:01",
+            "2026-08-30 15:00:00",
+            "2026-08-30 15:00:01",
+        )
+    )
+    monkeypatch.setattr("bus.audit.time.strftime", lambda _format: next(audit_times))
+    for message in (first, second, linked):
+        audit.record(AuditEvent.DEPOSIT, message)
+        audit.record(AuditEvent.DELIVER, message)
+
+    entries = history(audit, work_events=snapshot.events, snapshot=snapshot)
+    detail = task_detail_view(snapshot, snapshot.tasks[0], audit.entries())
+    linked_entry = next(entry for entry in entries if entry.key == linked.id)
+
+    assert [entry.key for entry in entries] == [
+        "noise-1",
+        "noise-2",
+        "work:event-progress",
+        "linked-message",
+    ]
+    assert detail.communications[0].timeline_seq == linked_entry.seq == 4
+
+
+def test_history_window_preserves_full_timeline_seq(tmp_path: Path) -> None:
+    paths = BusPaths.resolve(tmp_path / "bus").ensure()
+    audit = AuditLog(paths)
+    for index in range(HISTORY_LIMIT + 5):
+        audit.record(
+            AuditEvent.DEPOSIT,
+            Message.create(
+                "sol",
+                "",
+                sender="fable",
+                message_id=f"message-{index}",
+                ts="2026-08-30 14:20:00",
+            ),
+        )
+
+    backfill = history(audit)
+    snapshot_view = timeline_snapshot_view(audit)
+    snapshot_by_key = {entry.key: entry for entry in snapshot_view.entries}
+
+    assert backfill[0].seq == snapshot_by_key[backfill[0].key].seq == 6
+    assert snapshot_view.head_seq == HISTORY_LIMIT + 5
+    assert snapshot_view.oldest_seq == 6
+    assert snapshot_view.has_more
+    projector = TimelineProjector()
+    projector.seed(list(snapshot_view.entries))
+    assert projector.project(backfill[0]).seq == backfill[0].seq
 
 
 def test_timeline_assigns_cursor_key_epoch_and_preserves_raw_timestamp(tmp_path: Path) -> None:

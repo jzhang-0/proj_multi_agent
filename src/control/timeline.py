@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -288,9 +289,25 @@ def history(
     snapshot: WorkSnapshot | None = None,
 ) -> list[TimelineEntry]:
     """合并审计结局和任务事件，返回最近的工作对话读模型。"""
+    return history_from_entries(
+        audit.entries(),
+        limit,
+        work_events=work_events,
+        snapshot=snapshot,
+    )
+
+
+def history_from_entries(
+    raw_entries: Iterable[dict[str, Any]],
+    limit: int = HISTORY_LIMIT,
+    *,
+    work_events: tuple[WorkEvent, ...] = (),
+    snapshot: WorkSnapshot | None = None,
+) -> list[TimelineEntry]:
+    """从完整审计序列投影时间线，截窗前分配全量稳定序号。"""
     merged: dict[str, TimelineEntry] = {}
     order: list[str] = []
-    for index, raw in enumerate(audit.entries()):
+    for index, raw in enumerate(raw_entries):
         entry = from_audit(raw, index=index)
         key = entry.key
         previous = merged.get(key)
@@ -317,25 +334,8 @@ def history(
     if work_events and snapshot is not None:
         entries.extend(from_work_event(event, snapshot) for event in work_events)
         entries.sort(key=lambda item: item.at)
-    recent = entries[-limit:]
-    return [
-        TimelineEntry(
-            item.ts,
-            item.sender,
-            item.to,
-            item.text,
-            item.outcome,
-            item.reason,
-            item.task_id,
-            item.attachment_count,
-            item.category,
-            item.at,
-            seq=seq,
-            key=item.key,
-            has_body=item.has_body,
-        )
-        for seq, item in enumerate(recent, start=1)
-    ]
+    sequenced = [replace(item, seq=seq) for seq, item in enumerate(entries, start=1)]
+    return sequenced[-limit:] if limit > 0 else []
 
 
 def timeline_snapshot_view(
@@ -348,10 +348,10 @@ def timeline_snapshot_view(
     """返回分页条目和由完整投影计算的分类计数。"""
     if limit <= 0:
         raise ValueError("limit 必须大于 0")
-    audit_size = len(audit.entries())
-    all_entries = history(
-        audit,
-        max(1, audit_size + len(work_events)),
+    raw_entries = audit.entries()
+    all_entries = history_from_entries(
+        raw_entries,
+        max(1, len(raw_entries) + len(work_events)),
         work_events=work_events,
         snapshot=snapshot,
     )

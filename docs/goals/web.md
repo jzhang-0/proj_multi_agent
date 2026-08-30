@@ -30,12 +30,14 @@
   - 前置:WEB-001。
 
 - [ ] **WEB-003** — Web 后端骨架与一致 snapshot API：`amux web` 入口，FastAPI/ASGI，默认只监听 `127.0.0.1`，本机认证会话；提供 workspace/team/work/timeline/member snapshot(带 `epoch/revision`)，只调用 WEB-001 控制面。接口覆盖「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。wheel 内带最小静态健康页；`qa.release` 源码外安装后可启动。Web 依赖加入默认依赖。
+  - 处理登记:Sonnet，2026-08-30 17:13 +0800，分支 `web-003-sonnet`(T-009)。进行中:先做不依赖 WEB-001 DTO 的部分——`amux web` 入口、FastAPI/uvicorn 默认依赖、§6 本机认证会话(token→HttpOnly SameSite=Strict cookie、Host 校验、无 CORS)、`importlib.resources` 提供最小静态健康页、TestClient 测试；snapshot 端点(workspace/team/work/timeline/member)依赖 WEB-001 尚未合入,暂不做。分支先不合 main,等 WEB-001(`web-001-sol`)落地后接 snapshot 端点一起合。
   - 前置:WEB-001。
 
 - [ ] **WEB-004** — versioned 实时事件流：WebSocket 推送 work/bus/team/roster/member 的 invalidation 或 delta(watchfiles 或领域动作触发)；`epoch/revision` 断档时客户端全量 resync；每客户端有界队列，慢客户端不积压。实时验收针对「左栏工作对话记录卡」未读数、「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。以测试客户端验证，不依赖 SPA。
   - 前置:WEB-003。
 
 - [ ] **WEB-005** — 桌面 SPA 只读与导航闭环：TypeScript SPA(Preact 或轻量原生组件，此处定案)，构建产物进 Python 包。实现「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「时间线分类筛选」「时间线滚动」「`/workspace`」「`/task [ID]` / F3」「`/help` / ? / F1」「深浅主题 / T」「健康告警」「成员状态实时更新」「退出」。`/workspace` 与 `/task` 可用等价 Web 导航。组件测试 + Playwright 截图视觉自验证。
+  - 处理登记:T-010 Luna，2026-08-30 17:14 +0800，分支 `web-005-luna`；先交付正式前端工程骨架方案，再进入 SPA 实现。
   - 前置:WEB-004。
 
 - [ ] **WEB-006** — 消息、ask/reply 与浏览器附件：实现「工作对话输入框」「@ 成员补全」「发送 ask/reply」「图片粘贴/发送」「待发图片撤销」。浏览器上传写入现有内容寻址附件存储，响应/下载不泄露绝对路径；消息走 `Message.create()` + `deposit()`；默认 Leader、选中 task、上次对象、ask/task 互斥语义与 TUI 一致；actor 来自认证上下文，不接受客户端自报。

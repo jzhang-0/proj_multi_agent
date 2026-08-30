@@ -38,8 +38,9 @@
   - 后续复审(opus)退回两点，均已修:①tmux 不可用时没有后台监视任务纠正 `ActivityTracker` 的默认 alive——lifespan 初始化及 `members_dto.track()` 新增成员后均显式 `set_alive(False)`，`/members` 对所有成员返回 `state=dead/alive=false`；②未运行 lifespan 时 `app.state.tmux/member_status` 未初始化——API router 在认证后统一通过运行时依赖返回 §2.4 `work-unavailable/503`，不再冒 `AttributeError` 500。`tests/test_web_snapshots.py` 同时钉住初始/新增成员 dead 状态、认证优先级及 workspace/members 两类未就绪端点；实现提交 `30af5c2`，main 合入 `65bed37`。
   - 前置:WEB-001。
 
-- [ ] **WEB-004** — versioned 实时事件流：WebSocket 推送 work/bus/team/roster/member 的 invalidation 或 delta(watchfiles 或领域动作触发)；`epoch/revision` 断档时客户端全量 resync；每客户端有界队列，慢客户端不积压。实时验收针对「左栏工作对话记录卡」未读数、「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。以测试客户端验证，不依赖 SPA。
-  - 处理登记:Grok，2026-08-30 18:48 +0800，分支 `web-004-grok`(T-013)。
+- [x] **WEB-004** — versioned 实时事件流：WebSocket 推送 work/bus/team/roster/member 的 invalidation 或 delta(watchfiles 或领域动作触发)；`epoch/revision` 断档时客户端全量 resync；每客户端有界队列，慢客户端不积压。实时验收针对「左栏工作对话记录卡」未读数、「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。以测试客户端验证，不依赖 SPA。
+  - 验证(Grok，2026-08-30):`uv run ruff check .` 通过；`uv run pytest tests/test_web_stream.py tests/test_web_snapshots.py tests/test_web_auth.py tests/test_control_plane.py tests/test_console_members.py tests/test_console_health.py -q` 为 54 passed。
+  - 证据:`src/web/stream.py` 实现 `/api/v1/stream`：hello / invalidation / delta / resync / epoch_changed / ping；`EventHub` 用 watchfiles(debounce 50ms，失败回退轮询) 盯 work/bus/team/roster，成员 0.5s 指纹变化才 bump，`HealthMonitor` 边沿走 health delta；每连接有界队列满则域 overflow resync → 全域 resync → close 1013。`src/web/app.py` lifespan 常驻 EventHub+HealthMonitor；`capabilities.stream=true`。T-009 遗留：`MemberStatusService.track()` 会为运行中新增成员补 `_watch_member`。`tests/test_web_stream.py` 覆盖握手 Origin/Host/cookie、timeline/work delta、member invalidation、health raise/clear、双客户端、断线 replay、慢客户端队列降级。实现合入 `197d6c7`。
   - 前置:WEB-003。
 
 - [ ] **WEB-005** — 桌面 SPA 只读与导航闭环：TypeScript SPA(Preact 或轻量原生组件，此处定案)，构建产物进 Python 包。实现「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「时间线分类筛选」「时间线滚动」「`/workspace`」「`/task [ID]` / F3」「`/help` / ? / F1」「深浅主题 / T」「健康告警」「成员状态实时更新」「退出」。`/workspace` 与 `/task` 可用等价 Web 导航。组件测试 + Playwright 截图视觉自验证。

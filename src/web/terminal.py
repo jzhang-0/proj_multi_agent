@@ -59,7 +59,9 @@ class MirrorTmux(Protocol):
     def capture_pane(
         self, target: str, *, escape: bool = False, start: int | str | None = None
     ) -> str: ...
-    def capture_with_cursor(self, target: str, *, escape: bool = False) -> tuple[str, int]: ...
+    def capture_with_geometry(
+        self, target: str, *, escape: bool = False, start: int | str | None = None
+    ) -> tuple[str, int, int, int]: ...
     def send_keys(self, target: str, *keys: str, literal: bool = False) -> None: ...
     def has_session(self, target: str) -> bool: ...
     def fit_window(self, target: str, width: int, height: int) -> None: ...
@@ -112,22 +114,32 @@ class MirrorGroup:
         for queue in self.subscribers.values():
             _push_latest(queue, frame)
 
-    def _capture(self) -> tuple[str, int]:
-        """同步、阻塞;调用方经 `asyncio.to_thread` 跑。"""
-        if self.history_offset == 0:
-            return self.tmux.capture_with_cursor(self.member, escape=True)
-        text = self.tmux.capture_pane(self.member, escape=True, start=-self.history_offset)
-        return text, 0
+    def _capture(self) -> tuple[str, int, int, int]:
+        """同步、阻塞;调用方经 `asyncio.to_thread` 跑。返回 `(text, cursor_y, cols, rows)`。
+
+        回滚帧的 `cursor_y` 强制归零:`#{cursor_y}` 报的是实时光标位置，
+        与 `-S` 回滚起点无关,套进回滚画面里没有意义(§4.1 doc 同款取舍)。
+        """
+        start = -self.history_offset if self.history_offset else None
+        text, cursor_y, cols, rows = self.tmux.capture_with_geometry(
+            self.member, escape=True, start=start
+        )
+        if self.history_offset:
+            cursor_y = 0
+        return text, cursor_y, cols, rows
 
     async def _run(self) -> None:
         """§4.2/§4.3:单生产者循环，无观看者时由 `remove()` 取消。"""
         try:
             while True:
                 try:
-                    text, cursor_y = await asyncio.to_thread(self._capture)
+                    text, cursor_y, cols, rows = await asyncio.to_thread(self._capture)
                 except TmuxCommandError:
                     await asyncio.sleep(self.min_interval)
                     continue
+                # §2.2:单调时钟不得出网，`*_at` 一律 epoch 秒；`now` 只用来跟
+                # `last_broadcast_at` 比节流间隔，不出网，继续用 monotonic
+                # 没问题(评审 opus 实测:之前 captured_at 直接送了 monotonic 值)。
                 now = time.monotonic()
                 if text != self.last_text:
                     self.last_text = text
@@ -142,8 +154,10 @@ class MirrorGroup:
                             "type": "frame",
                             "member": self.member,
                             "frame_seq": self.frame_seq,
+                            "cols": cols,
+                            "rows": rows,
                             "history_offset": self.history_offset,
-                            "captured_at": now,
+                            "captured_at": time.time(),
                             "cursor_y": cursor_y,
                             "input_rows": list(input_rows),
                             "live_allowed": live_allowed,

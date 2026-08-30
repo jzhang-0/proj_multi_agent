@@ -14,6 +14,10 @@ export interface MirrorFrame {
   type: "frame";
   member: string;
   frame_seq: number;
+  //: §5:canonical size 由租约持有者决定；非持有者只能从帧里的这两个字段
+  //: 知道权威尺寸，不能只信自己的本地测量(评审 opus 实测发现)。
+  cols: number;
+  rows: number;
   history_offset: number;
   captured_at: number;
   cursor_y: number;

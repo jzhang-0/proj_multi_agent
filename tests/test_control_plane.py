@@ -25,7 +25,9 @@ from control.timeline import (
     TimelineCategory,
     TimelineEntry,
     TimelineProjector,
+    by_display_time,
     history,
+    history_from_entries,
     timeline_snapshot_view,
 )
 from control.vocabulary import vocabulary
@@ -224,10 +226,17 @@ def test_task_communication_seq_matches_merged_timeline(
     assert [entry.key for entry in entries] == [
         "noise-1",
         "noise-2",
+        "linked-message",
+        "work:event-progress",
+    ]
+    assert [entry.seq for entry in entries] == [1, 2, 3, 4]
+    assert detail.communications[0].timeline_seq == linked_entry.seq == 3
+    assert [entry.key for entry in by_display_time(entries)] == [
+        "noise-1",
+        "noise-2",
         "work:event-progress",
         "linked-message",
     ]
-    assert detail.communications[0].timeline_seq == linked_entry.seq == 4
 
 
 def test_history_window_preserves_full_timeline_seq(tmp_path: Path) -> None:
@@ -322,6 +331,65 @@ def test_timeline_assigns_cursor_key_epoch_and_preserves_raw_timestamp(tmp_path:
     for entry in entries:
         _assert_json_dto(entry)
     _assert_json_dto(view)
+
+
+def test_seq_follows_arrival_and_survives_earlier_at_insert(tmp_path: Path) -> None:
+    """后到、更早 at 的任务事件拿下一个 seq，不得挤占已有 key。"""
+    paths = BusPaths.resolve(tmp_path / "bus").ensure()
+    audit = AuditLog(paths)
+    first = Message.create(
+        "sol",
+        "先到",
+        sender="fable",
+        message_id="arrived-first",
+        ts="2026-08-30 18:00:00",
+    )
+    audit.record(AuditEvent.DEPOSIT, first)
+    projector = TimelineProjector()
+    initial = history_from_entries(audit.entries(), projector=projector)
+    assert [entry.key for entry in initial] == ["arrived-first"]
+    assert initial[0].seq == 1
+
+    task = Task(
+        id="T-010",
+        title="插到前面",
+        description="",
+        leader="fable",
+        parent_id=None,
+        status=TaskStatus.IN_PROGRESS,
+        created_at="2020-01-01T00:00:00Z",
+        updated_at="2020-01-01T00:00:00Z",
+        assignee="sol",
+        reviewer="",
+        evidence=(),
+        latest="",
+    )
+    early = WorkEvent(
+        1,
+        1,
+        "event-early",
+        task.id,
+        EventKind.PROGRESS,
+        "sol",
+        "2020-01-01T00:00:00Z",
+        {"summary": "更早的 at"},
+        "",
+        "hash-early",
+    )
+    snapshot = WorkSnapshot((task,), (early,))
+    rebuilt = history_from_entries(
+        audit.entries(),
+        work_events=snapshot.events,
+        snapshot=snapshot,
+        projector=projector,
+    )
+    by_key = {entry.key: entry for entry in rebuilt}
+    assert by_key["arrived-first"].seq == 1
+    assert by_key["work:event-early"].seq == 2
+    assert [entry.key for entry in by_display_time(rebuilt)] == [
+        "work:event-early",
+        "arrived-first",
+    ]
 
 
 def test_all_public_leaf_dtos_are_json_safe_and_terminal_rule_is_shared() -> None:

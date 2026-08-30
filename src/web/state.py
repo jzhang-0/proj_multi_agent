@@ -16,7 +16,7 @@ from typing import Any
 
 from bus import BusPaths
 from bus.audit import AuditLog
-from control.timeline import TimelineEntry, history_from_entries
+from control.timeline import TimelineEntry, TimelineProjector, history_from_entries
 from work import WorkEvent, WorkSnapshot
 
 DOMAINS = ("workspace", "team", "roster", "work", "timeline", "member", "health")
@@ -105,10 +105,21 @@ class _TimelineCacheEntry:
 
 
 class TimelineCache:
-    """单槽缓存：审计日志与任务事件都未变时复用上一次的全量投影。"""
+    """单槽缓存：审计日志与任务事件都未变时复用上一次的全量投影。
+
+    进程内持有 ``TimelineProjector``，指纹变化后重建时已知 key 的 seq 不变。
+    """
 
     def __init__(self) -> None:
         self._entry: _TimelineCacheEntry | None = None
+        self._projector = TimelineProjector()
+        self._root: str | None = None
+
+    def reset(self) -> None:
+        """epoch 换代或工作区切换时丢掉投影与 seq 分配。"""
+        self._entry = None
+        self._projector = TimelineProjector()
+        self._root = None
 
     def get(
         self,
@@ -117,8 +128,12 @@ class TimelineCache:
         work_events: tuple[WorkEvent, ...],
         snapshot: WorkSnapshot | None,
     ) -> tuple[list[dict[str, Any]], list[TimelineEntry]]:
+        root = str(paths.root)
+        if self._root is not None and self._root != root:
+            self.reset()
+        self._root = root
         fingerprint = (
-            str(paths.root),
+            root,
             _log_fingerprint(paths),
             _work_fingerprint(snapshot),
         )
@@ -132,6 +147,7 @@ class TimelineCache:
             max(1, len(raw_entries) + len(work_events)),
             work_events=work_events,
             snapshot=snapshot,
+            projector=self._projector,
         )
         self._entry = _TimelineCacheEntry(fingerprint, raw_entries, projected)
         return raw_entries, projected

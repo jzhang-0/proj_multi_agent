@@ -339,7 +339,8 @@ attach 期间，同一成员的 mirror 直连态自动降级为只读——两�
 |---|---|
 | 镜像面板 | `disableStdin: true`；每帧 `term.write(归位清屏 + data)`；输入走外层 `keydown`(§7.2) |
 | 完整接管 | `disableStdin: false`；`term.onData(d => ws.send(d))`；`term.write(bytes)` |
-| 两者 | `convertEol: false`(tmux 给的是完整终端序列，再转换会重复换行) |
+| 镜像面板 | `convertEol: true`：`capture-pane -p -e` 是按 LF 分隔的屏幕文本；回放时须把 LF 当 CRLF，保证下一行从第 0 列开始 |
+| 完整接管 | `convertEol: false`：PTY 给的是完整终端字节流，再转换会重复换行 |
 
 - **禁 `innerHTML`**：xterm 自管 DOM，任何时候都不要把终端文本塞进 `innerHTML`。这既是 XSS 面，也会破坏 xterm 的渲染状态。
 - **主题不由服务端下发**：xterm `theme` 用前端自己的 token，与 api-protocol §4.8 的"颜色属呈现层"一致。

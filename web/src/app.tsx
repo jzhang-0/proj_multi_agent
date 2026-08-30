@@ -23,6 +23,13 @@ import {
   type TerminalStatus,
   type AttachConnection,
 } from "./terminal-stream";
+import {
+  ATTACH_TERMINAL_OPTIONS,
+  MIRROR_TERMINAL_OPTIONS,
+  TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
+  TERMINAL_LINE_HEIGHT,
+} from "./terminal-render";
 import type {
   BootstrapSnapshot,
   Fault,
@@ -39,9 +46,6 @@ import type { Terminal as XTerm } from "@xterm/xterm";
 //: §10:不引 addon-fit,用隐藏等宽测量元素算 cell 宽高——桌面浏览器字体渲染
 //: 一致,这个近似值在真实终端里够用(见 docs/web/terminal-protocol.md §13
 //: 待验证项,后续如需更精确可以换 addon-fit)。
-const TERMINAL_FONT_FAMILY = "ui-monospace, SFMono-Regular, Menlo, monospace";
-const TERMINAL_FONT_SIZE = 13;
-const TERMINAL_LINE_HEIGHT = 1.2;
 //: 对齐服务端 src/web/terminal.py 的 MIN_FIT_SIZE，客户端先做一次同样的
 //: 下限裁剪，避免发送服务端注定会忽略的过小尺寸。
 const MIN_FIT_COLS = 60;
@@ -707,14 +711,7 @@ function AttachTerminal({
         );
         const { Terminal } = await import("@xterm/xterm");
         if (disposed || !surfaceRef.current) return;
-        const term = new Terminal({
-          disableStdin: false,
-          convertEol: false,
-          fontFamily: TERMINAL_FONT_FAMILY,
-          fontSize: TERMINAL_FONT_SIZE,
-          lineHeight: TERMINAL_LINE_HEIGHT,
-          cursorBlink: true,
-        });
+        const term = new Terminal(ATTACH_TERMINAL_OPTIONS);
         term.open(surfaceRef.current);
         const fit = () => {
           const surface = surfaceRef.current;
@@ -837,13 +834,7 @@ function TerminalView({
     void (async () => {
       const { Terminal } = await import("@xterm/xterm");
       if (disposed || !containerRef.current) return;
-      const term = new Terminal({
-        disableStdin: true,
-        convertEol: false,
-        fontFamily: TERMINAL_FONT_FAMILY,
-        fontSize: TERMINAL_FONT_SIZE,
-        lineHeight: TERMINAL_LINE_HEIGHT,
-      });
+      const term = new Terminal(MIRROR_TERMINAL_OPTIONS);
       term.open(containerRef.current);
       termRef.current = term;
 

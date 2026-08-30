@@ -14,17 +14,23 @@ import asyncio
 import contextlib
 import importlib.resources
 import mimetypes
+import os
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 from fastapi import APIRouter, Depends, FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.websockets import WebSocketDisconnect
 
 from bus.audit import AuditLog
+from control.delivery import DeliveryPump, MutePolicy
 from control.health import HealthMonitor
-from control.lease import MemberLeaseManager, leases_root
+from control.lease import HubDeliveryLease, MemberLeaseManager, leases_root
+from control.member_admin import MemberAdminController, MemberAdminError
 from control.members import MemberStatusService
+from roster.schema import RosterError
+from tmuxctl import TmuxError, WindowSizeGuard
 from web.actions import (
     download_attachment,
     read_image_body,
@@ -32,6 +38,7 @@ from web.actions import (
     send_message,
     upload_attachment,
 )
+from web.attach import AttachRegistry, run_attach_connection
 from web.auth import COOKIE_NAME, WebSession
 from web.context import build_context
 from web.errors import ApiError, ApiJSONResponse, register_error_handlers
@@ -118,11 +125,18 @@ async def _lifespan(app: FastAPI):
     app.state.lease_manager = (
         MemberLeaseManager(leases_root(ctx.workspace)) if ctx.workspace is not None else None
     )
-    member_status = MemberStatusService(ctx.names, ctx.tmux)
+    muted: set[str] = set()
+    member_admin = None
+    if ctx.workspace is not None and ctx.paths is not None and ctx.tmux is not None:
+        member_admin = MemberAdminController(ctx.workspace, ctx.tmux, ctx.paths, muted=muted)
+    app.state.member_admin = member_admin
+    names = member_admin.member_names() if member_admin is not None else ctx.names
+    sources = member_admin.sources() if member_admin is not None else None
+    member_status = MemberStatusService(names, ctx.tmux, sources=sources)
     app.state.member_status = member_status
     health: HealthMonitor | None = None
     if ctx.paths is not None:
-        health = HealthMonitor(ctx.paths, ctx.names, ctx.tmux, interval=settings.health_interval_s)
+        health = HealthMonitor(ctx.paths, names, ctx.tmux, interval=settings.health_interval_s)
     app.state.health_monitor = health
     hub = EventHub(
         tracker=app.state.revisions,
@@ -131,13 +145,30 @@ async def _lifespan(app: FastAPI):
         health=health,
         tmux=ctx.tmux,
         settings=settings,
+        names_provider=member_admin.member_names if member_admin is not None else None,
     )
     app.state.stream = hub
+    window_guard = WindowSizeGuard()
+    app.state.window_guard = window_guard
+    delivery_pump = None
+    if ctx.workspace is not None and ctx.paths is not None and ctx.tmux is not None:
+        hub_lease = HubDeliveryLease(
+            leases_root(ctx.workspace) / "hub.json",
+            f"web:{os.getpid()}:{uuid.uuid4().hex[:8]}",
+        )
+        delivery_pump = DeliveryPump(
+            ctx.paths,
+            policy=MutePolicy(muted),
+            lease=hub_lease,
+            tmux=ctx.tmux,
+        )
+        delivery_pump.start()
+    app.state.delivery_pump = delivery_pump
     tasks: list[asyncio.Task[None]] = []
     if member_status.can_monitor:
         tasks.append(asyncio.create_task(member_status.run(), name="web-member-status"))
     else:
-        for name in ctx.names:
+        for name in names:
             member_status.set_alive(name, False)
     tasks.append(asyncio.create_task(hub.run(), name="web-event-hub"))
     try:
@@ -147,11 +178,14 @@ async def _lifespan(app: FastAPI):
         member_status.stop()
         if health is not None:
             health.stop()
+        if delivery_pump is not None:
+            delivery_pump.stop()
         for task in tasks:
             task.cancel()
         for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        window_guard.close()
 
 
 def create_app(
@@ -188,7 +222,11 @@ def create_app(
     app.state.health_monitor = None
     app.state.stream = None
     app.state.lease_manager = None
+    app.state.member_admin = None
+    app.state.delivery_pump = None
+    app.state.window_guard = None
     app.state.mirror_hub = MirrorHub()
+    app.state.attach_registry = AttachRegistry()
     # 测试可收窄以避免等一个真实心跳周期(默认 5s)；生产不改。
     app.state.heartbeat_interval = HEARTBEAT_INTERVAL
     register_error_handlers(app)
@@ -258,6 +296,58 @@ def create_app(
                 status_code=401,
             )
 
+    def current_context():
+        ctx = build_context(tmux=app.state.tmux)
+        admin = app.state.member_admin
+        if admin is not None and ctx.workspace is not None:
+            ctx = replace(ctx, names=admin.member_names())
+        return ctx
+
+    def require_member_admin() -> MemberAdminController:
+        admin = app.state.member_admin
+        if admin is None:
+            raise ApiError(
+                "control-unavailable",
+                "成员控制需要已登记工作区与可用 tmux",
+                status_code=503,
+                domain="control",
+            )
+        return admin
+
+    async def control_body(request: Request) -> dict:
+        try:
+            raw = await request.json()
+        except (TypeError, ValueError):
+            raise ApiError(
+                "invalid-request", "请求体必须是 JSON 对象", status_code=400, domain="control"
+            ) from None
+        if not isinstance(raw, dict):
+            raise ApiError(
+                "invalid-request", "请求体必须是 JSON 对象", status_code=400, domain="control"
+            )
+        if "actor" in raw:
+            raise ApiError(
+                "invalid-request",
+                "actor 只取认证上下文，客户端不得自报",
+                status_code=400,
+                domain="control",
+            )
+        return raw
+
+    async def run_admin(callable_, *args):
+        try:
+            return await asyncio.to_thread(callable_, *args)
+        except (MemberAdminError, RosterError, TmuxError, OSError) as exc:
+            raise ApiError(
+                "invalid-member-action", str(exc), status_code=400, domain="control"
+            ) from exc
+
+    def sync_admin_names(admin: MemberAdminController) -> None:
+        names = admin.member_names()
+        app.state.member_status.track(names, sources=admin.sources())
+        if app.state.health_monitor is not None:
+            app.state.health_monitor.track(names)
+
     api = APIRouter(
         prefix=API_PREFIX,
         dependencies=[Depends(require_session), Depends(require_runtime)],
@@ -274,7 +364,7 @@ def create_app(
 
     @api.get("/bootstrap")
     async def get_bootstrap() -> dict:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         return bootstrap_dto(
             ctx,
             app.state.revisions,
@@ -291,22 +381,22 @@ def create_app(
 
     @api.get("/workspace")
     async def get_workspace() -> dict:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         return workspace_dto(ctx, app.state.revisions)
 
     @api.get("/team")
     async def get_team() -> dict:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         return team_dto(ctx, app.state.revisions)
 
     @api.get("/work")
     async def get_work() -> dict:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         return work_dto(ctx, app.state.revisions)
 
     @api.get("/work/tasks/{task_id}")
     async def get_task_detail(task_id: str) -> dict:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         return task_detail_dto(ctx, app.state.revisions, app.state.timeline_cache, task_id)
 
     @api.get("/timeline")
@@ -319,7 +409,7 @@ def create_app(
             raise ApiError(
                 "invalid-request", "limit 必须在 1..1000 之间", status_code=400, domain="timeline"
             )
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         return timeline_dto(
             ctx,
             app.state.revisions,
@@ -331,7 +421,7 @@ def create_app(
 
     @api.get("/timeline/{seq}/body")
     async def get_timeline_body(seq: int) -> Response:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         text = timeline_body_text(ctx, app.state.timeline_cache, seq)
         return Response(
             content=text,
@@ -341,12 +431,12 @@ def create_app(
 
     @api.get("/members")
     async def get_members() -> dict:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         return members_dto(ctx, app.state.revisions, app.state.member_status)
 
     @api.get("/health")
     async def get_health() -> dict:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         return health_dto(ctx, app.state.revisions, app.state.health_monitor)
 
     @api.post("/attachments", dependencies=[Depends(require_write_session)])
@@ -361,9 +451,78 @@ def create_app(
 
     @api.post("/messages", dependencies=[Depends(require_write_session)])
     async def post_message(request: Request) -> dict:
-        ctx = build_context(tmux=app.state.tmux)
+        ctx = current_context()
         payload = await read_message_payload(request)
         return send_message(ctx, actor=session.actor, payload=payload)
+
+    @api.get("/member-management")
+    async def get_member_management() -> dict:
+        admin = require_member_admin()
+        return await run_admin(admin.listing)
+
+    @api.post("/members", dependencies=[Depends(require_write_session)])
+    async def post_member(request: Request) -> dict:
+        admin = require_member_admin()
+        raw = await control_body(request)
+        result = await run_admin(admin.add, str(raw.get("name", "")))
+        sync_admin_names(admin)
+        return result
+
+    @api.delete("/members/{name}", dependencies=[Depends(require_write_session)])
+    async def delete_member(name: str) -> dict:
+        admin = require_member_admin()
+        result = await run_admin(admin.remove, name)
+        sync_admin_names(admin)
+        return result
+
+    @api.post("/members/adopt", dependencies=[Depends(require_write_session)])
+    async def post_adopt(request: Request) -> dict:
+        admin = require_member_admin()
+        raw = await control_body(request)
+        result = await run_admin(admin.adopt, str(raw.get("name", "")))
+        sync_admin_names(admin)
+        return result
+
+    @api.post("/members/{name}/mute", dependencies=[Depends(require_write_session)])
+    async def post_mute(name: str, request: Request) -> dict:
+        await control_body(request)
+        return await run_admin(require_member_admin().toggle_mute, name)
+
+    @api.post("/members/{name}/{action}/confirm", dependencies=[Depends(require_write_session)])
+    async def post_control_confirm(name: str, action: str, request: Request) -> dict:
+        await control_body(request)
+        admin = require_member_admin()
+        return await run_admin(admin.confirm, session.actor, name, action)
+
+    @api.post("/members/{name}/{action}", dependencies=[Depends(require_write_session)])
+    async def post_member_action(name: str, action: str, request: Request) -> dict:
+        raw = await control_body(request)
+        admin = require_member_admin()
+        if action == "interrupt":
+            feedback = await run_admin(admin.interrupt, name)
+        elif action == "up":
+            feedback = await run_admin(admin.up, name)
+        elif action == "attach":
+            return await run_admin(admin.authorize_attach, session.actor, name)
+        elif action == "direct":
+            return await run_admin(admin.authorize_direct, session.actor, name)
+        elif action in {"terminate", "restart", "down"}:
+            token = raw.get("confirm_token")
+            if not isinstance(token, str) or not token:
+                raise ApiError(
+                    "confirmation-required",
+                    "危险动作需要一次性 confirm_token",
+                    status_code=409,
+                    domain="control",
+                )
+            feedback = await run_admin(
+                getattr(admin, action), session.actor, name, token
+            )
+        else:
+            raise ApiError(
+                "not-found", f"未知成员动作: {action}", status_code=404, domain="control"
+            )
+        return admin.feedback(feedback)
 
     @app.websocket(f"{API_PREFIX}/terminal/{{member}}/mirror")
     async def terminal_mirror(websocket: WebSocket, member: str) -> None:
@@ -393,8 +552,13 @@ def create_app(
             await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
             return
 
-        ctx = build_context(tmux=app.state.tmux)
-        if ctx.workspace is None or ctx.tmux is None or app.state.lease_manager is None:
+        ctx = current_context()
+        if (
+            ctx.workspace is None
+            or ctx.tmux is None
+            or app.state.lease_manager is None
+            or app.state.member_admin is None
+        ):
             await reject(WS_CLOSE_UNAVAILABLE, "unavailable")
             return
         if member not in ctx.names:
@@ -414,10 +578,59 @@ def create_app(
             lease_manager=app.state.lease_manager,
             audit=AuditLog(ctx.paths),
             hub=app.state.mirror_hub,
+            window_guard=app.state.window_guard,
+            authorize=lambda token: app.state.member_admin.consume_direct(
+                session.actor, member, token
+            ),
             heartbeat_interval=app.state.heartbeat_interval,
         )
         with contextlib.suppress(WebSocketDisconnect):
             await run_mirror_connection(websocket, state)
+
+    @app.websocket(f"{API_PREFIX}/terminal/{{member}}/attach")
+    async def terminal_attach(websocket: WebSocket, member: str) -> None:
+        async def reject(code: int, reason: str) -> None:
+            await websocket.accept()
+            await websocket.close(code=code, reason=reason)
+
+        host = websocket.headers.get("host", "")
+        origin = websocket.headers.get("origin", "")
+        if host not in hosts or origin not in origins:
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
+            return
+        if not session.verify_cookie(websocket.cookies.get(COOKIE_NAME)):
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
+            return
+        ctx = current_context()
+        if (
+            ctx.workspace is None
+            or ctx.paths is None
+            or ctx.tmux is None
+            or app.state.lease_manager is None
+            or app.state.member_admin is None
+        ):
+            await reject(WS_CLOSE_UNAVAILABLE, "unavailable")
+            return
+        if member not in ctx.names:
+            await reject(WS_CLOSE_NOT_FOUND, "member-not-found")
+            return
+        await websocket.accept()
+        owner = f"web-attach:{session.session_id}:{uuid.uuid4().hex}"
+        with contextlib.suppress(WebSocketDisconnect):
+            await run_attach_connection(
+                websocket,
+                member=member,
+                owner=owner,
+                tmux=ctx.tmux,
+                lease_manager=app.state.lease_manager,
+                audit=AuditLog(ctx.paths),
+                registry=app.state.attach_registry,
+                authorize=lambda token: app.state.member_admin.consume_attach(
+                    session.actor, member, token
+                ),
+                window_guard=app.state.window_guard,
+                heartbeat_interval=app.state.heartbeat_interval,
+            )
 
     app.include_router(api)
 

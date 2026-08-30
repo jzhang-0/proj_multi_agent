@@ -191,8 +191,17 @@ class NamespacedTmux:
     def release_window_size(self, target: str) -> None:
         self._inner.release_window_size(self._map(target))
 
+    def attach_argv(self, target: str) -> list[str]:
+        return self._inner.attach_argv(self._map(target))
+
+    def release_window_size_argv(self, target: str) -> list[str]:
+        return self._inner.release_window_size_argv(self._map(target))
+
     def display_message(self, target: str, format_string: str) -> str:
         return self._inner.display_message(self._map(target), format_string)
+
+    def show_window_option(self, target: str, name: str) -> str | None:
+        return self._inner.show_window_option(self._map(target), name)
 
     def set_pane_remain_on_exit(self, target: str, enabled: bool = True) -> None:
         self._inner.set_pane_remain_on_exit(self._map(target), enabled)

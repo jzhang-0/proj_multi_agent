@@ -37,6 +37,7 @@ from tmuxctl.process import (
     is_missing_target_error,
     read_processes,
 )
+from tmuxctl.pty import TmuxAttachProcess, WindowSizeGuard
 from tmuxctl.snapshot import SNAPSHOT_INTERVAL_SECONDS, PaneSnapshot, PaneSnapshotter
 from tmuxctl.version import MIN_VERSION, TmuxVersion, probe
 
@@ -70,6 +71,8 @@ __all__ = [
     "TmuxTimeoutError",
     "TmuxVersion",
     "TmuxVersionError",
+    "TmuxAttachProcess",
+    "WindowSizeGuard",
     "inject_text",
     "is_missing_target_error",
     "build_process_tree",

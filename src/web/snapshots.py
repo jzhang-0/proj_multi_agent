@@ -354,7 +354,7 @@ def session_dto(
         "server_time_at": time.time(),
         "revisions": tracker.revisions(),
         "write_token": write_token,
-        "capabilities": {"stream": True, "mirror": True, "compose": True, "control": False},
+        "capabilities": {"stream": True, "mirror": True, "compose": True, "control": True},
     }
 
 

@@ -62,6 +62,14 @@ class Tmux:
         """为常驻子进程等高级用法构造带 socket 参数的 tmux argv。"""
         return self._argv(*args)
 
+    def attach_argv(self, target: str) -> list[str]:
+        """完整接管的唯一命令形状：精确 attach 一个已解析会话，不经 shell。"""
+        return self._argv("attach-session", "-t", f"={target}")
+
+    def release_window_size_argv(self, target: str) -> list[str]:
+        """供崩溃看门进程执行的固定 window-size 恢复命令。"""
+        return self._argv("set-option", "-t", target, "-u", "window-size")
+
     def _run(
         self,
         *args: str,
@@ -257,6 +265,12 @@ class Tmux:
         """读取全局 user option；不存在或 server 已消失时返回 ``None``。"""
         process = self._run("show-options", "-gv", name, check=False)
         return process.stdout.strip() if process.returncode == 0 else None
+
+    def show_window_option(self, target: str, name: str) -> str | None:
+        """读取窗口 option；未设置或目标消失返回 ``None``。"""
+        process = self._run("show-options", "-wv", "-t", target, name, check=False)
+        value = process.stdout.strip()
+        return value if process.returncode == 0 and value else None
 
     def unset_global_option(self, name: str) -> None:
         """移除全局 user option；不存在时不报错。"""

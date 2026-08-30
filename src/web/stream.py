@@ -11,8 +11,8 @@ import contextlib
 import json
 import time
 from collections import deque
-from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -249,6 +249,7 @@ class EventHub:
         health: HealthMonitor | None,
         tmux: Any,
         settings: StreamSettings,
+        names_provider: Callable[[], tuple[str, ...]] | None = None,
     ) -> None:
         self.tracker = tracker
         self.cache = cache
@@ -256,6 +257,7 @@ class EventHub:
         self.health = health
         self._tmux = tmux
         self.settings = settings
+        self._names_provider = names_provider
         self._clients: list[StreamClient] = []
         self._rings = {name: DeltaRing(size) for name, size in RING_CAPACITIES.items()}
         self._published: dict[str, int] = {}
@@ -266,6 +268,12 @@ class EventHub:
         self._watch_stop = asyncio.Event()
         self._primed = asyncio.Event()
         self.timeline_gap_resyncs = 0
+
+    def _context(self) -> SnapshotContext:
+        ctx = build_context(tmux=self._tmux)
+        if self._names_provider is not None and ctx.workspace is not None:
+            ctx = replace(ctx, names=self._names_provider())
+        return ctx
 
     def add_client(self) -> StreamClient:
         client = StreamClient(queue_max=self.settings.queue_max)
@@ -441,7 +449,7 @@ class EventHub:
         )
 
     def scan_files_now(self) -> None:
-        ctx = build_context(tmux=self._tmux)
+        ctx = self._context()
         self._scan_workspace(ctx)
         self._scan_team(ctx)
         self._scan_roster(ctx)
@@ -449,7 +457,7 @@ class EventHub:
         self._scan_timeline(ctx)
 
     def scan_members_now(self) -> None:
-        ctx = build_context(tmux=self._tmux)
+        ctx = self._context()
         if ctx.workspace is None:
             return
         try:
@@ -597,7 +605,7 @@ class EventHub:
 
     async def _watch_files(self) -> None:
         while not self._stopped:
-            ctx = build_context(tmux=self._tmux)
+            ctx = self._context()
             paths = _watch_paths(ctx)
             if not paths or not watchfiles_available():
                 await asyncio.sleep(self.settings.watch_poll_s)
@@ -624,7 +632,7 @@ class EventHub:
         ):
             if self._stopped:
                 return
-            ctx = build_context(tmux=self._tmux)
+            ctx = self._context()
             if _watch_paths(ctx) != paths:
                 return
             if changes:
@@ -639,7 +647,7 @@ class EventHub:
         if self.health is None:
             return
         while not self._stopped:
-            ctx = build_context(tmux=self._tmux)
+            ctx = self._context()
             self.health.track(ctx.names)
             current = await asyncio.to_thread(self.health.probe)
             events = self.health.update(current)

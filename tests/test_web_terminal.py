@@ -75,6 +75,25 @@ def _ws(client: TestClient, session: WebSession, member: str = MEMBER):
     )
 
 
+def _direct_token(client: TestClient, session: WebSession, member: str = MEMBER) -> str:
+    response = client.post(
+        f"/api/v1/members/{member}/direct",
+        json={},
+        headers={"X-Amux-Session": session.session_id},
+    )
+    assert response.status_code == 200
+    return response.json()["direct_token"]
+
+
+def _acquire(client: TestClient, session: WebSession, *, force: bool = False) -> dict:
+    return {
+        "type": "lease",
+        "action": "acquire",
+        "force": force,
+        "direct_token": _direct_token(client, session),
+    }
+
+
 def _wait_for(ws, msg_type: str, *, attempts: int = 50, where=None):
     """镜像帧和离散回执共用一条连接，实时并发到达；等指定 `type`(可选再按
     `where` 过滤)，路上的 `frame`/`idle` 噪声跳过——这是协议的正常交织，
@@ -121,14 +140,14 @@ def test_preemption_notifies_the_previous_holder(
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client:
         client.get(f"/?token={session.token}")
         with _ws(client, session) as conn_a, _ws(client, session) as conn_b:
-            conn_a.send_json({"type": "lease", "action": "acquire", "force": False})
+            conn_a.send_json(_acquire(client, session))
             ack_a = _wait_for(conn_a, "lease_acquired")
 
-            conn_b.send_json({"type": "lease", "action": "acquire", "force": False})
+            conn_b.send_json(_acquire(client, session))
             denied = _wait_for(conn_b, "lease_denied")
             assert denied["holder"]["owner"] == ack_a["holder"]["owner"]
 
-            conn_b.send_json({"type": "lease", "action": "acquire", "force": True})
+            conn_b.send_json(_acquire(client, session, force=True))
             ack_b = _wait_for(conn_b, "lease_acquired")
             assert ack_b["preempted"] is True
             assert ack_b["previous_holder"]["owner"] == ack_a["holder"]["owner"]
@@ -146,7 +165,7 @@ def test_rollback_rejects_input(
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client:
         client.get(f"/?token={session.token}")
         with _ws(client, session) as conn:
-            conn.send_json({"type": "lease", "action": "acquire", "force": False})
+            conn.send_json(_acquire(client, session))
             _wait_for(conn, "lease_acquired")
 
             conn.send_json({"type": "scroll", "offset": 50})
@@ -166,12 +185,12 @@ def test_disconnect_releases_the_lease(
     with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client:
         client.get(f"/?token={session.token}")
         with _ws(client, session) as conn_a:
-            conn_a.send_json({"type": "lease", "action": "acquire", "force": False})
+            conn_a.send_json(_acquire(client, session))
             _wait_for(conn_a, "lease_acquired")
 
         # 连接已关闭(正常退出的 with 块)；下一个连接不带 force 也该拿到租约。
         with _ws(client, session) as conn_b:
-            conn_b.send_json({"type": "lease", "action": "acquire", "force": False})
+            conn_b.send_json(_acquire(client, session))
             _wait_for(conn_b, "lease_acquired")
 
 
@@ -197,3 +216,59 @@ def test_rejects_bad_origin_with_explicit_close_code(
             conn.receive_json()
         assert exc_info.value.code == 4401
         assert exc_info.value.reason == "unauthorized"
+
+
+def test_mirror_write_upgrade_requires_fresh_direct_ticket_and_defaults_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_tmux: Tmux
+) -> None:
+    _bound_project(tmp_path, monkeypatch)
+    isolated_tmux.new_session(SESSION_NAME, command="cat")
+    app, session = _make_app(monkeypatch, isolated_tmux)
+
+    with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client:
+        client.get(f"/?token={session.token}")
+        direct = _direct_token(client, session)
+        with _ws(client, session) as first:
+            # scroll 只改本连接的 history offset，是提权前唯一客户端只读帧。
+            first.send_json({"type": "scroll", "offset": 20})
+            first.send_json({
+                "type": "lease",
+                "action": "acquire",
+                "force": False,
+                "direct_token": direct,
+            })
+            _wait_for(first, "lease_acquired")
+            first.close()
+
+        with _ws(client, session) as reused:
+            reused.send_json({
+                "type": "lease",
+                "action": "acquire",
+                "force": False,
+                "direct_token": direct,
+            })
+            with pytest.raises(WebSocketDisconnect) as duplicate:
+                reused.receive_json()
+        assert duplicate.value.code == 4401
+
+        attach_ticket = client.post(
+            f"/api/v1/members/{MEMBER}/attach",
+            json={},
+            headers={"X-Amux-Session": session.session_id},
+        ).json()["attach_token"]
+        with _ws(client, session) as wrong_action:
+            wrong_action.send_json({
+                "type": "lease",
+                "action": "acquire",
+                "force": False,
+                "direct_token": attach_ticket,
+            })
+            with pytest.raises(WebSocketDisconnect) as mismatch:
+                wrong_action.receive_json()
+        assert mismatch.value.code == 4401
+
+        with _ws(client, session) as unprivileged:
+            unprivileged.send_json({"type": "resize", "cols": 100, "rows": 30})
+            with pytest.raises(WebSocketDisconnect) as default_closed:
+                unprivileged.receive_json()
+        assert default_closed.value.code == 4401

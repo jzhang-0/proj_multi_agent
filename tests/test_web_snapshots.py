@@ -122,7 +122,7 @@ def test_session_and_vocabulary_work_without_a_workspace(
             "stream": True,
             "mirror": True,
             "compose": True,
-            "control": False,
+            "control": True,
         }
 
         vocab = client.get("/api/v1/vocabulary")

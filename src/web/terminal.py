@@ -129,6 +129,8 @@ class ConnectionState:
     lease_manager: MemberLeaseManager
     audit: Any
     hub: MirrorHub
+    window_guard: Any | None = None
+    authorize: Any | None = None
     history_offset: int = 0
     live_active: bool = False
     last_size: tuple[int, int] | None = None
@@ -214,6 +216,15 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
         nonlocal has_lease
         if raw.get("action") != "acquire":
             return
+        token = raw.get("direct_token")
+        if not isinstance(token, str) or not token or state.authorize is None:
+            await websocket.close(code=4401, reason="unauthorized")
+            raise _UnauthorizedWrite
+        try:
+            await asyncio.to_thread(state.authorize, token)
+        except Exception:
+            await websocket.close(code=4401, reason="unauthorized")
+            raise _UnauthorizedWrite from None
         force = bool(raw.get("force", False))
         # 评审(opus):force 抢占成功后，抢占方也该知道"刚把谁踢下来了"，不能
         # 只有原持有者单方面收到 lease_lost。读一次当前持有者是尽力而为的
@@ -259,6 +270,8 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
             return
         if state.last_size == (cols, rows):
             return
+        if state.window_guard is not None:
+            state.window_guard.track(state.tmux, member, identity=owner)
         await asyncio.to_thread(state.tmux.fit_window, member, cols, rows)
         state.last_size = (cols, rows)
 
@@ -342,17 +355,30 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
                 continue
 
             msg_type = raw.get("type")
+            if msg_type == "scroll":
+                await flush_text(pending_text)
+                await handle_scroll(raw)
+                continue
+
+            if msg_type == "lease":
+                await flush_text(pending_text)
+                await handle_lease(raw)
+                continue
+
+            # §6.3:mirror 是先只读、后提权的双模连接。客户端只读白名单只有
+            # scroll；除此之外一律按写处理，未持租约就关闭，避免未来新增帧
+            # 忘记分类时意外默认放行。lease acquire 自己负责消费一次性票据。
+            if not has_lease:
+                await websocket.close(code=4401, reason="unauthorized")
+                raise _UnauthorizedWrite
+
             if msg_type == "input" and raw.get("kind") == "text":
                 pending_text.append(str(raw.get("data", "")))
                 continue
 
             await flush_text(pending_text)
 
-            if msg_type == "lease":
-                await handle_lease(raw)
-            elif msg_type == "scroll":
-                await handle_scroll(raw)
-            elif msg_type == "resize":
+            if msg_type == "resize":
                 await handle_resize(raw)
             elif msg_type == "focus_input":
                 await handle_focus_input(raw)
@@ -363,6 +389,8 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
 
     try:
         await reader_loop()
+    except _UnauthorizedWrite:
+        pass
     finally:
         heartbeat_task.cancel()
         forward_task.cancel()
@@ -373,3 +401,11 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
         hub.unsubscribe(member, state.history_offset, owner)
         # §3.1:连接关闭(正常或异常)必须立即释放；release() 对非持有者是幂等空操作。
         await asyncio.to_thread(lease_manager.release, member, owner)
+        if state.last_size is not None:
+            await asyncio.to_thread(state.tmux.release_window_size, member)
+            if state.window_guard is not None:
+                state.window_guard.untrack(member, identity=owner)
+
+
+class _UnauthorizedWrite(Exception):
+    """已向客户端发出 4401；仅用于结束当前 mirror reader。"""

@@ -30,6 +30,9 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     }
     assert "Development Status :: 3 - Alpha" in project["classifiers"]
     assert "pillow>=10.0" in project["dependencies"]
+    # 裸 uvicorn 没有 WebSocket 实现，/api/v1/stream 在真实服务器下会 404(T-013 opus 复审实测)。
+    assert "uvicorn[standard]>=0.32" in project["dependencies"]
+    assert "uvicorn>=0.32" not in project["dependencies"]
     packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/amux_runtime" in packages
     assert "src/control" in packages
@@ -38,7 +41,7 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     wheel_force = config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
     sdist_force = config["tool"]["hatch"]["build"]["targets"]["sdist"]["force-include"]
     assert wheel_force == {"web/dist": "web/static"}
-    assert sdist_force == {"web/dist": "src/web/static"}
+    assert sdist_force == {"web/dist": "web/dist"}
     license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
     assert "MIT License" in license_text
     assert "Copyright (c) 2026 jzhang-0" in license_text

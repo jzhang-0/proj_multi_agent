@@ -150,14 +150,18 @@ class Tmux:
             "send-keys", "-t", target, "-l", "--", text, ";", "send-keys", "-t", target, "Enter"
         )
 
-    def capture_with_cursor(self, target: str) -> tuple[str, int]:
+    def capture_with_cursor(self, target: str, *, escape: bool = False) -> tuple[str, int]:
         """一次调用同时拿到画面和光标所在行(0 基,相对可见区顶端)。
 
         光标行是判断「输入框里还压着没提交的字」的关键:提交成功后输入框会
-        清空,光标就不在那行字上了。
+        清空,光标就不在那行字上了。`escape=True`(WEB-007 镜像帧用)相当于
+        `capture_pane` 的 `-e`,保留颜色；默认 `False` 保持既有调用不变。
         """
+        capture_args = ["capture-pane", "-p", "-t", target]
+        if escape:
+            capture_args.append("-e")
         out = self._run(
-            "capture-pane", "-p", "-t", target, ";", "display-message", "-p", "-t", target,
+            *capture_args, ";", "display-message", "-p", "-t", target,
             "#{cursor_y}",
         ).stdout
         lines = out.splitlines()
@@ -168,6 +172,35 @@ class Tmux:
         except ValueError:
             return "\n".join(lines), 0
         return "\n".join(lines[:-1]), cursor_y
+
+    def capture_with_geometry(
+        self, target: str, *, escape: bool = False, start: int | str | None = None
+    ) -> tuple[str, int, int, int]:
+        """一次调用同时拿到画面、光标行与 pane 尺寸 `(text, cursor_y, cols, rows)`。
+
+        WEB-007 镜像帧用:§4.1 要求帧带 `cols`/`rows`——canonical size 由租约
+        持有者决定(§5)，但所有观看者(包括非持有者)都要从帧里读到同一个
+        权威值，不能各自猜。`start` 不为 None 时是回滚区读取；`#{cursor_y}`
+        报的始终是当前实时光标位置，与 `-S` 无关，是否在回滚场景下丢弃这
+        个值是调用方的语义判断，这里如实返回。
+        """
+        capture_args = ["capture-pane", "-p", "-t", target]
+        if escape:
+            capture_args.append("-e")
+        if start is not None:
+            capture_args.extend(["-S", str(start)])
+        out = self._run(
+            *capture_args, ";", "display-message", "-p", "-t", target,
+            "#{cursor_y} #{pane_width} #{pane_height}",
+        ).stdout
+        lines = out.splitlines()
+        if not lines:
+            return "", 0, 0, 0
+        try:
+            cursor_y, cols, rows = (int(part) for part in lines[-1].strip().split())
+        except ValueError:
+            return "\n".join(lines), 0, 0, 0
+        return "\n".join(lines[:-1]), cursor_y, cols, rows
 
     def capture_pane(
         self,

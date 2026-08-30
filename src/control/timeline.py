@@ -132,6 +132,10 @@ class TimelineProjector:
                 self._seq_by_key[entry.key] = seq
         return replace(entry, seq=seq)
 
+    def reset(self) -> None:
+        self._next_seq = 1
+        self._seq_by_key = {}
+
     def from_result(self, result: DeliveryResult) -> TimelineEntry:
         return self.project(from_result(result))
 
@@ -318,14 +322,26 @@ def history(
     )
 
 
+def by_display_time(entries: Iterable[TimelineEntry]) -> list[TimelineEntry]:
+    """展示顺序：按 ``at``，seq 只作同秒稳定次序。seq 本身不是时序。"""
+    return sorted(entries, key=lambda item: (item.at, item.seq, item.key))
+
+
 def history_from_entries(
     raw_entries: Iterable[dict[str, Any]],
     limit: int = HISTORY_LIMIT,
     *,
     work_events: tuple[WorkEvent, ...] = (),
     snapshot: WorkSnapshot | None = None,
+    projector: TimelineProjector | None = None,
 ) -> list[TimelineEntry]:
-    """从完整审计序列投影时间线，截窗前分配全量稳定序号。"""
+    """从完整审计序列投影时间线，按到达顺序分配全量稳定序号。
+
+    到达顺序：审计 jsonl 首次出现的 key（文件序）+ 账本事件（账本序）。
+    不按 ``at`` 排序后再 enumerate——那会让后到、更早 ``at`` 的记录挤占
+    已分配 seq。传入同一 ``projector`` 时，已知 key 的 seq 在后续重建中
+    保持不变。返回列表按 seq 升序；展示层再 ``by_display_time``。
+    """
     merged: dict[str, TimelineEntry] = {}
     order: list[str] = []
     for index, raw in enumerate(raw_entries):
@@ -348,11 +364,12 @@ def history_from_entries(
                 reply_to=entry.reply_to or previous.reply_to,
                 attachment_ids=entry.attachment_ids or previous.attachment_ids,
             )
-    entries = [merged[key] for key in order]
+    arrived = [merged[key] for key in order]
     if work_events and snapshot is not None:
-        entries.extend(from_work_event(event, snapshot) for event in work_events)
-        entries.sort(key=lambda item: item.at)
-    sequenced = [replace(item, seq=seq) for seq, item in enumerate(entries, start=1)]
+        arrived.extend(from_work_event(event, snapshot) for event in work_events)
+    owner = projector or TimelineProjector()
+    sequenced = [owner.project(item) for item in arrived]
+    sequenced.sort(key=lambda item: item.seq)
     return sequenced[-limit:] if limit > 0 else []
 
 
@@ -380,8 +397,8 @@ def timeline_snapshot_view(
     return TimelineSnapshotView(
         entries=entries,
         category_counts=counts,
-        head_seq=all_entries[-1].seq if all_entries else 0,
-        oldest_seq=entries[0].seq if entries else None,
+        head_seq=max((entry.seq for entry in all_entries), default=0),
+        oldest_seq=min((entry.seq for entry in entries), default=None),
         has_more=len(all_entries) > len(entries),
     )
 

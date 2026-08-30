@@ -59,8 +59,9 @@ from console.workview import TaskCard, TaskDetail, TaskSummaryCard, render_task_
 from control.health import FaultEvent, FaultKind, HealthMonitor
 from control.lease import HubDeliveryLease, LeaseDenied, MemberLeaseManager, leases_root
 from control.members import MemberStatusService, member_names, pending_counts
+from control.mirror import MirrorHub, RawFrame
 from control.tasks import selected_default_task_id
-from control.timeline import TimelineProjector, timeline_snapshot_view
+from control.timeline import TimelineProjector, by_display_time, timeline_snapshot_view
 from roster import RosterError, load_effective_roster
 from roster.lifecycle import Lifecycle
 from tmuxctl import TmuxError
@@ -86,6 +87,23 @@ MIN_FIT_SIZE = (60, 15)
 #: 本身要压在 100ms 以内——正好取 100ms 的话,加上调度抖动实测 P95 会踩到
 #: 104ms(CON-010 量出来的),留一点余量。
 MIRROR_INTERVAL = 0.08
+
+
+class _SnapshotterCapture:
+    """把既有 `snapshotter.capture()`(真 tmux 的 `PaneSnapshotter`,或 QA 夹具
+    的合成快照,如 `qa.controls.DemoSnapshotter`)包成 `control.mirror` 要的
+    异步采集接口。这条接口历史上就没有 `cols`/`rows`——TUI 自己用
+    `_fit_member_window` 定尺寸，不依赖帧里的这两个值，给 0 占位即可。
+    """
+
+    def __init__(self, snapshotter: object) -> None:
+        self._snapshotter = snapshotter
+
+    async def capture_with_geometry(
+        self, target: str, *, escape: bool = False, start: int | str | None = None
+    ) -> tuple[str, int, int, int]:
+        snapshot = await self._snapshotter.capture(target, color=escape, start=start)
+        return snapshot.text, 0, 0, 0
 
 
 class ConsoleApp(App[None]):
@@ -334,6 +352,12 @@ class ConsoleApp(App[None]):
         #: 详情栏画面来源(TMX-004);None 表示还没接上 tmux
         self.snapshotter = snapshotter
         self._mirror_timer = None
+        #: WEB-011:采集核心下沉到 control.mirror，TUI 与 Web 共用同一实现
+        #: (各自进程内持有一个 Hub 实例，不跨进程共享)。
+        self._mirror_hub = MirrorHub()
+        self._mirror_conn_id = f"console-mirror:{id(self)}"
+        self._mirror_sub_key: tuple[str, int] | None = None
+        self._mirror_queue: asyncio.Queue[object] | None = None
         #: 点击成员原生输入区后的实时按键队列。只开一个异步消费者，保证字符、
         #: 编辑键和 Enter 不会因为多个工作线程互相超车。
         self._live_input_queue: deque[tuple[str, str, str, str]] = deque()
@@ -548,7 +572,7 @@ class ConsoleApp(App[None]):
         )
         entries = list(timeline_view.entries)
         self.timeline_projector.seed(entries)
-        timeline.backfill(entries, source=source)
+        timeline.backfill(by_display_time(entries), source=source)
         self._sync_timeline_filter_counts()
         timeline.note(
             "[总控台] ↑↓ 选任务/工作对话/成员,F3 任务,Esc 回工作对话,"
@@ -586,6 +610,7 @@ class ConsoleApp(App[None]):
         if self._mirror_timer is not None:
             self._mirror_timer.stop()
             self._mirror_timer = None
+        self._mirror_unsubscribe()
 
     def refresh_member_cards(self) -> None:
         """每 0.5 秒刷新，保证状态变化 1 秒内出现在界面。"""
@@ -888,7 +913,7 @@ class ConsoleApp(App[None]):
         )
         entries = list(timeline_view.entries)
         self.timeline_projector.seed(entries)
-        timeline.backfill(entries, source=source)
+        timeline.backfill(by_display_time(entries), source=source)
         self._sync_timeline_filter_counts()
         self._connect_roster()
         self.refresh_member_cards()
@@ -938,7 +963,12 @@ class ConsoleApp(App[None]):
         return found.only_one(Mirror) if found else None
 
     async def _refresh_mirror(self) -> None:
-        """拉一帧成员画面。只有详情栏真的在显示时才会被调到。"""
+        """拉一帧成员画面。只有详情栏真的在显示时才会被调到。
+
+        画面文本经 `control.mirror.MirrorHub`(WEB-011,与 Web 共用同一采集
+        核心)——本方法只管订阅切换(成员/回滚偏移变了就换组)与非阻塞取帧,
+        采集节流/背压/停采集判据都在 Hub 里。
+        """
         member, mirror = self.selected_member, self._mirror()
         if member is None or mirror is None or self.snapshotter is None or not mirror.display:
             return
@@ -947,14 +977,55 @@ class ConsoleApp(App[None]):
         ):
             self._on_lease_lost(member)
         await self._fit_member_window(member, mirror.content_size)
+        key = (member, mirror.history_offset)
+        if self._mirror_sub_key != key:
+            # 换组这一刻等一次"头一帧"(有界):切成员/翻历史都指着这里,新组的
+            # 采集任务要跑完一轮 `to_thread` 才有画面,不等就会像旧代码"当场
+            # 拿到当前画面"那样出现一拍空档(实测 test_console_mirror 会因
+            # 这个空档随机失败——非阻塞轮询在换组瞬间赶不上采集任务)。稳态
+            # 每 tick 仍是非阻塞 `get_nowait()`,不拖慢心跳/窗口适配。
+            frame = await self._mirror_resubscribe(member, mirror.history_offset)
+        else:
+            frame = self._mirror_pop_frame()
+        if frame is not None:
+            mirror.show_screen(frame.text)
+
+    async def _mirror_resubscribe(self, member: str, history_offset: int) -> RawFrame | None:
+        """切成员或翻历史都落到这里:先退订旧组,再订阅 `(member, history_offset)` 新组。"""
+        self._mirror_unsubscribe()
+        _, queue = self._mirror_hub.subscribe(
+            member,
+            history_offset,
+            self._mirror_conn_id,
+            _SnapshotterCapture(self.snapshotter),
+            min_interval=MIRROR_INTERVAL,
+        )
+        self._mirror_sub_key = (member, history_offset)
+        self._mirror_queue = queue
         try:
-            snapshot = await self.snapshotter.capture(
-                member, color=True, start=mirror.capture_start
-            )
-        except Exception as exc:
-            mirror.notice(f"取不到 {member} 的画面:{exc}")
-            return
-        mirror.show_screen(snapshot.text)
+            item = await asyncio.wait_for(queue.get(), timeout=MIRROR_INTERVAL * 8)
+        except TimeoutError:
+            return None
+        return item if isinstance(item, RawFrame) else None
+
+    def _mirror_unsubscribe(self) -> None:
+        """离开成员画面(含暂停/卸载)时退订:没有观看者就该停采集(§4.2)。"""
+        if self._mirror_sub_key is not None:
+            member, history_offset = self._mirror_sub_key
+            self._mirror_hub.unsubscribe(member, history_offset, self._mirror_conn_id)
+        self._mirror_sub_key = None
+        self._mirror_queue = None
+
+    def _mirror_pop_frame(self) -> RawFrame | None:
+        """非阻塞取一帧;没有新画面(或只是 idle 心跳)就原样保留上一屏。"""
+        queue = self._mirror_queue
+        if queue is None:
+            return None
+        try:
+            item = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return None
+        return item if isinstance(item, RawFrame) else None
 
     async def _fit_member_window(self, member: str, size: object) -> None:
         """把成员的 tmux 窗口调成主画面这么大,让它自己重排填满。
@@ -1013,7 +1084,11 @@ class ConsoleApp(App[None]):
         self.query_one("#timeline-filters", ConversationFilter).display = watching_timeline
         self.query_one("#timeline", Timeline).display = watching_timeline
         if self._mirror_timer is not None:
-            self._mirror_timer.resume() if watching_member else self._mirror_timer.pause()
+            if watching_member:
+                self._mirror_timer.resume()
+            else:
+                self._mirror_timer.pause()
+                self._mirror_unsubscribe()
         if watching_timeline:
             self.unseen_traffic = 0
         self._sync_unread()

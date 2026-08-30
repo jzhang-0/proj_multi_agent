@@ -9,6 +9,16 @@ import {
 import { ComposeBar, replyContext, type ReplyContext } from "./compose";
 import { formatTime, memberColor, minuteGroup, relativeActivity, vocabularyItem } from "./format";
 import { applyTimelineDelta, connectEventStream, type StreamStatus } from "./stream";
+import {
+  connectTerminalMirror,
+  directInputMessageForKeyEvent,
+  focusInputMessage,
+  leaseAcquireMessage,
+  scrollMessage,
+  type LeaseHolder,
+  type TerminalConnection,
+  type TerminalStatus,
+} from "./terminal-stream";
 import type {
   BootstrapSnapshot,
   Fault,
@@ -19,6 +29,40 @@ import type {
   TimelineSnapshot,
   VocabularySnapshot,
 } from "./model";
+import type { Terminal as XTerm } from "@xterm/xterm";
+
+//: §10:不引 addon-fit,用隐藏等宽测量元素算 cell 宽高——桌面浏览器字体渲染
+//: 一致,这个近似值在真实终端里够用(见 docs/web/terminal-protocol.md §13
+//: 待验证项,后续如需更精确可以换 addon-fit)。
+const TERMINAL_FONT_FAMILY = "ui-monospace, SFMono-Regular, Menlo, monospace";
+const TERMINAL_FONT_SIZE = 13;
+const TERMINAL_LINE_HEIGHT = 1.2;
+//: 对齐服务端 src/web/terminal.py 的 MIN_FIT_SIZE，客户端先做一次同样的
+//: 下限裁剪，避免发送服务端注定会忽略的过小尺寸。
+const MIN_FIT_COLS = 60;
+const MIN_FIT_ROWS = 15;
+const ROLLBACK_STEP = 20;
+
+function measureCell(): { width: number; height: number } {
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:absolute;visibility:hidden;top:-9999px;left:-9999px;white-space:pre;";
+  probe.style.fontFamily = TERMINAL_FONT_FAMILY;
+  probe.style.fontSize = `${TERMINAL_FONT_SIZE}px`;
+  probe.textContent = "X".repeat(32);
+  document.body.appendChild(probe);
+  const rect = probe.getBoundingClientRect();
+  document.body.removeChild(probe);
+  return { width: rect.width / 32, height: TERMINAL_FONT_SIZE * TERMINAL_LINE_HEIGHT };
+}
+
+function ensureXtermStylesheet(): void {
+  if (document.querySelector("link[data-xterm-css]")) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "/assets/xterm.css";
+  link.dataset.xtermCss = "true";
+  document.head.appendChild(link);
+}
 
 const CATEGORY_ORDER: TimelineCategory[] = ["all", "human", "ai", "task", "control"];
 const LAST_SEEN_KEY = "amux.web.last-seen";
@@ -36,6 +80,8 @@ interface AppProps {
 function routeFromPath(pathname = window.location.pathname): RouteState {
   const taskMatch = pathname.match(/^\/task\/([^/]+)$/);
   if (taskMatch) return { view: "task", taskId: decodeURIComponent(taskMatch[1]) };
+  const memberMatch = pathname.match(/^\/member\/([^/]+)\/terminal$/);
+  if (memberMatch) return { view: "terminal", member: decodeURIComponent(memberMatch[1]) };
   if (pathname === "/timeline") return { view: "timeline" };
   if (pathname === "/workspace") return { view: "workspace" };
   if (pathname === "/help") return { view: "help" };
@@ -44,6 +90,7 @@ function routeFromPath(pathname = window.location.pathname): RouteState {
 
 function routePath(route: RouteState): string {
   if (route.view === "task") return route.taskId ? `/task/${encodeURIComponent(route.taskId)}` : "/";
+  if (route.view === "terminal") return `/member/${encodeURIComponent(route.member)}/terminal`;
   return `/${route.view}`;
 }
 
@@ -137,7 +184,12 @@ function Sidebar({
           {snapshot.members.members.map((member) => {
             const state = vocabularyItem(vocabulary?.member_state, member.state);
             return (
-              <article class="member-card" key={member.name}>
+              <button
+                class="member-card"
+                type="button"
+                key={member.name}
+                onClick={() => onNavigate({ view: "terminal", member: member.name })}
+              >
                 <span class="member-avatar" style={{ background: memberColor(member.name) }}>
                   {member.name.slice(0, 1).toUpperCase()}
                 </span>
@@ -149,7 +201,7 @@ function Sidebar({
                   {state.glyph ? `${state.glyph} ` : ""}{state.label}
                 </span>
                 {member.queued ? <span class="queue-badge">{member.queued}</span> : null}
-              </article>
+              </button>
             );
           })}
         </div>
@@ -500,6 +552,218 @@ function HelpView() {
   );
 }
 
+function TerminalView({ member }: { member: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<XTerm | null>(null);
+  const connectionRef = useRef<TerminalConnection | null>(null);
+  const frameSeqRef = useRef(0);
+  const offsetRef = useRef(0);
+  const leaseHeldRef = useRef(false);
+  const liveActiveRef = useRef(false);
+  const pendingFocusRowRef = useRef<number | null>(null);
+  const cellHeightRef = useRef(TERMINAL_FONT_SIZE * TERMINAL_LINE_HEIGHT);
+
+  const [status, setStatus] = useState<TerminalStatus>("connecting");
+  const [rejection, setRejection] = useState<{ code: number; reason: string } | null>(null);
+  const [leaseHeld, setLeaseHeld] = useState(false);
+  const [leaseHolder, setLeaseHolder] = useState<LeaseHolder | null>(null);
+  const [liveActive, setLiveActive] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
+
+  useEffect(() => {
+    let disposed = false;
+    ensureXtermStylesheet();
+
+    void (async () => {
+      const { Terminal } = await import("@xterm/xterm");
+      if (disposed || !containerRef.current) return;
+      const term = new Terminal({
+        disableStdin: true,
+        convertEol: false,
+        fontFamily: TERMINAL_FONT_FAMILY,
+        fontSize: TERMINAL_FONT_SIZE,
+        lineHeight: TERMINAL_LINE_HEIGHT,
+      });
+      term.open(containerRef.current);
+      termRef.current = term;
+
+      const connection = connectTerminalMirror(member, {
+        status: setStatus,
+        rejected: (code, reason) => setRejection({ code, reason }),
+        message: (message) => {
+          if (message.type === "frame") {
+            frameSeqRef.current = message.frame_seq;
+            offsetRef.current = message.history_offset;
+            setOffset(message.history_offset);
+            // §5:只有租约持有者的 viewport 决定 canonical size；非持有者
+            // 跟着帧里的权威 cols/rows 走，不能只信本地测量(评审 opus)。
+            const term = termRef.current;
+            if (
+              term &&
+              !leaseHeldRef.current &&
+              message.cols > 0 &&
+              message.rows > 0 &&
+              (term.cols !== message.cols || term.rows !== message.rows)
+            ) {
+              term.resize(message.cols, message.rows);
+            }
+            termRef.current?.write(message.data);
+          } else if (message.type === "idle") {
+            frameSeqRef.current = message.frame_seq;
+          } else if (message.type === "lease_denied") {
+            leaseHeldRef.current = false;
+            setLeaseHeld(false);
+            setLeaseHolder(message.holder);
+          } else if (message.type === "lease_acquired") {
+            leaseHeldRef.current = true;
+            setLeaseHeld(true);
+            setLeaseHolder(null);
+            const pendingRow = pendingFocusRowRef.current;
+            if (pendingRow !== null) {
+              pendingFocusRowRef.current = null;
+              connectionRef.current?.send(focusInputMessage(frameSeqRef.current, pendingRow));
+            }
+          } else if (message.type === "lease_lost") {
+            leaseHeldRef.current = false;
+            setLeaseHeld(false);
+            liveActiveRef.current = false;
+            setLiveActive(false);
+            setNotice("交互租约已被抢占");
+          } else if (message.type === "denied") {
+            liveActiveRef.current = false;
+            setLiveActive(false);
+            const labels: Record<string, string> = {
+              "no-lease": "未持有交互租约",
+              "scrolled-back": "回滚状态下不可输入",
+              "stale-frame": "画面已更新，请重新点击",
+              "row-not-input": "该位置当前不可输入",
+            };
+            setNotice(labels[message.reason] ?? message.reason);
+          } else if (message.type === "live") {
+            liveActiveRef.current = message.active;
+            setLiveActive(message.active);
+          } else if (message.type === "notice") {
+            setNotice(message.text);
+          }
+        },
+      });
+      connectionRef.current = connection;
+    })();
+
+    return () => {
+      disposed = true;
+      connectionRef.current?.disconnect();
+      connectionRef.current = null;
+      termRef.current?.dispose();
+      termRef.current = null;
+    };
+  }, [member]);
+
+  // §5:终端窗口适配——只有租约持有者的 viewport 决定 canonical size(§5
+  // 规则 1),这里始终测量/resize 本地 xterm 视图，但只有持有租约时才把
+  // resize 消息发给服务端(未持有时静默跟随、不产生 tmux 副作用)。
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const applySize = () => {
+      const cell = measureCell();
+      cellHeightRef.current = cell.height;
+      const cols = Math.max(MIN_FIT_COLS, Math.floor(container.clientWidth / cell.width));
+      const rows = Math.max(MIN_FIT_ROWS, Math.floor(container.clientHeight / cell.height));
+      termRef.current?.resize(cols, rows);
+      if (leaseHeldRef.current) connectionRef.current?.send({ type: "resize", cols, rows });
+    };
+    applySize();
+    const observer = new ResizeObserver(applySize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [member]);
+
+  useEffect(() => {
+    if (!liveActive) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (event.key === "Escape") {
+        liveActiveRef.current = false;
+        setLiveActive(false);
+        return;
+      }
+      const message = directInputMessageForKeyEvent(event);
+      if (!message) return;
+      event.preventDefault();
+      connectionRef.current?.send(message);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [liveActive]);
+
+  const handleSurfaceClick = (event: MouseEvent) => {
+    if (!containerRef.current || offsetRef.current !== 0) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const row = Math.max(0, Math.floor((event.clientY - rect.top) / cellHeightRef.current));
+    if (!leaseHeldRef.current) {
+      pendingFocusRowRef.current = row;
+      connectionRef.current?.send(leaseAcquireMessage(false));
+      return;
+    }
+    connectionRef.current?.send(focusInputMessage(frameSeqRef.current, row));
+  };
+
+  const scrollBy = (delta: number) => {
+    const next = Math.max(0, offsetRef.current + delta);
+    offsetRef.current = next;
+    setOffset(next);
+    connectionRef.current?.send(scrollMessage(next));
+  };
+
+  if (rejection) {
+    return (
+      <EmptyState
+        mark="!"
+        title="无法连接成员终端"
+        copy={rejection.reason || `连接被拒绝(${rejection.code})`}
+      />
+    );
+  }
+
+  return (
+    <div class="terminal-view">
+      <header class="content-header">
+        <div>
+          <p class="eyebrow">MEMBER / {member}</p>
+          <h2>终端镜像</h2>
+        </div>
+        <span class={`live-indicator live-indicator--${status}`}><i /> {status}</span>
+      </header>
+      <section class="panel terminal-panel">
+        <div class="terminal-toolbar">
+          <span class="terminal-lease-state">
+            {leaseHeld
+              ? "已持有交互租约"
+              : leaseHolder
+                ? `当前由 ${leaseHolder.owner} 控制`
+                : "只读镜像(点击画面获取控制权)"}
+          </span>
+          {leaseHolder && !leaseHeld ? (
+            <button onClick={() => connectionRef.current?.send(leaseAcquireMessage(true))}>
+              强制接管
+            </button>
+          ) : null}
+          {liveActive ? <span class="live-active-badge">直连输入中 · Esc 退出</span> : null}
+          <span class="terminal-toolbar__spacer" />
+          <button disabled={offset === 0} onClick={() => scrollBy(-ROLLBACK_STEP)}>
+            ▼ 恢复实时
+          </button>
+          <button onClick={() => scrollBy(ROLLBACK_STEP)}>▲ 回滚 {offset > 0 ? `(${offset})` : ""}</button>
+        </div>
+        {notice ? <p class="terminal-notice">{notice}</p> : null}
+        <div class="terminal-surface" ref={containerRef} onClick={handleSurfaceClick} />
+      </section>
+    </div>
+  );
+}
+
 function EmptyState({ mark, title, copy }: { mark: string; title: string; copy: string }) {
   return <section class="empty-state"><p class="empty-state__mark">{mark}</p><h2>{title}</h2><p>{copy}</p></section>;
 }
@@ -800,6 +1064,7 @@ export function App({
           {route.view === "timeline" ? <TimelineView snapshot={snapshot.timeline} vocabulary={vocabulary} fetcher={fetcher} onSeen={markSeen} actor={snapshot.session.actor} onReply={(entry) => setReplying(replyContext(entry))} /> : null}
           {route.view === "workspace" ? <WorkspaceView snapshot={snapshot} /> : null}
           {route.view === "help" ? <HelpView /> : null}
+          {route.view === "terminal" ? <TerminalView member={route.member} /> : null}
         </section>
       </div>
       {snapshot.session.capabilities.compose && (route.view === "task" || route.view === "timeline") ? (

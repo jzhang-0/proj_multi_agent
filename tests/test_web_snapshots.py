@@ -120,7 +120,7 @@ def test_session_and_vocabulary_work_without_a_workspace(
         assert isinstance(body["write_token"], str)
         assert body["capabilities"] == {
             "stream": True,
-            "mirror": False,
+            "mirror": True,
             "compose": True,
             "control": False,
         }

@@ -246,4 +246,5 @@ export type RouteState =
   | { view: "task"; taskId: string | null }
   | { view: "timeline" }
   | { view: "workspace" }
-  | { view: "help" };
+  | { view: "help" }
+  | { view: "terminal"; member: string };

@@ -20,7 +20,11 @@ const server = createServer((request, response) => {
     response.writeHead(200, { "Content-Type": contentTypes[extname(file)] ?? "application/octet-stream" });
     createReadStream(file).pipe(response);
   } catch {
-    if (["/timeline", "/workspace", "/help"].includes(requestPath) || requestPath.startsWith("/task/")) {
+    if (
+      ["/timeline", "/workspace", "/help"].includes(requestPath) ||
+      requestPath.startsWith("/task/") ||
+      /^\/member\/[^/]+\/terminal$/.test(requestPath)
+    ) {
       file = resolve(root, "index.html");
       response.writeHead(200, { "Content-Type": contentTypes[".html"] });
       createReadStream(file).pipe(response);

@@ -26,7 +26,10 @@ from web.app import create_app
 from web.auth import COOKIE_NAME, WebSession
 from web.state import RevisionTracker, TimelineCache, timeline_revision_fingerprint
 from web.stream import (
+    CLOSE_NOT_FOUND,
     CLOSE_SLOW,
+    CLOSE_UNAUTHORIZED,
+    CLOSE_UNAVAILABLE,
     DeltaRing,
     EventHub,
     StreamClient,
@@ -66,13 +69,15 @@ def _bound_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return workspace, service, paths
 
 
-def _must_reject(client: TestClient, headers: dict[str, str]) -> None:
+def _must_reject(
+    client: TestClient, headers: dict[str, str], *, code: int = CLOSE_UNAUTHORIZED
+) -> None:
     with (
+        client.websocket_connect("/api/v1/stream", headers=headers) as ws,
         pytest.raises(WebSocketDisconnect) as rejected,
-        client.websocket_connect("/api/v1/stream", headers=headers),
     ):
-        pass
-    assert rejected.value.code == 1008
+        ws.receive_json()
+    assert rejected.value.code == code
 
 
 def _ws(client: TestClient):
@@ -122,7 +127,8 @@ def test_overflow_merges_domain_then_global_then_closes() -> None:
     assert closed == CLOSE_SLOW
 
 
-def test_first_workspace_scan_keeps_epoch() -> None:
+def test_first_workspace_scan_does_not_emit_epoch_changed() -> None:
+    """首扫不得 reset_epoch；订阅客户端队列里不能出现 epoch_changed。"""
     tracker = RevisionTracker()
     epoch = tracker.epoch
     hub = EventHub(
@@ -133,10 +139,13 @@ def test_first_workspace_scan_keeps_epoch() -> None:
         tmux=None,
         settings=FAST,
     )
+    client = hub.add_client()
     hub.scan_files_now()
     assert tracker.epoch == epoch
+    assert all(frame.get("type") != "epoch_changed" for frame in client._pending)
     hub.scan_files_now()
     assert tracker.epoch == epoch
+    assert all(frame.get("type") != "epoch_changed" for frame in client._pending)
 
 
 def test_overflow_third_level_closes_unread_client() -> None:
@@ -238,6 +247,48 @@ def test_stream_rejects_missing_cookie_and_bad_origin(
         )
 
 
+def test_stream_handshake_close_codes_align_with_terminal() -> None:
+    assert CLOSE_UNAUTHORIZED == 4401
+    assert CLOSE_NOT_FOUND == 4404
+    assert CLOSE_UNAVAILABLE == 4503
+
+
+def test_stream_rejects_missing_hub_as_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _bound_workspace(tmp_path, monkeypatch)
+    session = WebSession.generate()
+    app = create_app(session=session, port=PORT, stream_settings=FAST)
+    with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client:
+        client.get(f"/?token={session.token}")
+        app.state.stream = None
+        headers = dict(WS_HEADERS)
+        cookie = client.cookies.get(COOKIE_NAME)
+        headers["Cookie"] = f"{COOKIE_NAME}={cookie}"
+        _must_reject(client, headers, code=CLOSE_UNAVAILABLE)
+
+
+def test_wait_primed_times_out_and_still_emits_hello() -> None:
+    hub = EventHub(
+        tracker=RevisionTracker(),
+        cache=TimelineCache(),
+        member_status=MemberStatusService(()),
+        health=None,
+        tmux=None,
+        settings=StreamSettings(
+            hello_wait_s=0.05,
+            ping_interval_s=3600.0,
+            idle_timeout_s=3600.0,
+            member_interval_s=3600.0,
+            health_interval_s=3600.0,
+        ),
+    )
+    asyncio.run(hub.wait_primed())
+    hello = hub.hello()
+    assert hello["type"] == "hello"
+    assert hello["epoch"] == hub.tracker.epoch
+
+
 def test_hello_subscribe_and_timeline_work_deltas(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -267,8 +318,8 @@ def test_hello_subscribe_and_timeline_work_deltas(
             app.state.stream.scan_files_now()
             timeline = ws.receive_json()
             assert timeline["domain"] == "timeline"
-            # 新总线消息的 at 若插在已有任务事件之前，全量 seq 会重排，只能 resync。
-            assert timeline["type"] in ("delta", "resync")
+            assert timeline["type"] == "delta"
+            assert any(op["op"] == "append" for op in timeline["ops"])
             listed = client.get("/api/v1/timeline").json()
             assert any(entry["text"] == "第二封" for entry in listed["entries"])
             assert listed["head_seq"] >= 2
@@ -499,10 +550,10 @@ def test_track_starts_watch_for_members_added_after_run() -> None:
     asyncio.run(scenario())
 
 
-def test_timeline_middle_work_event_bumps_revision_and_resyncs(
+def test_timeline_middle_work_event_appends_without_renumbering(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """任务事件插在末条之前时，旧三项指纹不变；seq 重排必须 resync。"""
+    """任务事件 at 插在末条之前：旧 key 的 seq 不变，新记录 append。"""
     _workspace, service, _paths = _bound_workspace(tmp_path, monkeypatch)
     session = WebSession.generate()
     app = create_app(session=session, port=PORT, stream_settings=FAST)
@@ -510,7 +561,8 @@ def test_timeline_middle_work_event_bumps_revision_and_resyncs(
         client.get(f"/?token={session.token}")
         app.state.stream.scan_files_now()
         before = client.get("/api/v1/timeline").json()
-        last_key = before["entries"][-1]["key"]
+        seq_by_key = {entry["key"]: entry["seq"] for entry in before["entries"]}
+        last_at_key = max(before["entries"], key=lambda item: (item["at"], item["seq"]))["key"]
         work_before = sum(1 for entry in before["entries"] if entry["key"].startswith("work:"))
         revision = before["revision"]
         _freeze_work_clock(monkeypatch, datetime(2020, 1, 1, tzinfo=UTC))
@@ -527,12 +579,17 @@ def test_timeline_middle_work_event_bumps_revision_and_resyncs(
             service.progress("sonnet", "T-001", "插在中间")
             app.state.stream.scan_files_now()
             frame = ws.receive_json()
-            assert frame["type"] == "resync"
+            assert frame["type"] == "delta"
             assert frame["domain"] == "timeline"
-            assert frame["reason"] == "gap"
             assert frame["revision"] == revision + 1
+            assert any(op["op"] == "append" for op in frame["ops"])
         after = client.get("/api/v1/timeline").json()
         assert after["revision"] == revision + 1
-        assert after["entries"][-1]["key"] == last_key
+        after_by_key = {entry["key"]: entry["seq"] for entry in after["entries"]}
+        for key, seq in seq_by_key.items():
+            assert after_by_key[key] == seq
+        assert after["head_seq"] == before["head_seq"] + 1
+        latest_at = max(after["entries"], key=lambda item: (item["at"], item["seq"]))
+        assert latest_at["key"] == last_at_key
         work_after = sum(1 for entry in after["entries"] if entry["key"].startswith("work:"))
         assert work_after == work_before + 1

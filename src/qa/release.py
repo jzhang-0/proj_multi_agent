@@ -55,6 +55,7 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "web/static/THIRD_PARTY_LICENSES.json",
         "web/static/assets/app.css",
         "web/static/assets/app.js",
+        "web/static/assets/xterm.css",
         "web/static/index.html",
         "work/__init__.py",
         f"{dist_info}/licenses/LICENSE",
@@ -90,10 +91,11 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "/src/amux_runtime/prompts/member.md",
         "/src/amux_runtime/prompts/README.md",
         "/src/amux_runtime/roster.toml",
-        "/src/web/static/THIRD_PARTY_LICENSES.json",
-        "/src/web/static/assets/app.css",
-        "/src/web/static/assets/app.js",
-        "/src/web/static/index.html",
+        "/web/dist/THIRD_PARTY_LICENSES.json",
+        "/web/dist/assets/app.css",
+        "/web/dist/assets/app.js",
+        "/web/dist/assets/xterm.css",
+        "/web/dist/index.html",
         "/src/work/__init__.py",
     )
     missing_sdist = [
@@ -156,6 +158,7 @@ def _isolated_smoke(wheel: Path, version: str, *, offline: bool = False) -> None
                     "html=root.joinpath('index.html').read_text(encoding='utf-8'); "
                     "assert root.joinpath('assets','app.js').is_file(); "
                     "assert root.joinpath('assets','app.css').is_file(); "
+                    "assert root.joinpath('assets','xterm.css').is_file(); "
                     "assert './assets/app.js' in html and 'http://' not in html "
                     "and 'https://' not in html; print('packaged web assets ok')"
                 ),

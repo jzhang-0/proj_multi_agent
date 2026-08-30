@@ -244,7 +244,8 @@ WEB-006 另增加 `POST /api/v1/messages`、`POST /api/v1/attachments` 与
  "head_seq": 88, "oldest_seq": 1, "has_more": false}
 ```
 
-- **`seq`**：服务端在本 epoch 内为每条进入时间线的记录分配的单调整数，从 1 起。启动回填(`history()`，`HISTORY_LIMIT=200`)先按时序占用 1..N，之后实时追加继续递增。`seq` 是分页游标、delta 定位和未读计算的唯一依据。
+- **`seq`**：服务端在本 epoch 内为每条进入时间线的记录分配的单调整数，从 1 起。**按到达顺序分配，一经赋给某个 `key` 就不再改**——不按 `at` 排序后的位置 enumerate。进程启动时按审计 jsonl 首次出现的 key（文件序）再接账本事件（账本序）重建，不落盘；每个 epoch 内自洽即可。窗口截取不重编号（超过 `HISTORY_LIMIT` 的条目仍持有全量 seq）。`seq` 是分页游标、delta 定位和未读计算的唯一依据，**不是时间顺序**。
+- **展示顺序**：前端（含 TUI）一律按 `at`（同秒再用 `seq`/`key` 稳定次序）排序；不得拿 `seq` 当时序。后到、`at` 更早的记录会插在画面中间，但拿到的是当前最大 seq+1。
 - **`key`**：去重键，取消息 `id`；没有 `id` 的 v0 四字段消息按 `ts|sender|to|text` 复合，控制事件按 `control:<index>`，与 `history()` 的合并规则一致。前端据此避免同一条消息在"回填 + 实时"两路重复出现。
 - `outcome` 取 `delivered|shown|deliver-failed|rejected|malformed|pending`；一条消息的多个审计事件已由服务端合并为最终结局(取最后一个非 `deposit` 的事件)，前端不做合并。
 - `category` 由收发端 / 审计事件类型 / WorkEvent 类型判定，**不解析正文**，规则同 `TimelineEntry.resolved_category`。
@@ -253,7 +254,7 @@ WEB-006 另增加 `POST /api/v1/messages`、`POST /api/v1/attachments` 与
 
 ### 4.9 未读数
 
-**不设服务端未读端点**。未读是"这个客户端上次看到哪儿"，是客户端状态：前端持久化 `last_seen_seq`，未读 = `head_seq - last_seen_seq`。epoch 变化时 `seq` 重排，前端必须把 `last_seen_seq` 重置为新的 `head_seq`(否则会显示成天量未读)——这条要写进 SPA 的 epoch 处理路径。
+**不设服务端未读端点**。未读是"这个客户端上次看到哪儿"，是客户端状态：前端持久化 `last_seen_seq`，未读 = `head_seq - last_seen_seq`。`head_seq` 是本 epoch 已分配的最大 seq（最新到达），不是“时间上最晚那条”的 seq。epoch 变化时 seq 空间作废，前端必须把 `last_seen_seq` 重置为新的 `head_seq`(否则会显示成天量未读)——这条要写进 SPA 的 epoch 处理路径。
 
 ### 4.10 `GET /api/v1/members`
 
@@ -333,6 +334,8 @@ WEB-006 另增加 `POST /api/v1/messages`、`POST /api/v1/attachments` 与
 ```
 
 `update` 是必需的：一条消息先 `deposit`(pending) 后 `deliver`(delivered)，同一 `seq` 的结局会变。前端按 `seq` 就地改，不新增行。
+
+`seq` 按到达分配且对 `key` 稳定（§4.8）：后到、`at` 更早的记录走 `append`（新 seq），不得把已有行的 seq 挤走。若重建后已知 `key` 的 seq 变了，服务端发 `resync{reason:gap}`（WEB-004 防御路径），不产出错位的 `update`+`append`。
 
 `work` delta 的 op：`{"op": "append", "event": {...}, "task_id": "T-003"}`；同一帧可同时带 `{"op": "invalidate", "scope": "tasks"}` 表示任务投影需重拉。
 

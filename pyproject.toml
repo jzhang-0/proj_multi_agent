@@ -28,7 +28,7 @@ dependencies = [
   "fastapi>=0.115",
   "pillow>=10.0",
   "textual>=1.0",
-  "uvicorn>=0.32",
+  "uvicorn[standard]>=0.32",
   "watchfiles>=0.24",
 ]
 
@@ -70,7 +70,7 @@ packages = [
 "web/dist" = "web/static"
 
 [tool.hatch.build.targets.sdist.force-include]
-"web/dist" = "src/web/static"
+"web/dist" = "web/dist"
 
 [tool.hatch.build.targets.sdist]
 include = [

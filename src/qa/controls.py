@@ -15,6 +15,9 @@ MEMBERS = ("claude", "codex", "cursor", "agy")
 
 
 class DemoSnapshotter:
+    def __init__(self, *, live_input: bool = False) -> None:
+        self.live_input = live_input
+
     async def capture(self, target: str, *, color: bool = False, start=None) -> PaneSnapshot:
         if start is not None:
             text = (
@@ -23,6 +26,18 @@ class DemoSnapshotter:
                 "较早记录 02 · 正在修改代码\n"
                 "较早记录 01 · 收到任务"
             )
+        elif self.live_input:
+            body = [
+                f"\x1b[36m成员终端 · {target}\x1b[0m",
+                "正在等待 human 输入；下方是安全 QA 输入区。",
+                *("" for _ in range(11)),
+                "────────────────────────────────────────────────────────",
+                "❯ ",
+                "────────────────────────────────────────────────────────",
+                "  Claude QA (auto) · 当前画面",
+                "  auto mode on · ← for agents",
+            ]
+            text = "\n".join(body)
         else:
             text = (
                 f"\x1b[36m$ {target} agent\x1b[0m\n"
@@ -51,6 +66,12 @@ class DemoController:
     def press_key(self, target: str, key: str) -> ControlFeedback:
         return self._feedback("key", target)
 
+    def insert_text(self, target: str, text: str) -> None:
+        return None
+
+    def submit_live_text(self, target: str, text: str) -> ControlFeedback:
+        return self._feedback("type", target)
+
     def record_failure(self, action: str, target: str, exc: Exception) -> None:
         return None
 
@@ -58,6 +79,7 @@ class DemoController:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="成员控制视觉夹具")
     parser.add_argument("--bus-root", required=True)
+    parser.add_argument("--live-input", action="store_true")
     args = parser.parse_args(argv)
     paths = BusPaths.resolve(args.bus_root).ensure()
     status = MemberStatusService(MEMBERS)
@@ -65,7 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         paths,
         deliver=lambda _message: True,
         members=MEMBERS,
-        snapshotter=DemoSnapshotter(),
+        snapshotter=DemoSnapshotter(live_input=args.live_input),
         member_status=status,
         pump_enabled=False,
         controller=DemoController(),

@@ -12,9 +12,12 @@
 
 from __future__ import annotations
 
+import re
+
 from rich.text import Text
 from textual import events
 from textual.binding import Binding
+from textual.message import Message
 from textual.widgets import Static
 
 #: 往回翻一次跨多少行(PgUp/PgDn)
@@ -26,9 +29,60 @@ WHEEL_STEP = 3
 #: 最多往回翻多少行(tmux 默认回滚区通常 2000 行)
 HISTORY_LIMIT = 2000
 
+# Claude 的输入区位于靠近底部的最后两条横线之间；Codex 的输入行以 `›`
+# 开头。这里只认底部结构，不能因为历史正文里碰巧出现一个 `›` 就抢走鼠标。
+_HORIZONTAL_RULE = re.compile(r"^\s*[─━═-]{8,}\s*$")
+_CODEX_PROMPT = re.compile(r"^\s*›(?:\s|$)")
+_INPUT_TAIL_LINES = 8
+
+
+def terminal_input_rows(screen_text: str) -> tuple[int, ...]:
+    """返回成员画面中可安全点击直连的输入区行号。
+
+    支持当前名册里的两类 CLI：Claude 的双横线 composer 和 Codex 的底部
+    `›` prompt。无法确认结构时宁可返回空，不把普通输出区误当输入框。
+    """
+    lines = screen_text.splitlines()
+    rules = [index for index, line in enumerate(lines) if _HORIZONTAL_RULE.fullmatch(line)]
+    if len(rules) >= 2:
+        lower = rules[-1]
+        upper = rules[-2]
+        if len(lines) - lower - 1 <= _INPUT_TAIL_LINES and upper + 1 < lower:
+            return tuple(range(upper + 1, lower))
+
+    start = max(0, len(lines) - _INPUT_TAIL_LINES)
+    for index in range(len(lines) - 1, start - 1, -1):
+        if _CODEX_PROMPT.match(lines[index]):
+            return (index,)
+    return ()
+
 
 class Mirror(Static):
     """成员终端画面。聚焦后 PgUp/PgDn 在成员自己的回滚区里翻。"""
+
+    class LiveModeChanged(Message):
+        """点击成员原生输入区后，实时直连态发生变化。"""
+
+        def __init__(self, mirror: Mirror, active: bool) -> None:
+            super().__init__()
+            self.mirror = mirror
+            self.active = active
+
+    class LiveInput(Message):
+        """实时直连态下需要按顺序交给成员终端的一次输入。"""
+
+        def __init__(
+            self,
+            mirror: Mirror,
+            kind: str,
+            value: str = "",
+            label: str = "",
+        ) -> None:
+            super().__init__()
+            self.mirror = mirror
+            self.kind = kind
+            self.value = value
+            self.label = label
 
     can_focus = True
 
@@ -45,6 +99,8 @@ class Mirror(Static):
         self.history_offset = 0
         #: 当前显示内容的纯文本(去掉样式),给测试和日志用
         self.screen_text = ""
+        #: True 时键盘直接交给画面里的成员 CLI，不经过底部 ComposeInput。
+        self.live_input = False
 
     @property
     def capture_start(self) -> int | None:
@@ -68,8 +124,69 @@ class Mirror(Static):
         self.screen_text = text
         self.update(text)
 
+    def set_live_input(self, active: bool) -> None:
+        """切换实时直连态，并给 App 一个同步提示条的机会。"""
+        active = bool(active and self.history_offset == 0)
+        if self.live_input == active:
+            return
+        self.live_input = active
+        self.set_class(active, "-live-input")
+        self.post_message(self.LiveModeChanged(self, active))
+
+    def click_hits_input(self, y: int) -> bool:
+        """点击是否落在已识别的当前输入区；回滚画面永不允许激活。"""
+        return self.history_offset == 0 and y in terminal_input_rows(self.screen_text)
+
+    def on_click(self, event: events.Click) -> None:
+        if event.button == 1 and self.click_hits_input(event.y):
+            self.focus()
+            self.set_live_input(True)
+            event.stop()
+
+    def on_blur(self, _event: events.Blur) -> None:
+        self.set_live_input(False)
+
+    async def _on_key(self, event: events.Key) -> None:
+        """实时态只截获终端输入；全局 Ctrl+V、F5–F8 继续向 App 冒泡。"""
+        if not self.live_input:
+            return
+        if event.key == "escape":
+            self.set_live_input(False)
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key == "enter":
+            self.post_message(self.LiveInput(self, "submit", label="Enter"))
+            event.prevent_default()
+            event.stop()
+            return
+        mapped = {
+            "tab": ("Tab", "Tab"),
+            "shift+tab": ("BTab", "Shift+Tab"),
+            "backspace": ("BSpace", "Delete/Backspace"),
+            "delete": ("DC", "Forward Delete"),
+            "up": ("Up", "↑"),
+            "down": ("Down", "↓"),
+            "left": ("Left", "←"),
+            "right": ("Right", "→"),
+        }
+        if event.key in mapped:
+            tmux_key, label = mapped[event.key]
+            self.post_message(self.LiveInput(self, "key", tmux_key, label))
+            event.prevent_default()
+            event.stop()
+            return
+        if event.is_printable and not any(
+            event.key.startswith(prefix) for prefix in ("ctrl+", "meta+", "super+")
+        ):
+            self.post_message(self.LiveInput(self, "text", event.character or ""))
+            event.prevent_default()
+            event.stop()
+
     def scroll_history(self, lines: int) -> None:
         """往回翻 `lines` 行(负数往回走向当前画面)。"""
+        if lines > 0:
+            self.set_live_input(False)
         self.history_offset = max(0, min(HISTORY_LIMIT, self.history_offset + lines))
 
     def action_history_up(self) -> None:
@@ -88,6 +205,7 @@ class Mirror(Static):
         event.stop()
 
     def action_history_top(self) -> None:
+        self.set_live_input(False)
         self.history_offset = HISTORY_LIMIT
 
     def action_history_bottom(self) -> None:

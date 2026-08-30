@@ -159,6 +159,9 @@ def test_controller_passes_allowed_direct_keys_and_audits_them(tmp_path: Path) -
     assert controller.press_key("claude", "DC").changed
     assert controller.press_key("claude", "Up").changed
     assert controller.press_key("claude", "Down").changed
+    assert controller.press_key("claude", "Left").changed
+    assert controller.press_key("claude", "Right").changed
+    assert controller.press_key("claude", "Tab").changed
     assert tmux.calls == [
         ("claude", ("BTab",), False),
         ("claude", ("Enter",), False),
@@ -166,6 +169,9 @@ def test_controller_passes_allowed_direct_keys_and_audits_them(tmp_path: Path) -
         ("claude", ("DC",), False),
         ("claude", ("Up",), False),
         ("claude", ("Down",), False),
+        ("claude", ("Left",), False),
+        ("claude", ("Right",), False),
+        ("claude", ("Tab",), False),
     ]
     assert [(entry["action"], entry["reason"]) for entry in AuditLog(paths).entries()] == [
         ("key", "BTab"),
@@ -174,9 +180,52 @@ def test_controller_passes_allowed_direct_keys_and_audits_them(tmp_path: Path) -
         ("key", "DC"),
         ("key", "Up"),
         ("key", "Down"),
+        ("key", "Left"),
+        ("key", "Right"),
+        ("key", "Tab"),
     ]
     with pytest.raises(ValueError, match="不允许"):
         controller.press_key("claude", "C-c")
+
+
+def test_live_text_is_streamed_without_per_character_audit_then_submitted_once(
+    tmp_path: Path,
+) -> None:
+    paths = BusPaths.resolve(tmp_path / "bus").ensure()
+
+    class RecordingTmux(FakeTmux):
+        def __init__(self):
+            super().__init__()
+            self.calls: list[tuple] = []
+
+        def send_keys(self, target, *keys, literal=False):
+            self.calls.append(("send_keys", target, keys, literal))
+
+        def capture_with_cursor(self, target):
+            self.calls.append(("capture", target))
+            return "提示符 ❯", 0
+
+    tmux = RecordingTmux()
+    slept: list[float] = []
+    controller = MemberController(
+        tmux, FakeLifecycle(), AuditLog(paths), sleeper=slept.append
+    )
+
+    controller.insert_text("claude", "你")
+    controller.insert_text("claude", "好")
+    assert AuditLog(paths).entries() == []
+
+    feedback = controller.submit_live_text("claude", "你好")
+    assert feedback.changed
+    assert tmux.calls[:3] == [
+        ("send_keys", "claude", ("你",), True),
+        ("send_keys", "claude", ("好",), True),
+        ("send_keys", "claude", ("Enter",), False),
+    ]
+    assert slept and slept[0] > 0
+    entries = AuditLog(paths).entries()
+    assert len(entries) == 1
+    assert (entries[0]["action"], entries[0]["reason"]) == ("type", "你好")
 
 
 def test_missing_takeover_target_and_controller_error_are_audited(tmp_path: Path) -> None:

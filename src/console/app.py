@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 
@@ -137,6 +138,10 @@ class ConsoleApp(App[None]):
         background: $panel;
         color: $text-muted;
         display: none;
+    }
+    #suggestions.-live-input {
+        color: $secondary;
+        text-style: bold;
     }
     #detail {
         width: 1fr;
@@ -306,6 +311,14 @@ class ConsoleApp(App[None]):
         #: 详情栏画面来源(TMX-004);None 表示还没接上 tmux
         self.snapshotter = snapshotter
         self._mirror_timer = None
+        #: 点击成员原生输入区后的实时按键队列。只开一个异步消费者，保证字符、
+        #: 编辑键和 Enter 不会因为多个工作线程互相超车。
+        self._live_input_queue: deque[tuple[str, str, str, str]] = deque()
+        self._live_input_worker_running = False
+        self._live_input_member: str | None = None
+        self._live_input_draft = ""
+        self._live_input_cursor = 0
+        self._live_input_draft_exact = True
         #: 打开成员会话时把它的 tmux 窗口调成主画面大小(`--no-fit` 关掉)
         self.fit_windows = fit_windows
         #: 已经给谁调过多大,避免每帧都下发 resize-window
@@ -849,6 +862,8 @@ class ConsoleApp(App[None]):
         watching_member = self.active_view == "member" and self.selected_member is not None
         watching_work = self.active_view == "work" and self.work_service is not None
         watching_timeline = not watching_member and not watching_work
+        if not watching_member:
+            detail.set_live_input(False)
         detail.display = watching_member
         self.query_one("#work").display = watching_work
         self.query_one("#timeline", Timeline).display = watching_timeline
@@ -869,7 +884,11 @@ class ConsoleApp(App[None]):
         self.selected_member = name
         mirror = self._mirror()
         if mirror is not None:
+            mirror.set_live_input(False)
             mirror.history_offset = 0  # 换人就回到当前画面
+        if name != self._live_input_member:
+            self._live_input_member = name
+            self._reset_live_draft()
         self._sync_stage()
         self._highlight_conversation(name)
 
@@ -967,14 +986,129 @@ class ConsoleApp(App[None]):
             return
         self.press_member_key(self.selected_member, event.tmux_key, event.label)
 
+    def on_mirror_live_mode_changed(self, event: Mirror.LiveModeChanged) -> None:
+        """同步点击直连提示；控制器不可用时不制造一个假的键入态。"""
+        if event.mirror.id != "detail":
+            return
+        if event.active:
+            if self.selected_member is None or self.controller is None:
+                event.mirror.set_live_input(False)
+                self.query_one("#timeline", Timeline).note(
+                    "[总控台] 实时直连不可用(没接上 tmux)"
+                )
+                return
+            if self._live_input_member != self.selected_member:
+                self._live_input_member = self.selected_member
+                self._reset_live_draft()
+        self._sync_suggestions()
+
+    def on_mirror_live_input(self, event: Mirror.LiveInput) -> None:
+        """把成员画面里的按键排进同一条队列，并维护可确认提交的本地草稿。"""
+        member = self.selected_member
+        if (
+            event.mirror.id != "detail"
+            or not event.mirror.live_input
+            or member is None
+            or self.controller is None
+        ):
+            return
+        if event.kind == "text":
+            self._live_input_draft = (
+                self._live_input_draft[: self._live_input_cursor]
+                + event.value
+                + self._live_input_draft[self._live_input_cursor :]
+            )
+            self._live_input_cursor += len(event.value)
+            queued_value = event.value
+        elif event.kind == "key":
+            self._track_live_edit(event.value)
+            queued_value = event.value
+        elif event.kind == "submit":
+            queued_value = self._live_input_draft if self._live_input_draft_exact else ""
+            self._reset_live_draft()
+        else:
+            return
+        self._live_input_queue.append((member, event.kind, queued_value, event.label))
+        if not self._live_input_worker_running:
+            self._live_input_worker_running = True
+            self.run_worker(self._drain_live_input(), group="mirror-live-input")
+
+    def _track_live_edit(self, tmux_key: str) -> None:
+        """跟踪常见行编辑，菜单/补全键出现后则停止猜最终文本。"""
+        if tmux_key == "BSpace" and self._live_input_cursor > 0:
+            at = self._live_input_cursor
+            self._live_input_draft = self._live_input_draft[: at - 1] + self._live_input_draft[at:]
+            self._live_input_cursor -= 1
+        elif tmux_key == "DC" and self._live_input_cursor < len(self._live_input_draft):
+            at = self._live_input_cursor
+            self._live_input_draft = self._live_input_draft[:at] + self._live_input_draft[at + 1 :]
+        elif tmux_key == "Left":
+            self._live_input_cursor = max(0, self._live_input_cursor - 1)
+        elif tmux_key == "Right":
+            self._live_input_cursor = min(
+                len(self._live_input_draft), self._live_input_cursor + 1
+            )
+        elif tmux_key in {"Up", "Down", "Tab", "BTab"}:
+            self._live_input_draft_exact = False
+
+    def _reset_live_draft(self) -> None:
+        self._live_input_draft = ""
+        self._live_input_cursor = 0
+        self._live_input_draft_exact = True
+
+    async def _drain_live_input(self) -> None:
+        """串行透传实时按键；相邻文字合并，避免每个字符都启动一个 tmux。"""
+        try:
+            await asyncio.sleep(0.008)
+            while self._live_input_queue:
+                member, kind, value, label = self._live_input_queue.popleft()
+                if kind == "text":
+                    while (
+                        self._live_input_queue
+                        and self._live_input_queue[0][0] == member
+                        and self._live_input_queue[0][1] == "text"
+                    ):
+                        value += self._live_input_queue.popleft()[2]
+                assert self.controller is not None
+                try:
+                    if kind == "text":
+                        await asyncio.to_thread(self.controller.insert_text, member, value)
+                    elif kind == "key":
+                        await asyncio.to_thread(self.controller.press_key, member, value)
+                    else:
+                        feedback = await asyncio.to_thread(
+                            self.controller.submit_live_text, member, value
+                        )
+                        shown = value or "Enter"
+                        self._note(f"[直连] → human → {member}: 实时提交 {shown}")
+                        if not feedback.changed:
+                            self._note(f"[直连] · {member}: 提交未确认，请查看成员输入区")
+                except Exception as exc:
+                    self._note(
+                        f"[直连] ✗ {member}: {type(exc).__name__}: {exc}"
+                    )
+        finally:
+            self._live_input_worker_running = False
+            if self._live_input_queue:
+                self._live_input_worker_running = True
+                self.run_worker(self._drain_live_input(), group="mirror-live-input")
+
     def _sync_suggestions(self) -> None:
         """候选/附件行：当前 @ 候选加方括号，待发图片始终可见。"""
         compose = self.query_one("#compose", ComposeInput)
         row = self.query_one("#suggestions", Static)
-        row.display = bool(compose.candidates or compose.attachments)
+        mirror = self._mirror()
+        live = bool(mirror is not None and mirror.live_input and self.selected_member)
+        row.set_class(live, "-live-input")
+        row.display = bool(live or compose.candidates or compose.attachments)
         if not row.display:
             return
         parts: list[str] = []
+        if live:
+            parts.append(
+                f"实时直连 {self.selected_member} · 按键进入成员输入区 · "
+                "Esc退出 · Ctrl+V图片 · F8完整接管"
+            )
         if compose.attachments:
             latest = compose.attachments[-1]
             parts.append(
@@ -1001,7 +1135,7 @@ class ConsoleApp(App[None]):
             # 是缺字形的小方块,画出来反而像界面坏了
             compose.placeholder = (
                 f"直连 {self.selected_member}: @成员补全;Ctrl+V图片;"
-                "空↑↓/Del/Enter/Shift+Tab透传;Fn+↑↓回看"
+                "点击上方输入区实时键入;空↑↓/Del/Enter/Shift+Tab透传;Fn+↑↓回看"
             )
         elif self.active_view == "work" and self.work_service is not None:
             task = f" · 关联 {self.selected_task_id}" if self.selected_task_id else ""

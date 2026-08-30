@@ -16,6 +16,8 @@ from console.app import ConsoleApp
 from console.clipboard import ClipboardImageError, ClipboardImageStore
 from console.compose import ComposeInput
 from console.control import ControlFeedback
+from console.mirror import Mirror
+from tmuxctl import PaneSnapshot
 
 
 def _attachment(tmp_path: Path) -> Attachment:
@@ -138,3 +140,59 @@ def test_ctrl_v_direct_member_sends_readable_path(tmp_path: Path) -> None:
             assert attachment.path in prompt
 
     asyncio.run(scenario())
+
+
+def test_ctrl_v_in_clicked_live_input_still_uses_the_shared_image_flow(
+    tmp_path: Path,
+) -> None:
+    class Snapshotter:
+        async def capture(self, target, *, color=False, start=None):
+            text = "输出\n────────────────\n❯ \n────────────────\n状态\nauto mode"
+            return PaneSnapshot(target, text, color, start, None, 0.0)
+
+    class LiveController:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def insert_text(self, target, text):
+            self.calls.append(("text", target, text))
+
+        def press_key(self, target, key):
+            self.calls.append(("key", target, key))
+            return ControlFeedback("key", target, True, key)
+
+        def submit_live_text(self, target, text):
+            self.calls.append(("submit", target, text))
+            return ControlFeedback("type", target, True, text)
+
+    paths = BusPaths.resolve(tmp_path / "bus").ensure()
+    attachment = _attachment(tmp_path)
+    clipboard = FakeClipboardStore(attachment)
+    controller = LiveController()
+    app = ConsoleApp(
+        paths,
+        deliver=lambda _message: True,
+        members=("codex",),
+        snapshotter=Snapshotter(),
+        controller=controller,  # type: ignore[arg-type]
+        clipboard_store=clipboard,  # type: ignore[arg-type]
+        pump_enabled=False,
+    )
+
+    async def scenario() -> None:
+        async with app.run_test(size=(120, 30)) as pilot:
+            app.select_member("codex")
+            mirror = app.query_one("#detail", Mirror)
+            assert await _wait_for(pilot, lambda: "auto mode" in mirror.screen_text)
+            await pilot.click("#detail", offset=(3, 2))
+            assert mirror.live_input
+
+            await pilot.press("ctrl+v")
+            compose = app.query_one("#compose", ComposeInput)
+            assert await _wait_for(pilot, lambda: compose.attachments == (attachment,))
+            assert app.focused is compose
+            assert not mirror.live_input
+            assert controller.calls == []
+
+    asyncio.run(scenario())
+    assert clipboard.calls == 1

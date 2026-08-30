@@ -124,8 +124,8 @@ amux member rm codex
 
 ### 使用默认团队
 
-如果本机已经安装了默认团队需要的 Claude 和 Codex CLI，可以初始化并激活内置的
-`fable-core` 团队档案：
+如果本机已经安装了默认团队需要的 Claude、Codex、Cursor `agent` 与 `agy`（Gemini）CLI，可以初始化并激活内置的
+`fable-core` 团队档案（Leader fable + sonnet/opus/luna/sol/composer/grok/agy）：
 
 ```bash
 amux team init

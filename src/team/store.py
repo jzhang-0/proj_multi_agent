@@ -295,4 +295,34 @@ args = [
   "-c", "service_tier=\\\"default\\\"",
   "-s", "danger-full-access", "-a", "never",
 ]
+
+[[members]]
+id = "composer"
+role = "member"
+model = "Composer 2.5"
+effort = "high"
+speed = "standard"
+responsibility = "快速实现、调研与验证（Cursor Composer 2.5，能力对标 Luna）"
+command = "agent"
+args = ["--model", "composer-2.5", "--force"]
+
+[[members]]
+id = "grok"
+role = "member"
+model = "Grok 4.6"
+effort = "xhigh"
+speed = "standard"
+responsibility = "实现与深入分析，提交可复核的证据（Cursor Grok 4.6，能力对标 Sonnet）"
+command = "agent"
+args = ["--model", "cursor-grok-4.6-xhigh", "--force"]
+
+[[members]]
+id = "agy"
+role = "member"
+model = "Gemini 3.7 Flash"
+effort = "high"
+speed = "fast"
+responsibility = "快速实现、调研与验证（Gemini 3.7 Flash，经 agy CLI）"
+command = "agy"
+args = ["--model", "gemini-3.7-flash", "--dangerously-skip-permissions", "-i"]
 '''

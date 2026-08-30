@@ -277,11 +277,16 @@ def members_dto(
     这里绝不能每请求新建一个——一个从没被 `_watch_member` 喂过样本的
     `ActivityTracker` 永远落在 `idle`(`tmuxctl/activity.py:69,115-120`)，
     `working`/`stuck` 不可达、`silent_for` 恒为 `None`(评审 opus 实测发现)。
-    `track()` 让常驻服务的成员集合跟上名册变化(新增/移除)，不重启监视任务。
+    `track()` 让常驻服务的成员集合跟上名册变化(新增/移除)，不重启监视任务；
+    没有 tmux 就没有后台监视任务纠正 `alive`，`track()` 新增的成员一样要
+    显式 `set_alive(False)`(否则默认 `True`，对齐 `console/app.py:303-305`)。
     """
     require_workspace(ctx)
     paths = require_paths(ctx)
     member_status.track(ctx.names)
+    if member_status.tmux is None:
+        for name in ctx.names:
+            member_status.set_alive(name, False)
     view = member_status.snapshot_view(queued=pending_counts(paths))
     members = [asdict(member) for member in view.members]
     fingerprint = tuple(

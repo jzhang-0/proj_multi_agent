@@ -113,10 +113,47 @@ def test_overflow_merges_domain_then_global_then_closes() -> None:
     assert list(stuffed._pending) == [
         {"type": "resync", "epoch": epoch, "domain": "*", "reason": "overflow"}
     ]
+    assert stuffed.enqueue({"type": "delta", "epoch": epoch, "domain": "work", "revision": 1}) == (
+        CLOSE_SLOW
+    )
 
     zero = StreamClient(queue_max=0)
     closed = zero.enqueue({"type": "delta", "epoch": epoch, "domain": "work", "revision": 1})
     assert closed == CLOSE_SLOW
+
+
+def test_first_workspace_scan_keeps_epoch() -> None:
+    tracker = RevisionTracker()
+    epoch = tracker.epoch
+    hub = EventHub(
+        tracker=tracker,
+        cache=TimelineCache(),
+        member_status=MemberStatusService(()),
+        health=None,
+        tmux=None,
+        settings=FAST,
+    )
+    hub.scan_files_now()
+    assert tracker.epoch == epoch
+    hub.scan_files_now()
+    assert tracker.epoch == epoch
+
+
+def test_overflow_third_level_closes_unread_client() -> None:
+    client = StreamClient(queue_max=4)
+    epoch = "abc"
+    closed: int | None = None
+    for i in range(400):
+        domain = "timeline" if i % 2 == 0 else "work"
+        closed = client.enqueue(
+            {"type": "delta", "epoch": epoch, "domain": domain, "revision": i}
+        )
+        if closed is not None:
+            break
+    else:
+        raise AssertionError("400 帧仍未关闭")
+    assert closed == CLOSE_SLOW
+    assert client.close_code == CLOSE_SLOW
 
 
 def test_delta_ring_replays_contiguous_and_reports_gap() -> None:
@@ -127,6 +164,30 @@ def test_delta_ring_replays_contiguous_and_reports_gap() -> None:
     assert ring.replay(2, 3) == [{"revision": 3}]
     assert ring.replay(0, 3) is None
     assert ring.replay(3, 3) == []
+
+
+def test_timeline_ops_resyncs_on_same_second_bus_insert() -> None:
+    """opus 实测：秒粒度总线 ts 插到任务事件前，按 seq 槽 diff 会错位。"""
+    old = {
+        1: {
+            "seq": 1,
+            "key": "work:660023f",
+            "outcome": "shown",
+            "reason": "",
+            "text": "建立·任务甲",
+        }
+    }
+    new = [
+        {"seq": 1, "key": "c35adc11", "outcome": "pending", "reason": "", "text": "消息一"},
+        {
+            "seq": 2,
+            "key": "work:660023f",
+            "outcome": "shown",
+            "reason": "",
+            "text": "建立·任务甲",
+        },
+    ]
+    assert _timeline_ops(old, new) is None
 
 
 def test_timeline_ops_resyncs_when_existing_key_changes_seq() -> None:

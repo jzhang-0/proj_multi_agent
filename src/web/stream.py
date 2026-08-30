@@ -43,6 +43,7 @@ RING_CAPACITIES = {"timeline": 512, "work": 512, "health": 128}
 CLIENT_FRAME_TYPES = frozenset({"subscribe", "unsubscribe", "pong"})
 DEFAULT_QUEUE_MAX = 256
 FILE_DEBOUNCE_MS = 50
+_UNSET: object = object()
 
 
 def allowed_origins(port: int) -> frozenset[str]:
@@ -105,6 +106,7 @@ class StreamClient:
         self.close_code: int | None = None
         self._pending: deque[dict[str, Any]] = deque()
         self._not_empty = asyncio.Event()
+        self._global_overflow = False
 
     def touch(self) -> None:
         self.last_client_at = time.monotonic()
@@ -113,6 +115,12 @@ class StreamClient:
         """入队成功返回 None；应关闭时返回 close code。"""
         if self.close_code is not None:
             return self.close_code
+        if self._global_overflow:
+            self.close_code = CLOSE_SLOW
+            return CLOSE_SLOW
+        if self.queue_max <= 0:
+            self.close_code = CLOSE_SLOW
+            return CLOSE_SLOW
         if len(self._pending) < self.queue_max:
             self._pending.append(frame)
             self._not_empty.set()
@@ -134,9 +142,6 @@ class StreamClient:
             self._pending = kept
             self._not_empty.set()
             return None
-        if self.queue_max <= 0:
-            self.close_code = CLOSE_SLOW
-            return CLOSE_SLOW
         self._pending.clear()
         self._pending.append(
             {
@@ -146,6 +151,7 @@ class StreamClient:
                 "reason": "overflow",
             }
         )
+        self._global_overflow = True
         self._not_empty.set()
         return None
 
@@ -189,14 +195,23 @@ def _watch_paths(ctx: SnapshotContext) -> list[Path]:
     return seen
 
 
+def _seq_by_key(entries: Iterable[dict[str, Any]]) -> dict[str, int]:
+    return {str(item["key"]): int(item["seq"]) for item in entries if item.get("key")}
+
+
 def _timeline_ops(
     old: dict[int, dict[str, Any]], new_entries: list[dict[str, Any]]
 ) -> list[dict[str, Any]] | None:
-    """按 key 对齐。同一 epoch 内 seq 被重排则返回 None，调用方改发 resync。
+    """按 key→seq 映射比对。任一已知 key 的 seq 变了就返回 None，不产 ops。
 
-    ``history_from_entries`` 是先对全量赋 seq 再截窗；插在中间的任务事件
-    会改写后面所有 seq，按旧 seq 打 update 会错位。
+    ``history_from_entries`` 按 ``at`` 排序后 enumerate 赋 seq；秒粒度审计
+    ts 让同一秒内的总线消息插到任务事件前面是常态，按 seq 槽 diff 会把旧
+    行 update 成新消息、再 append 一份旧行。
     """
+    old_seq = _seq_by_key(old.values())
+    new_seq = _seq_by_key(new_entries)
+    if any(new_seq[key] != seq for key, seq in old_seq.items() if key in new_seq):
+        return None
     old_by_key = {item["key"]: item for item in old.values() if item.get("key")}
     ops: list[dict[str, Any]] = []
     for entry in new_entries:
@@ -205,8 +220,6 @@ def _timeline_ops(
         if prev is None:
             ops.append({"op": "append", "entry": entry})
             continue
-        if prev.get("seq") != entry.get("seq"):
-            return None
         if prev.get("outcome") != entry.get("outcome") or prev.get("reason") != entry.get(
             "reason"
         ):
@@ -245,9 +258,11 @@ class EventHub:
         self._published: dict[str, int] = {}
         self._last_timeline: dict[int, dict[str, Any]] = {}
         self._last_work_seq: int | None = None
-        self._identity: tuple[str, str] | None | object = object()
+        self._identity: tuple[str, str] | None | object = _UNSET
         self._stopped = False
         self._watch_stop = asyncio.Event()
+        self._primed = asyncio.Event()
+        self.timeline_gap_resyncs = 0
 
     def add_client(self) -> StreamClient:
         client = StreamClient(queue_max=self.settings.queue_max)
@@ -287,13 +302,16 @@ class EventHub:
     def _emit(self, domain: str, frame: dict[str, Any]) -> None:
         rev = int(frame["revision"])
         primed = domain in self._published
+        replayable = domain in self._rings and frame.get("type") in {"delta", "resync"}
         if not primed:
             self._published[domain] = rev
+            if replayable:
+                self._rings[domain].append(rev, frame)
             return
         if rev <= self._published[domain]:
             return
         self._published[domain] = rev
-        if domain in self._rings and frame.get("type") == "delta":
+        if replayable:
             self._rings[domain].append(rev, frame)
         self._broadcast(frame)
 
@@ -311,7 +329,7 @@ class EventHub:
 
     def _scan_workspace(self, ctx: SnapshotContext) -> None:
         identity = _workspace_identity(ctx)
-        if self._identity is object():
+        if self._identity is _UNSET:
             self._identity = identity
         elif identity != self._identity:
             self._identity = identity
@@ -395,6 +413,7 @@ class EventHub:
         ops = _timeline_ops(self._last_timeline, payloads)
         self._last_timeline = {int(item["seq"]): item for item in payloads}
         if ops is None:
+            self.timeline_gap_resyncs += 1
             self._emit(
                 "timeline",
                 {
@@ -507,7 +526,7 @@ class EventHub:
         known: object,
         current: int,
     ) -> None:
-        if not isinstance(known, int):
+        if not isinstance(known, int) or known < 0:
             client.enqueue(
                 {
                     "type": "resync",
@@ -534,6 +553,10 @@ class EventHub:
             }
         )
 
+    async def wait_primed(self) -> None:
+        """hello 必须在首轮扫描之后，避免 known 早于 priming、replay 拿不到那一档。"""
+        await self._primed.wait()
+
     async def scan_files(self) -> None:
         self.scan_files_now()
 
@@ -543,6 +566,7 @@ class EventHub:
     async def run(self) -> None:
         self.scan_files_now()
         self.scan_members_now()
+        self._primed.set()
         tasks = [
             asyncio.create_task(self._watch_files(), name="web-stream-watch"),
             asyncio.create_task(self._poll_members(), name="web-stream-members"),
@@ -648,6 +672,7 @@ async def handle_stream(
         return
 
     await websocket.accept()
+    await hub.wait_primed()
     client = hub.add_client()
     await websocket.send_text(encode_frame(hub.hello()))
     sender = asyncio.create_task(_sender_loop(websocket, client, hub), name="web-stream-sender")

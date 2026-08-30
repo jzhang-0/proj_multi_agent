@@ -15,7 +15,7 @@
 
 “只读”表示 Web 只展示状态；“操作”表示会写队列、账本、名册、审计或控制 tmux；“只读 + 操作”表示同一面板同时有两类能力。来源列中的接口均为当前实现中的可复用入口。
 
-下表是合入 WEB-006 后的 `main` 状态核对结果。`已实现`表示已有 Web 实现和对应 Goal 证据；`已实现/待验收`表示实现已合入但仍需 Leader 验收；`进行中`表示能力仍属于尚未结项的 WEB-008；`部分实现/待验证`表示页面已有行为，但 WEB-009 的后半仍需验证其最终安全语义。发布制品验证不在本表本次范围内。
+下表是 WEB-009 终验（T-023，2026-08-30）后的 `main` 状态核对结果：WEB-006/WEB-007/WEB-008 均已 Leader 验收合入，本表相应行统一标注`已实现`。发布制品验证（sdist/wheel 含前端产物、`qa.release` 源码外安装、退出真实 tmux 验证）见 WEB-009 收口清单与 `docs/goals/web.md` 证据，不在本表逐条重复。
 
 | TUI 面板/能力 | 当前行为 | 交互类型 | Web 对齐所需来源 | 难度 | 当前状态 |
 |---|---|---|---|---|---|
@@ -31,34 +31,34 @@
 | 工作对话记录时间线 | 实时追加总线流量；启动时从 `bus/log.jsonl` 回填；显示结局、原因、@ 高亮、分钟分组 | 只读 | `AuditLog.entries()`、`AuditLog.read_body()`、`DeliveryResult`；`TimelineEntry` / `history()` | 中 | 已实现（WEB-004/005） |
 | 时间线分类筛选 | `全部 / human / AI / 任务 / 控制`，显示各分类计数；点击或左右键切换；不靠正文猜分类 | 只读 + 操作（筛选） | `TimelineEntry.resolved_category`（收发端/审计事件/WorkEvent 类型）`；`ConversationFilter` / `Timeline.set_category()` | 低 | 已实现（WEB-005） |
 | 时间线滚动 | PgUp/PgDn、Home/End、Ctrl+↑/↓；不在底部时新消息不强行拉回 | 只读 + 操作（视图滚动） | 前端滚动状态；历史来自 `AuditLog` 与 `WorkLedger` | 低 | 已实现（WEB-005） |
-| 工作对话输入框 | 回车发送；绑定团队时默认发 Leader 并自动关联选中任务；无 @ 时发上一个对话对象 | 操作 | `Message.create()`、`deposit()`、`BusPaths`；`WorkService.team.leader`；`ComposeInput` | 中 | 已实现/待验收（WEB-006） |
-| @ 成员补全 | 输入 @ 展示全体成员，Tab/↑↓ 选择，回车落定；支持中文成员名 | 操作（本地 UI，最终可发送） | `member_names()` / `Roster.enabled_members()`、`ComposeInput` 的 `matching_members()` | 低 | 已实现/待验收（WEB-006） |
-| 发送 ask/reply | 总线支持 ask id、关联回复和阻塞等待；成员收到回复指引 | 操作 | `bus.ask.store_ask()` / `store_reply()` / `wait_for_reply()`；`Message.kind/reply_to` | 中 | 已实现/待验收（WEB-006） |
-| 图片粘贴/发送 | Ctrl+V 读取系统剪贴板图片；PNG 内容寻址落盘；支持纯图片或图文；最多 8 张 | 操作 | `ClipboardImageStore`、`Attachment`、`Message.attachments`、工作区 `attachments/` | 中（浏览器上传协议需设计） | 已实现/待验收（WEB-006） |
-| 待发图片撤销 | 文字为空时 Backspace/Delete 逐张撤销引用；不删除内容寻址文件 | 操作（本地 UI） | `ComposeInput.remove_last_attachment()`；附件文件由 `ClipboardImageStore` 管理 | 低 | 已实现/待验收（WEB-006） |
+| 工作对话输入框 | 回车发送；绑定团队时默认发 Leader 并自动关联选中任务；无 @ 时发上一个对话对象 | 操作 | `Message.create()`、`deposit()`、`BusPaths`；`WorkService.team.leader`；`ComposeInput` | 中 | 已实现（WEB-006） |
+| @ 成员补全 | 输入 @ 展示全体成员，Tab/↑↓ 选择，回车落定；支持中文成员名 | 操作（本地 UI，最终可发送） | `member_names()` / `Roster.enabled_members()`、`ComposeInput` 的 `matching_members()` | 低 | 已实现（WEB-006） |
+| 发送 ask/reply | 总线支持 ask id、关联回复和阻塞等待；成员收到回复指引 | 操作 | `bus.ask.store_ask()` / `store_reply()` / `wait_for_reply()`；`Message.kind/reply_to` | 中 | 已实现（WEB-006） |
+| 图片粘贴/发送 | Ctrl+V 读取系统剪贴板图片；PNG 内容寻址落盘；支持纯图片或图文；最多 8 张 | 操作 | `ClipboardImageStore`、`Attachment`、`Message.attachments`、工作区 `attachments/` | 中（浏览器上传协议需设计） | 已实现（WEB-006） |
+| 待发图片撤销 | 文字为空时 Backspace/Delete 逐张撤销引用；不删除内容寻址文件 | 操作（本地 UI） | `ComposeInput.remove_last_attachment()`；附件文件由 `ClipboardImageStore` 管理 | 低 | 已实现（WEB-006） |
 | 成员终端镜像 | 选中成员后显示带 ANSI 颜色的 tmux 当前画面；活跃刷新 ≤100ms；不可见时停止拉取 | 只读 | `PaneSnapshotter.capture(member, color=True)`、`PaneSnapshot.text`；`Mirror.show_screen()` | **高** | 已实现（WEB-007） |
 | 成员终端回滚 | PgUp/PgDn、Home/End、滚轮、Ctrl+↑/↓ 读取成员自身 `capture-pane -S` 历史；回滚时禁用实时输入 | 只读 + 操作（视图滚动） | `PaneSnapshotter.capture(..., start=...)`、`Mirror.history_offset` | **高** | 已实现（WEB-007） |
 | 终端窗口适配 | 镜像可见时按 Web 主画面尺寸 `fit_window`；离开/attach 前释放尺寸；小尺寸不调节 | 操作（后台副作用） | `Tmux.fit_window()` / `release_window_size()`；`ConsoleApp._fit_member_window()` | **高** | 已实现（WEB-007） |
 | 成员画面点击直连 | 仅识别当前 Claude 双横线 composer 或 Codex 底部 `›` 输入行；点击输入区才进入实时态，点击历史/输出区无效 | 操作 | `terminal_input_rows()`、`Mirror.click_hits_input()`；需要浏览器坐标和终端网格映射 | **高** | 已实现（WEB-007） |
 | 直连文本输入 | 直连态普通字符按顺序进入成员终端，相邻字符可合并；Enter 单独提交并确认 | 操作 | `MemberController.insert_text()` / `submit_live_text()`；`Tmux.send_keys(literal=True)`、`KeyInjector.ensure_submitted()` | **高** | 已实现（WEB-007） |
 | 直连编辑/方向键 | Tab/Shift+Tab、↑↓←→、Backspace/Delete/Forward Delete、空 Enter 按白名单透传；每个控制动作进入审计 | 操作 | `MemberController.press_key()`；白名单 `Enter/Tab/BTab/BSpace/DC/Up/Down/Left/Right`；`AuditLog.record_control()` | **高** | 已实现（WEB-007） |
-| 成员打断 | F5 或对应 Web 按钮发送 Escape + Ctrl-C | 操作 | `MemberController.interrupt()` → `ProcessController.interrupt()`；审计 `control` | 中 | 进行中（WEB-008） |
-| 成员终止 | F6；二次确认后向 CLI 进程发送 SIGTERM | 操作（危险，需确认） | `ConfirmControlScreen` 语义；`MemberController.terminate()` → `ProcessController.terminate()`；审计 | 中 | 进行中（WEB-008） |
-| 成员重启 | F7；二次确认后 `Lifecycle.restart()` | 操作（危险，需确认） | `MemberController.restart()` → `Lifecycle.restart()`；`Roster`、`Tmux`、审计 | 中 | 进行中（WEB-008） |
-| 全屏接管 / attach | F8 挂起 TUI，执行 `tmux attach-session`，退出后返回；先释放 fit 尺寸 | 操作（高风险/桌面专属） | `MemberController.takeover()`、`Tmux.command_argv()`、`session_for()` | **高/需 Web 方案** | 进行中（WEB-008） |
-| `/up` | 拉起指定成员，已运行则跳过 | 操作 | `Lifecycle.up(name)`；`Roster` + `start_member()` + `Tmux` | 中 | 进行中（WEB-008） |
-| `/down` | 关闭指定成员 tmux 会话 | 操作（危险） | `Lifecycle.down(name)` → `stop_member()`；`Tmux.kill_session()` | 中 | 进行中（WEB-008） |
-| `/restart` | 关闭并重新拉起指定成员 | 操作（危险） | `Lifecycle.restart(name)`；`Roster` / `Tmux` | 中 | 进行中（WEB-008） |
-| `/adopt` | 将名册外、已有且名称合法的 tmux 会话收编为本进程临时成员；重启不保留 | 操作 | `SessionAdopter.discover/adopt/member_names()`、`Tmux.list_panes()` | 中 | 进行中（WEB-008） |
-| `/mute` | 策略层拒收指定成员消息，再执行一次取消；拒收和回执进入审计/时间线 | 操作 | `MutePolicy`、`OutboundPolicy`、`Hub`、`receipt_for()`、`AuditLog` | 中 | 进行中（WEB-008） |
+| 成员打断 | F5 或对应 Web 按钮发送 Escape + Ctrl-C | 操作 | `MemberController.interrupt()` → `ProcessController.interrupt()`；审计 `control` | 中 | 已实现（WEB-008） |
+| 成员终止 | F6；二次确认后向 CLI 进程发送 SIGTERM | 操作（危险，需确认） | `ConfirmControlScreen` 语义；`MemberController.terminate()` → `ProcessController.terminate()`；审计 | 中 | 已实现（WEB-008） |
+| 成员重启 | F7；二次确认后 `Lifecycle.restart()` | 操作（危险，需确认） | `MemberController.restart()` → `Lifecycle.restart()`；`Roster`、`Tmux`、审计 | 中 | 已实现（WEB-008） |
+| 全屏接管 / attach | F8 挂起 TUI，执行 `tmux attach-session`，退出后返回；先释放 fit 尺寸 | 操作（高风险/桌面专属） | `MemberController.takeover()`、`Tmux.command_argv()`、`session_for()` | **高/需 Web 方案** | 已实现（WEB-008） |
+| `/up` | 拉起指定成员，已运行则跳过 | 操作 | `Lifecycle.up(name)`；`Roster` + `start_member()` + `Tmux` | 中 | 已实现（WEB-008） |
+| `/down` | 关闭指定成员 tmux 会话 | 操作（危险） | `Lifecycle.down(name)` → `stop_member()`；`Tmux.kill_session()` | 中 | 已实现（WEB-008） |
+| `/restart` | 关闭并重新拉起指定成员 | 操作（危险） | `Lifecycle.restart(name)`；`Roster` / `Tmux` | 中 | 已实现（WEB-008） |
+| `/adopt` | 将名册外、已有且名称合法的 tmux 会话收编为本进程临时成员；重启不保留 | 操作 | `SessionAdopter.discover/adopt/member_names()`、`Tmux.list_panes()` | 中 | 已实现（WEB-008） |
+| `/mute` | 策略层拒收指定成员消息，再执行一次取消；拒收和回执进入审计/时间线 | 操作 | `MutePolicy`、`OutboundPolicy`、`Hub`、`receipt_for()`、`AuditLog` | 中 | 已实现（WEB-008） |
 | `/workspace` | 切换绑定工作区；总线、成员、任务、时间线、附件目录和 tmux 命名空间一起切换 | 操作 | `require_slug()`、`BusPaths.for_workspace()`、`WorkService.for_workspace()`、`SessionNames`、`load_effective_roster()` | 中 | 已实现（WEB-005） |
-| `/member add/rm/list` | 增减或列出当前工作区成员；更新 `members.toml`，重建成员栏和补全 | 操作 | `workspace.members.add_member/remove_member`、`load_effective_roster()`、`Roster` | 中 | 进行中（WEB-008） |
+| `/member add/rm/list` | 增减或列出当前工作区成员；更新 `members.toml`，重建成员栏和补全 | 操作 | `workspace.members.add_member/remove_member`、`load_effective_roster()`、`Roster` | 中 | 已实现（WEB-008） |
 | `/task [ID]` / F3 | 打开任务看板或指定任务详情；当前任务决定输入框关联 task ID | 操作（切换视图） | `WorkService.snapshot()`、`ConsoleApp.select_work()`、`TaskDetail` | 低 | 已实现（WEB-005） |
 | `/help` / ? / F1 | 显示命令、快捷键和安全语义；可滚动关闭 | 只读 + 操作（打开/滚动） | `COMMANDS`、`SHORTCUT_GROUPS`、`ShortcutHelpScreen` | 低 | 已实现（WEB-005） |
 | 深浅主题 / T | 深色和浅色主题切换；历史内容按 token 重绘 | 操作（本地 UI） | `console.theme.THEMES`、`Timeline.rerender()` | 低 | 已实现（WEB-005） |
 | 健康告警 | tmux server、成员会话、bus 可写性故障/恢复边沿提示；恢复后总线继续投递 | 只读 + 操作（自动恢复） | `ConsoleHealthMonitor`、`FaultEvent`、`HealthSupervisor`、`BusPump.start()` | 中 | 已实现（WEB-003/004） |
 | 成员状态实时更新 | 0.5s 刷新卡片；成员输出/成功投递/死亡/failed 更新状态；自动拉起可配置且三次失败熔断 | 只读 + 操作（自动恢复） | `MemberStatusService`、`ActivityTracker`、`HealthSupervisor` | 中 | 已实现（WEB-003/004） |
-| 退出 | Q/Ctrl-C 只停 bus pump 和 UI，不关闭成员会话 | 操作 | `BusPump.stop()`、`ConsoleApp.on_unmount()`；Web 只应断开会话，不触发 down | 低 | 部分实现/待验证（WEB-005；WEB-009 后半） |
+| 退出 | Q/Ctrl-C 只停 bus pump 和 UI，不关闭成员会话 | 操作 | `BusPump.stop()`、`ConsoleApp.on_unmount()`；Web 侧退出只停 uvicorn，不触发 down | 低 | 已实现（WEB-005；真实 tmux 验证见 WEB-009 后半，T-023） |
 
 ## 3. 当前 `gateway/page.py` / LocalChat 能力
 
@@ -193,12 +193,12 @@ Web 层可以把现有接口投影成以下几类资源；名称是建议，不�
 4. **多工作区和多浏览器 actor**：读写隔离、同成员并发操作、控制权冲突、断线后的操作幂等和审计 actor 归属。
 5. **高影响任务操作**：Web 表单需完整覆盖接管四字段、Leader-only 验收/汇报、评审冲突、状态转换错误和账本损坏提示，不能用一个自由文本“完成”按钮替代 `WorkService`。
 
-### 5.4 WEB-009 后半收口清单
+### 5.4 WEB-009 收口清单（T-023 终验，2026-08-30）
 
-以下两项的处理状态如下；WEB-009 后半仍需在 WEB-008 合入后收口：
-
-1. **T-017：`control.timeline_snapshot_view`** 已由 T-022 接入共享 projector 并在 `main` 验证；后续只需随 WEB-009 收口复查，不再作为未处理遗留。
-2. **T-013：显式 `websockets` 依赖** 仍待评估。确认从 `uvicorn[standard]` 拆出显式 `websockets` 是否能在不破坏真实握手的前提下缩小安装体积；若调整，必须重跑真实 WebSocket 握手冒烟并同步 `tests/test_release_package.py` 的依赖断言。本次只记录建议，不改依赖。
+1. **(a) T-017：`control.timeline_snapshot_view`**——已收口。T-022 接入共享 `projector`/`TimelineCache`，`tests/test_control_plane.py` 有同进程三处 seq 同源用例；`main` 已验证，无遗留。
+2. **(b) T-013：显式 `websockets` 依赖**——已收口，结论为**不改**：`uvicorn[standard]` 已含 `websockets`(真实浏览器 WS 升级需要，纯 ASGI-server 不带；WEB-007 曾因缺它导致真实握手失败，测试内存传输当时掩盖了问题)，拆出显式依赖只省安装体积、不省运行时行为，而每次改动都要求重跑真实握手冒烟+同步 `tests/test_release_package.py` 断言，收益不足以覆盖这个持续维护成本。维持现状，不改 `pyproject.toml`。
+3. **(c) 附件存储无配额/清理策略**——已收口。`ContentAddressedImageStore` 新增 `max_store_bytes`(默认 500MB)总容量上限，达到上限拒绝新上传(`ImageAttachmentError`，同现有单文件超限一样映射到 `invalid-request`/400)；不做自动淘汰——内容寻址文件可能仍被历史消息引用，删除会让回看时间线里的图片永久 404，安全的淘汰需要先知道哪些附件还被引用，这是跨切面的更大改动，作为已知限制记录，不在本次范围内实现。`tests/test_control_attachments.py` 覆盖到达上限拒绝新内容、同内容去重不占二次配额。
+4. **(d) 写端点与 WS 票据的 §6.3 合规复查**——已收口，无新增未合规项。T-019/opus 已对 WEB-008 落地时的 8 个写路由与 `attach_token`/`direct_token`(`ConfirmationStore`：CSPRNG ≥128 位熵、绑定 actor/member/action、单次消费、30s 过期)做过完整审计；T-023 在同一 `main` 提交(`e70eea3`)上复核，写路由数量与挂载的 `require_write_session` 依赖均未变化，无需重新走一遍审计，直接引用 T-019 证据。
 
 ## 6. 调研依据与验证
 

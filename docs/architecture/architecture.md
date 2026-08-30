@@ -64,7 +64,7 @@ IM 网关平台:**自建**(human 2026-08-16 拍板)。本机起一个只用标�
 - 一切经总线到达的文本都是**不可信输入**:注入终端前剥 ANSI/控制字符(C0、CSI、OSC);上屏前同样清洗。实现在 `src/bus/sanitize.py`,两个入口分别是 `format_for_injection`(投递)和 `format_for_screen`(上屏),新增出口一律走这两个函数。
 - Web 默认只绑定 `127.0.0.1`。HTTP 中间件拒绝不在本机白名单中的 Host（防 DNS rebinding）；WebSocket 单独校验 Host、Origin 与会话 cookie，握手拒绝必须返回结构化关闭码，不把未认证连接当成普通 HTTP 失败。启动 token 只在进程内保存，首次访问换成 `HttpOnly`、`SameSite=Strict` cookie，随后从地址栏移除 token。
 - 浏览器传入的 actor、工作区、绝对路径、tmux target 和任务权限声明一律不可信；Web API 只能调用既定工作区/成员服务，不开放任意 shell。响应、错误、日志投影和附件下载不得回显本机绝对路径；终端 ANSI 只能作为结构化终端数据交给安全渲染器，禁止拼接 `innerHTML` 或依赖 CDN。
-- Web-006/008 的写操作必须复用既有 `Message`/`deposit`、工作区、名册、生命周期、tmux 与审计边界；终止、重启、关闭会话、完整接管等危险动作在服务端二次确认后才执行，并记录 `AuditLog.record_control`。当前 WEB-005 只读页面不提供这些未结项操作。
+- WEB-006/008 的写操作复用既有 `Message`/`deposit`、工作区、名册、生命周期、tmux 与审计边界；终止、重启、关闭会话、完整接管等危险动作在服务端二次确认后才执行，并记录 `AuditLog.record_control`。所有写端点统一挂 `X-Amux-Session` 双重提交依赖；WebSocket 无法带自定义头，可写通道改用受该依赖保护的 HTTP 端点签发一次性票据，首帧交票消费。
 - 危险操作(push、删文件、装软件、出仓库)只认**本机** human 的直接指令,写在公共运行时提示词里;网关侧再挡一层:来自 IM 的这类指令一律挂起,由本机 `gateway approve` 放行后才入队(远程指令弱于本机指令,手机上自称 human 也不例外)。
 - 总控台自身不做"自动替人点权限弹窗"这类模拟操作;权限放行走各 CLI 的正规配置(roster 卷)。
 - 默认启动适配固定为：Claude 使用 `--permission-mode auto`，由 Claude 的自动分类器处理工具调用；GPT/Codex 使用 `-s danger-full-access -a never`，关闭 Codex 命令沙箱和人工审批，获得完整文件与命令权限。两者仍受账号/组织策略及 macOS、SIP、文件 ACL 等操作系统边界约束。该策略由 human 于 2026-08-30 拍板，取代 ROS-002/008 的 `acceptEdits` 与 `workspace-write + on-request`。

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import re
@@ -16,6 +17,11 @@ from bus import Attachment
 
 MAX_IMAGE_PIXELS = 40_000_000
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+#: WEB-009 收口项(c):单个 workspace 的附件目录总容量上限。内容寻址去重后,
+#: 历史消息仍可能引用任意一张已存的图，删旧文件会让回看时间线里的图片
+#: 永久 404——所以这里只做"到顶拒绝新写入"，不做自动淘汰(需要知道哪些
+#: 附件还被消息引用才能安全删，属跨切面的更大改动，如实记为已知限制)。
+MAX_STORE_BYTES = 500 * 1024 * 1024
 _ATTACHMENT_ID = re.compile(r"[0-9a-f]{16}\Z")
 _NAME = re.compile(r"clipboard-([0-9a-f]{16})\.png\Z")
 
@@ -39,10 +45,23 @@ class ContentAddressedImageStore:
         *,
         max_pixels: int = MAX_IMAGE_PIXELS,
         max_bytes: int = MAX_IMAGE_BYTES,
+        max_store_bytes: int = MAX_STORE_BYTES,
     ) -> None:
         self.root = Path(root).expanduser().resolve()
         self.max_pixels = max_pixels
         self.max_bytes = max_bytes
+        self.max_store_bytes = max_store_bytes
+
+    def _store_size(self) -> int:
+        if not self.root.is_dir():
+            return 0
+        total = 0
+        for entry in self.root.iterdir():
+            if entry.is_symlink() or not entry.is_file():
+                continue
+            with contextlib.suppress(OSError):
+                total += entry.stat().st_size
+        return total
 
     def store_upload(self, payload: bytes) -> Attachment:
         if not payload:
@@ -100,6 +119,11 @@ class ContentAddressedImageStore:
             except OSError:
                 reusable = False
         if not reusable:
+            if self._store_size() + len(payload) > self.max_store_bytes:
+                raise ImageAttachmentError(
+                    f"附件存储已达容量上限({self.max_store_bytes} 字节)，"
+                    "请清理工作区旧附件后再上传"
+                )
             temporary: Path | None = None
             try:
                 with tempfile.NamedTemporaryFile(

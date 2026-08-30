@@ -132,7 +132,7 @@ uv run amux web --port 8787
 
 服务只监听 `127.0.0.1`（默认端口 `8787`），启动后把终端打印的带一次性 token 地址复制到本机浏览器。首次访问会把 token 换成进程内的 `HttpOnly`、`SameSite=Strict` 会话 cookie；服务重启后旧地址失效。WebSocket 实时流同样要求受信任的 Host、Origin 和会话 cookie。
 
-Web 前端使用 Preact + TypeScript + esbuild；Node/npm 只在维护者构建和测试阶段需要，运行已构建的 Python 包不依赖 Node、源码路径或 CDN。WEB-006 的工作对话输入、@ 补全、消息/ask-reply 和附件已实现并待验收；WEB-007 的终端镜像与受限直连已实现；仅成员生命周期、危险控制和完整接管仍属 WEB-008 进行中。
+Web 前端使用 Preact + TypeScript + esbuild；Node/npm 只在维护者构建和测试阶段需要，运行已构建的 Python 包不依赖 Node、源码路径或 CDN。对齐 TUI 全部功能已完成并验收：工作对话输入/@ 补全/消息/ask-reply/附件（WEB-006）、终端镜像与受限直连（WEB-007）、成员生命周期/危险控制/完整接管（WEB-008）均已实现。退出只停 Web 服务，不关闭成员会话。
 
 ### 使用默认团队
 
@@ -316,7 +316,9 @@ uv run python -m qa.smoke
 - 手机网关默认无可用用户，必须显式配置白名单后才会接收请求。
 - Web 控制台只监听 `127.0.0.1`；HTTP 请求校验 Host，WebSocket 额外校验 Origin，并且 API 只接受启动时 token 换出的进程内 `HttpOnly`、`SameSite=Strict` cookie。token 不落盘，地址换 cookie 后重定向去掉查询参数。
 - 浏览器传来的 actor、工作区、路径、tmux target 和任务权限声明都不可信；Web 不开放任意 shell，服务端只允许既定的工作区/成员路由。API 响应和附件下载不得泄露本机绝对路径，终端 ANSI 只按安全的终端数据渲染。
-- WEB-008 的成员终止、重启、关闭会话、完整接管等危险动作必须二次确认并写入控制审计；WEB-006 消息/ask-reply/附件能力已实现但待验收，WEB-008 生命周期能力仍进行中。
+- 成员终止、重启、关闭会话、完整接管等危险动作必须二次确认并写入控制审计（WEB-008，已验收）；消息/ask-reply/附件能力（WEB-006）与成员生命周期能力（WEB-008）均已实现。
+- 所有写端点统一挂 `X-Amux-Session` 自定义头 + `SameSite` cookie 的双重提交校验，缺失或不匹配一律 401，且在业务校验之前拒绝；浏览器 `WebSocket` 无法带自定义头，可写 WS 通道（完整接管、镜像提权为直连）改为一次性票据：受双提交头保护的 HTTP 端点先签发票据，WS 首帧交票消费，绑定 actor 与目标成员，用一次即失效。
+- 附件（图片）存储按内容寻址去重，单张图片与工作区附件目录总量均设有上限；达到总量上限会拒绝新上传，不做自动淘汰（历史消息可能仍引用旧附件，删除会导致回看时永久 404）。
 - Web 依赖随 `amux-team` 默认安装，维护者在发布前需先完成 `npm build`（或 `npm run verify`）再执行 `qa.release`；发布验证不等于开发服务器可以访问公网。
 
 问题和建议欢迎提交到 [GitHub Issues](https://github.com/jzhang-0/proj_multi_agent/issues)。

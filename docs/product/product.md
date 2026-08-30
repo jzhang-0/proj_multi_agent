@@ -38,7 +38,7 @@
 
 桌面 Web 与 TUI 并列，目标是对齐 [Web 功能盘点](../web/inventory.md) 的全部条目；手机 UI 仍暂缓。`amux web` 启动 FastAPI/ASGI 服务，默认只监听 `127.0.0.1:8787`，通过同一工作区的控制面读取任务、成员、工作对话记录、健康状态和 versioned WebSocket 实时流。Web 不建第二套任务、总线或成员状态库。
 
-当前 WEB-005 已交付 Preact + TypeScript + esbuild 的只读 SPA、导航、主题、帮助、时间线筛选/滚动和成员状态展示；WEB-006 的工作对话输入、@ 补全、消息/ask-reply 和附件已实现并待验收；WEB-007 的终端镜像与受限直连已实现；仅成员生命周期、危险控制和完整接管仍属 WEB-008 进行中。Node/npm 只用于构建和测试。
+[Web 功能盘点](../web/inventory.md) 的全部条目已实现并验收：WEB-005 的只读 SPA/导航/主题/帮助/时间线筛选/成员状态展示，WEB-006 的工作对话输入/@ 补全/消息/ask-reply/附件，WEB-007 的终端镜像与受限直连，WEB-008 的成员生命周期/危险控制/完整接管。发布制品（sdist/wheel 含前端产物、源码外安装、退出不关成员会话）由 WEB-009 收口验证。Node/npm 只用于构建和测试。
 
 Web 会话使用启动时终端打印的一次性 token 换进程内 `HttpOnly`、`SameSite=Strict` cookie；HTTP 校验 Host，WebSocket 校验 Origin 和 cookie。浏览器不可信输入不能选择任意路径、tmux 目标或 actor；控制动作必须经过既有服务并写审计，危险动作需要本机二次确认，响应不得泄露本机绝对路径。
 

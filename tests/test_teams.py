@@ -245,6 +245,81 @@ def test_add_member_preset_fills_adapter_and_explicit_values_override(
     assert dict(added.env) == {"MODE": "custom"}
 
 
+def test_add_member_preset_derives_model_and_effort_args_from_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, _workspace_obj, project = _workspace(tmp_path)
+    teams = TeamStore(store.home)
+    teams.init_default()
+    monkeypatch.setattr("team.store.shutil.which", lambda command: f"/bin/{command}")
+
+    assert team_main(
+        [
+            "add-member",
+            DEFAULT_TEAM_ID,
+            "sonnet-worker",
+            "--model",
+            "Sonnet",
+            "--responsibility",
+            "执行 Sonnet 任务",
+            "--effort",
+            "xhigh",
+            "--preset",
+            "claude",
+        ],
+        teams=teams,
+        store=store,
+        cwd=project,
+    ) == 0
+    claude = teams.load(DEFAULT_TEAM_ID).members[-1]
+    assert claude.args == (
+        "--model",
+        "sonnet",
+        "--effort",
+        "xhigh",
+        "--permission-mode",
+        "auto",
+    )
+    assert dict(claude.env) == {
+        "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1",
+        "NO_COLOR": "",
+    }
+
+    assert team_main(
+        [
+            "add-member",
+            DEFAULT_TEAM_ID,
+            "codex-worker",
+            "--model",
+            "gpt-5.6-worker",
+            "--responsibility",
+            "执行 Codex 任务",
+            "--effort",
+            "high",
+            "--speed",
+            "fast",
+            "--preset",
+            "codex",
+        ],
+        teams=teams,
+        store=store,
+        cwd=project,
+    ) == 0
+    codex = teams.load(DEFAULT_TEAM_ID).members[-1]
+    assert codex.args == (
+        "-m",
+        "gpt-5.6-worker",
+        "-c",
+        'model_reasoning_effort="high"',
+        "-c",
+        'service_tier="priority"',
+        "-s",
+        "danger-full-access",
+        "-a",
+        "never",
+    )
+
+
 def test_add_member_rejects_invalid_input_without_replacing_archive(tmp_path: Path) -> None:
     store, _workspace_obj, project = _workspace(tmp_path)
     teams = TeamStore(store.home)

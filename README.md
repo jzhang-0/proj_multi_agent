@@ -144,7 +144,7 @@ amux team add-member fable-core reviewer \
 amux team activate fable-core
 ```
 
-也可用 `--preset claude|codex` 套用默认团队同类启动适配，再用 `--arg`/`--env` 覆盖；命令会先确认启动器存在于本机。
+也可用 `--preset claude|codex` 套用默认团队同类启动适配：runner、环境变量和固定权限参数来自预设，而 `--model`/`--effort` 会按本次参数生成；再用 `--command`/`--arg`/`--env` 覆盖。命令会先确认启动器存在于本机。
 启动时所有人读取公共提示词，Leader 与普通成员再分别读取自己的角色提示；Leader 还会拿到完整
 团队能力名册用于派工。提示正文集中维护在 [`src/amux_runtime/prompts/`](src/amux_runtime/prompts/README.md)，
 修改 Markdown 即可，不需要改 Python。

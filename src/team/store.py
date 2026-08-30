@@ -112,7 +112,12 @@ class TeamStore:
             raise TeamValidationError("必须提供 --command，或使用 --preset claude|codex")
         if shutil.which(selected_command) is None:
             raise TeamValidationError(f"运行器 command 不存在于本机 PATH: {selected_command}")
-        selected_args = tuple(args) if args else (template.args if template else ())
+        if args:
+            selected_args = tuple(args)
+        elif preset:
+            selected_args = _preset_args(preset, model=model, effort=effort, speed=speed)
+        else:
+            selected_args = ()
         selected_env = dict(template.env) if template else {}
         selected_env.update(env or {})
         member_raw = {
@@ -163,6 +168,29 @@ def _default_preset(name: str) -> TeamMember:
         raise TeamValidationError(f"未知启动预设: {name}")
     team = team_from_dict(tomllib.loads(_DEFAULT_TEAM), source="内置 fable-core")
     return next(member for member in team.members if member.command == runner)
+
+
+def _preset_args(
+    preset: str | None, *, model: str, effort: str, speed: str
+) -> tuple[str, ...]:
+    """只复用 runner 的固定适配，模型和 effort 始终来自本次请求。"""
+    if preset == "claude":
+        return ("--model", model.strip().lower(), "--effort", effort, "--permission-mode", "auto")
+    if preset == "codex":
+        tier = "priority" if speed == "fast" else "default"
+        return (
+            "-m",
+            model.strip().lower(),
+            "-c",
+            f'model_reasoning_effort="{effort}"',
+            "-c",
+            f'service_tier="{tier}"',
+            "-s",
+            "danger-full-access",
+            "-a",
+            "never",
+        )
+    return ()
 
 
 def _toml_string(value: str) -> str:

@@ -57,7 +57,7 @@
   - 验证：`uv run ruff check src/roster/protocol.py tests/test_roster_protocol.py tests/test_release_package.py tests/test_team_activation.py && uv run pytest tests/test_roster_protocol.py tests/test_release_package.py tests/test_team_activation.py -q`，20 passed。
   - 证据：`src/amux_runtime/prompts/leader.md` 先要求按规模与风险决定是否拆解/评审，再把低风险任务钉为“检查直接产物 + 最相关轻量验证”的最小充分验证，明确禁止惯性全量测试、重复调查和多人评审；跨模块/公共契约、安全与数据、不可逆、验证失败或证据矛盾才升级，并要求写明原因。提示同时保留“不复述成员完成”“最终验收和结项只能由 Leader 决定”，汇报深度也按风险缩放。`tests/test_roster_protocol.py` 对上述低风险停止规则、升级门槛和责任边界做实渲染断言；产品定义与架构冻结契约同步，提示正文仍只存在于 prompts 单一事实来源。
 
-处理登记：Luna，2026-08-30 17:06（Asia/Shanghai），分支 `team-009-luna`。
+处理登记：Luna，2026-08-30 17:06（Asia/Shanghai），分支 `team-009-luna`；返修：preset 的模型/effort 参数必须由本次请求生成。
 
 - [ ] **TEAM-009** — `amux team add-member` 命令：向已保存团队档案 `~/.amux/teams/<id>.toml` 追加一名成员，替代手工编辑。参数：`<team-id> <member-id>`，必填 `--model`、`--responsibility`、`--command`；可选 `--role member|leader`(默认 member)、`--effort`(默认 high)、`--speed standard|fast`(默认 standard)、`--arg`(可重复，构成 args)、`--env KEY=VALUE`(可重复)、`--preset claude|codex`(按默认 `fable-core` 同类成员的 command/args/env 模板生成，再被显式参数覆盖)。写入前用现有 `team_from_dict` 全量校验：成员 ID 唯一且合法(不得为 `human`/`bus`/`im:` 前缀等保留名)、Leader 仍唯一、运行器 command 存在于本机；任一校验失败不写文件。写入保留原文件注释与顺序不作要求，但必须原子写。命令输出新增成员摘要，并提示需运行 `amux team activate <id>` 才会拉起该成员；本命令自身不启动进程、不改工作区 `members.toml`。同步 `amux team --help`、README、产品与架构说明，补 CLI 与校验测试。
   - 前置：TEAM-001、TEAM-003。

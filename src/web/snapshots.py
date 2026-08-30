@@ -17,7 +17,6 @@ from control.timeline import HISTORY_LIMIT, TimelineCategory, TimelineEntry, fro
 from control.vocabulary import vocabulary as build_vocabulary
 from team.model import TeamValidationError
 from team.store import TeamNotFound
-from tmuxctl.errors import TmuxCommandError
 from web.context import SnapshotContext, load_bound_team, require_paths, require_workspace
 from web.errors import ApiError
 from web.state import RevisionTracker, TimelineCache
@@ -268,22 +267,32 @@ def timeline_body_text(ctx: SnapshotContext, cache: TimelineCache, seq: int) -> 
     raise ApiError("not-found", f"时间线记录 {seq} 没有全文", status_code=404, domain="timeline")
 
 
-def members_dto(ctx: SnapshotContext, tracker: RevisionTracker) -> dict[str, Any]:
+def members_dto(
+    ctx: SnapshotContext,
+    tracker: RevisionTracker,
+    member_status: MemberStatusService,
+) -> dict[str, Any]:
+    """`member_status` 是常驻服务(`web.app` 的 lifespan 里起，后台真正 watch 输出)；
+
+    这里绝不能每请求新建一个——一个从没被 `_watch_member` 喂过样本的
+    `ActivityTracker` 永远落在 `idle`(`tmuxctl/activity.py:69,115-120`)，
+    `working`/`stuck` 不可达、`silent_for` 恒为 `None`(评审 opus 实测发现)。
+    `track()` 让常驻服务的成员集合跟上名册变化(新增/移除)，不重启监视任务。
+    """
     require_workspace(ctx)
     paths = require_paths(ctx)
-    service = MemberStatusService(ctx.names, ctx.tmux)
-    for name in ctx.names:
-        alive = False
-        if ctx.tmux is not None:
-            try:
-                alive = len(ctx.tmux.list_panes(name)) == 1
-            except TmuxCommandError:
-                alive = False
-        service.set_alive(name, alive)
-    view = service.snapshot_view(queued=pending_counts(paths))
+    member_status.track(ctx.names)
+    view = member_status.snapshot_view(queued=pending_counts(paths))
     members = [asdict(member) for member in view.members]
     fingerprint = tuple(
-        (item["name"], item["state"], item["queued"], item["alive"], item["source"])
+        (
+            item["name"],
+            item["state"],
+            item["queued"],
+            item["alive"],
+            item["source"],
+            item["silent_for"],
+        )
         for item in members
     )
     revision = tracker.observe("member", fingerprint)
@@ -333,12 +342,13 @@ def bootstrap_dto(
     ctx: SnapshotContext,
     tracker: RevisionTracker,
     cache: TimelineCache,
+    member_status: MemberStatusService,
 ) -> dict[str, Any]:
     payload = {
         "workspace": workspace_dto(ctx, tracker),
         "team": team_dto(ctx, tracker),
         "work": work_dto(ctx, tracker),
-        "members": members_dto(ctx, tracker),
+        "members": members_dto(ctx, tracker, member_status),
         "health": health_dto(ctx, tracker),
         "timeline": timeline_dto(ctx, tracker, cache),
         "session": session_dto(tracker),

@@ -32,17 +32,35 @@ class SnapshotContext:
     names: tuple[str, ...]
 
 
-def build_context(cwd: Path | None = None) -> SnapshotContext:
+_UNSET: object = object()
+
+
+def build_context(
+    cwd: Path | None = None,
+    *,
+    tmux: Tmux | NamespacedTmux | None = _UNSET,  # type: ignore[assignment]
+) -> SnapshotContext:
+    """解析一次请求上下文。
+
+    `tmux` 默认未传时按老路径现场探测(会跑一次 `tmux -V` 子进程)；传入
+    `app.state.tmux`(lifespan 里探测一次、常驻复用的客户端)可以跳过这次
+    探测——成员状态需要一个稳定不变的 tmux 客户端喂给后台监视任务，其余
+    每请求现场探测就是纯粹的重复开销。显式传 `None` 表示"已知不可用，别
+    再探测"。
+    """
     here = cwd if cwd is not None else Path.cwd()
     workspace = resolve_from_cwd(here)
     if workspace is None:
         return SnapshotContext(workspace=None, paths=None, tmux=None, names=())
     paths = BusPaths.for_workspace(workspace).ensure()
-    tmux: Tmux | NamespacedTmux | None = None
-    with contextlib.suppress(TmuxError):
-        tmux = bind_tmux(names=SessionNames(slug=workspace.slug))
+    if tmux is _UNSET:
+        resolved_tmux: Tmux | NamespacedTmux | None = None
+        with contextlib.suppress(TmuxError):
+            resolved_tmux = bind_tmux(names=SessionNames(slug=workspace.slug))
+    else:
+        resolved_tmux = tmux
     names = member_names(cwd=workspace.project_root)
-    return SnapshotContext(workspace=workspace, paths=paths, tmux=tmux, names=names)
+    return SnapshotContext(workspace=workspace, paths=paths, tmux=resolved_tmux, names=names)
 
 
 def require_workspace(ctx: SnapshotContext) -> Workspace:

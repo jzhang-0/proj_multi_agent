@@ -48,6 +48,7 @@
   - 前置:WEB-005。
 
 - [ ] **WEB-007** — tmux 镜像、回滚与受限直连：实现「成员终端镜像」「成员终端回滚」「终端窗口适配」「成员画面点击直连」「直连文本输入」「直连编辑/方向键」。完整帧 WebSocket，≤10 Hz 合并/背压，ANSI 经随包终端组件安全渲染(禁 `innerHTML`/CDN)，canonical size 由租约持有者决定；浏览器行号须经服务端最新帧再次确认 composer；输入经 WEB-002 租约与 `tmuxctl` 串行。覆盖 TUI/Web 同时观看、抢占、回滚态拒绝输入、断线释放测试。
+  - 处理登记:Sonnet，2026-08-30，分支 `web-007-sonnet`(T-015)，暂不合 main(等 WEB-005)。**后端半边进行中**:按 `docs/web/terminal-protocol.md` §2-§7 做服务端镜像 WebSocket 通道(多观看者共享单一订阅、≤10Hz、背压只保留最新帧、回滚)、canonical size 归租约持有者、点击直连服务端二次确认、直连输入经 `src/control/lease.py` 与 `tmuxctl` 串行、连接驱动的租约心跳。前端终端组件半边(§10 xterm.js 接入)留给 WEB-005 之后。只调 `src/control`，不 import `console`。
   - 前置:WEB-002、WEB-005。
 
 - [ ] **WEB-008** — 成员管理、生命周期与完整接管：实现「成员打断」「成员终止」「成员重启」「全屏接管 / attach」「`/up`」「`/down`」「`/restart`」「`/adopt`」「`/mute`」「`/member add/rm/list`」。危险动作二次确认与审计；完整接管为 PTY bridge 固定 `tmux attach-session -t =<会话>`，收口在 `tmuxctl`，断线 detach+关 PTY+释放租约+审计；`/adopt` 明示进程级临时状态；`/mute` 走 Hub 策略。真实 tmux + 浏览器验证。

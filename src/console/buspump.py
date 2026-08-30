@@ -7,6 +7,11 @@
 
 这就是 CON-001 说的"内嵌投递循环",与 `console --headless`(纯 hub)
 共用同一份 `bus.Hub`,行为不会漂。
+
+WEB-002 起可以选配一把 `control.HubDeliveryLease`:多个 TUI/Web 前端挂在
+同一个工作区时,每个前端的 `BusPump` 都照常起线程、照常 watch 队列,但每轮
+`drain_once` 先问租约——只有持有者真正出队投递,其余前端只观察,不会重复
+投递或交错键入。不传 `lease` 时行为和之前完全一样。
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from collections.abc import Callable
 
 from bus import BusPaths, DeliveryResult, Hub, Message, OutboundPolicy, Verdict
 from bus.hub import tmux_deliver
+from control.lease import HubDeliveryLease
 
 
 class MutePolicy(OutboundPolicy):
@@ -44,9 +50,17 @@ class BusPump:
         on_result: Callable[[DeliveryResult], None],
         deliver: Callable[[Message], bool] = tmux_deliver,
         policy: OutboundPolicy | None = None,
+        lease: HubDeliveryLease | None = None,
     ) -> None:
         self.paths = paths
-        self.hub = Hub(paths, deliver=deliver, on_result=on_result, policy=policy)
+        self.lease = lease
+        self.hub = Hub(
+            paths,
+            deliver=deliver,
+            on_result=on_result,
+            policy=policy,
+            lease_gate=lease.should_deliver if lease is not None else None,
+        )
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_error: Exception | None = None
@@ -76,26 +90,34 @@ class BusPump:
             self.last_error = exc
 
     def stop(self, timeout: float = 2.0) -> None:
-        """停循环并等线程收尾;幂等。"""
+        """停循环并等线程收尾;幂等。持有的投递租约一并放弃,让下一个前端立刻能接手。"""
         self._stop.set()
         thread, self._thread = self._thread, None
         if thread is not None:
             thread.join(timeout=timeout)
+        if self.lease is not None:
+            self.lease.release()
 
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def rebind(self, paths: BusPaths) -> None:
-        """换一条总线:停旧循环,挂到新根上再按原开关状态拉起。"""
+    def rebind(self, paths: BusPaths, *, lease: HubDeliveryLease | None = None) -> None:
+        """换一条总线:停旧循环(放弃旧租约),挂到新根上再按原开关状态拉起。
+
+        `lease` 未传时新 pump 不接租约——旧租约是绑定旧工作区的,不能直接
+        套到新根上;调用方要换工作区时应一并传入按新根构造的租约。
+        """
         running = self.is_running()
         if running:
             self.stop()
         self.paths = paths
+        self.lease = lease
         self.hub = Hub(
             paths,
             deliver=self.hub.deliver,
             on_result=self.hub.on_result,
             policy=self.hub.policy,
+            lease_gate=lease.should_deliver if lease is not None else None,
         )
         if running:
             self.start()

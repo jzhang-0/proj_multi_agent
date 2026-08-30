@@ -174,6 +174,7 @@ class Hub:
         policy: OutboundPolicy | None = None,
         audit: AuditLog | None = None,
         confirm: Callable[[str], bool] | None = confirm_submitted,
+        lease_gate: Callable[[], bool] | None = None,
     ) -> None:
         self.paths = paths.ensure()
         self.audit = audit if audit is not None else AuditLog(self.paths)
@@ -182,6 +183,9 @@ class Hub:
         self.on_result = on_result
         self.poll_interval = poll_interval
         self.policy = policy if policy is not None else OutboundPolicy()
+        #: 每工作区单一 Hub 投递租约(WEB-002)。`None` 就是没接租约,行为不变;
+        #: 接了以后每轮先问一句"我还是不是持有者",不是就只观察,不出队不投递。
+        self.lease_gate = lease_gate
         #: 已注入但尚未确认提交的队列文件。文件留在 queue，下一轮只补确认，
         #: 不重复注入正文。
         self._awaiting_confirmation: dict[Path, Message] = {}
@@ -285,7 +289,13 @@ class Hub:
         """兼容旧调用；TMX-008 起确认已在 ``drain_once`` 内同步完成。"""
 
     def drain_once(self) -> list[DeliveryResult]:
-        """处理当前队列里的全部消息,返回逐条结果。"""
+        """处理当前队列里的全部消息,返回逐条结果。
+
+        接了 `lease_gate` 且这一轮拿不到租约时直接返回空列表:队列文件原样
+        留着,不出队、不投递、不确认——多个前端并列时,非持有者只观察。
+        """
+        if self.lease_gate is not None and not self.lease_gate():
+            return []
         results = []
         queued_before: dict[str, int] = {}
         blocked_targets: set[str] = set()

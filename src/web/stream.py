@@ -208,9 +208,8 @@ def _timeline_ops(
 ) -> list[dict[str, Any]] | None:
     """按 key→seq 映射比对。任一已知 key 的 seq 变了就返回 None，不产 ops。
 
-    ``history_from_entries`` 按 ``at`` 排序后 enumerate 赋 seq；秒粒度审计
-    ts 让同一秒内的总线消息插到任务事件前面是常态，按 seq 槽 diff 会把旧
-    行 update 成新消息、再 append 一份旧行。
+    WEB-010 后 seq 按到达顺序分配且进程内稳定；这条仍是防御：若重建把
+    已有 key 的 seq 挤走，禁止产出错位的 update+append。
     """
     old_seq = _seq_by_key(old.values())
     new_seq = _seq_by_key(new_entries)
@@ -321,6 +320,7 @@ class EventHub:
 
     def _reset_generation(self) -> None:
         self.tracker.reset_epoch()
+        self.cache.reset()
         for ring in self._rings.values():
             ring.clear()
         self._published.clear()

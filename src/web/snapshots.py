@@ -243,8 +243,8 @@ def timeline_dto(
         "revision": revision,
         "entries": [timeline_entry_payload(entry) for entry in page],
         "category_counts": counts,
-        "head_seq": projected[-1].seq if projected else 0,
-        "oldest_seq": page[0].seq if page else None,
+        "head_seq": max((entry.seq for entry in projected), default=0),
+        "oldest_seq": min((entry.seq for entry in page), default=None),
         "has_more": len(candidates) > len(page),
     }
 

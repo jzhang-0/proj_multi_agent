@@ -60,7 +60,7 @@ from control.health import FaultEvent, FaultKind, HealthMonitor
 from control.lease import HubDeliveryLease, LeaseDenied, MemberLeaseManager, leases_root
 from control.members import MemberStatusService, member_names, pending_counts
 from control.tasks import selected_default_task_id
-from control.timeline import TimelineProjector, timeline_snapshot_view
+from control.timeline import TimelineProjector, by_display_time, timeline_snapshot_view
 from roster import RosterError, load_effective_roster
 from roster.lifecycle import Lifecycle
 from tmuxctl import TmuxError
@@ -548,7 +548,7 @@ class ConsoleApp(App[None]):
         )
         entries = list(timeline_view.entries)
         self.timeline_projector.seed(entries)
-        timeline.backfill(entries, source=source)
+        timeline.backfill(by_display_time(entries), source=source)
         self._sync_timeline_filter_counts()
         timeline.note(
             "[总控台] ↑↓ 选任务/工作对话/成员,F3 任务,Esc 回工作对话,"
@@ -888,7 +888,7 @@ class ConsoleApp(App[None]):
         )
         entries = list(timeline_view.entries)
         self.timeline_projector.seed(entries)
-        timeline.backfill(entries, source=source)
+        timeline.backfill(by_display_time(entries), source=source)
         self._sync_timeline_filter_counts()
         self._connect_roster()
         self.refresh_member_cards()

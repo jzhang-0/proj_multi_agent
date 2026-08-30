@@ -59,7 +59,9 @@ test("member terminal renders a mirrored frame and completes click-to-connect", 
         input_rows: [2],
         live_allowed: true,
         encoding: "ansi",
-        data: "$ echo hello-from-sol\r\nhello-from-sol\r\n",
+        // 真实 `tmux capture-pane -p -e` 用 LF 分行；不能用 CRLF 夹具掩盖
+        // xterm 的行首归位问题。
+        data: "$ echo hello-from-sol\nhello-from-sol\n",
       }),
     );
   });
@@ -108,7 +110,7 @@ test("member controls use double-submit HTTP and full attach sends its ticket fi
       input_rows: [2],
       live_allowed: true,
       encoding: "ansi",
-      data: "$ sol ready\r\n",
+      data: "$ sol ready\n",
     }));
   });
   await page.route(/\/api\/v1\/members\/sol\/(interrupt|restart(?:\/confirm)?|attach)$/, async (route) => {

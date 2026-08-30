@@ -1,4 +1,4 @@
-"""`amux team init|list|show|use|current|activate`。"""
+"""`amux team init|list|show|use|current|activate|add-member`。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import TextIO
 
 from team.activation import activate_team
 from team.binding import bind_team, load_team_binding
-from team.model import Team
+from team.model import Team, TeamValidationError
 from team.store import DEFAULT_TEAM_ID, TeamStore
 from workspace.errors import WorkspaceError
 from workspace.resolve import ensure_from_cwd
@@ -33,6 +33,20 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("current", help="显示当前工作区绑定的团队")
     activate = sub.add_parser("activate", help="绑定团队并替换当前工作区的运行成员")
     activate.add_argument("team_id", nargs="?", help="团队 ID，省略时使用当前绑定")
+    add_member = sub.add_parser("add-member", help="向已保存团队档案追加成员")
+    add_member.add_argument("team_id", help="团队 ID")
+    add_member.add_argument("member_id", help="新成员 ID")
+    add_member.add_argument("--model", required=True, help="成员模型名")
+    add_member.add_argument("--responsibility", required=True, help="成员职责")
+    add_member.add_argument(
+        "--command", help="成员启动命令；使用 --preset 时可省略"
+    )
+    add_member.add_argument("--role", choices=("member", "leader"), default="member")
+    add_member.add_argument("--effort", choices=("low", "medium", "high", "xhigh"), default="high")
+    add_member.add_argument("--speed", choices=("standard", "fast"), default="standard")
+    add_member.add_argument("--arg", action="append", default=[], help="启动参数，可重复")
+    add_member.add_argument("--env", action="append", default=[], help="KEY=VALUE，可重复")
+    add_member.add_argument("--preset", choices=("claude", "codex"), help="套用默认启动适配")
     return parser
 
 
@@ -61,6 +75,33 @@ def main(
             return _list(team_store, output)
         if args.action == "show":
             _show(team_store.load(args.team_id), output)
+            return 0
+        if args.action == "add-member":
+            env = _parse_env(args.env)
+            if args.command is None and args.preset is None:
+                raise TeamValidationError("必须提供 --command，或使用 --preset claude|codex")
+            team = team_store.add_member(
+                args.team_id,
+                args.member_id,
+                model=args.model,
+                responsibility=args.responsibility,
+                command=args.command,
+                role=args.role,
+                effort=args.effort,
+                speed=args.speed,
+                args=args.arg,
+                env=env,
+                preset=args.preset,
+            )
+            added = team.members[-1]
+            launch = " ".join((added.command or "", *added.args)).strip()
+            print(
+                f"已向团队 {team.id} 添加成员 {added.id}: "
+                f"{added.model} · {added.role} · {added.effort} · {added.speed}",
+                file=output,
+            )
+            print(f"启动适配: {launch}", file=output)
+            print(f"需要运行 amux team activate {team.id} 才会拉起该成员。", file=output)
             return 0
         workspace = ensure_from_cwd(here, store=workspace_store)
         if args.action == "use":
@@ -99,8 +140,21 @@ def main(
     except (WorkspaceError, OSError) as exc:
         print(f"[team] {exc}", file=errors)
         return 1
-    print("用法: amux team init|list|show|use|current|activate", file=errors)
+    print(
+        "用法: amux team init|list|show|use|current|activate|add-member",
+        file=errors,
+    )
     return 2
+
+
+def _parse_env(values: list[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for value in values:
+        key, separator, item = value.partition("=")
+        if not separator or not key.strip():
+            raise TeamValidationError(f"--env 必须是 KEY=VALUE: {value!r}")
+        result[key.strip()] = item
+    return result
 
 
 def _list(teams: TeamStore, output: TextIO) -> int:

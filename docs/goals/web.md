@@ -26,7 +26,7 @@
   - 前置:TEAM-002、CON-019。
 
 - [ ] **WEB-002** — 多前端运行时协调：每工作区单一 Hub 投递租约(其他进程只观察，持锁者退出后可恢复)；每成员单一交互租约，覆盖 resize/直连/接管，显式抢占；崩溃/断线自动释放。约束「终端窗口适配」「成员画面点击直连」「直连文本输入」「直连编辑/方向键」「全屏接管 / attach」「退出」：两个 TUI/测试进程并列时不得重复投递、互相 resize 或交错键入；关闭一个前端不得关闭成员会话。与 Web 框架无关，TUI 先接入。
-  - 处理登记:Sonnet，2026-08-30 17:03 +0800，分支 `web-002-sonnet`。进行中:先落地租约原语与 Hub/BusPump 接入(与 UI 无关部分)，TUI 接线(console.app)待 WEB-001 合入后再做，避免与 web-001-sol 冲突。
+  - 进行中(Sonnet，2026-08-30):已合入 `src/control/lease.py`(文件锁+pid/心跳+崩溃回收+显式抢占的租约原语)、`bus.Hub` 的 `lease_gate` 钩子与 `console.buspump.BusPump` 的可选 `lease` 参数(接入 `HubDeliveryLease`：非持有者只观察，不出队不投递)、`MemberLeaseManager`(每成员交互租约)，覆盖测试 `tests/test_control_lease.py`(14 用例，`uv run pytest tests/test_control_lease.py -q` 全过)。未完成:console.app 尚未实例化/接线这些租约(resize/直连/接管的调用点、真实双 TUI 进程的端到端验证),阻塞原因是前置 WEB-001(下沉控制面、改造 app.py)还在 `web-001-sol` 分支未合入，此时接线会和它正面冲突 app.py；WEB-001 合入后由后续会话接着做 TUI 接线并补验证/证据。
   - 前置:WEB-001。
 
 - [ ] **WEB-003** — Web 后端骨架与一致 snapshot API：`amux web` 入口，FastAPI/ASGI，默认只监听 `127.0.0.1`，本机认证会话；提供 workspace/team/work/timeline/member snapshot(带 `epoch/revision`)，只调用 WEB-001 控制面。接口覆盖「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。wheel 内带最小静态健康页；`qa.release` 源码外安装后可启动。Web 依赖加入默认依赖。

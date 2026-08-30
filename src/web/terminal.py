@@ -1,9 +1,13 @@
 """WEB-007 后端半边:镜像 WebSocket 通道 + 租约串行直连输入。
 
 按 `docs/web/terminal-protocol.md` §2-§7 实现。只调 `control`(`MemberLeaseManager`、
-`terminal_input_rows`)与更底层的 `tmuxctl`/`bus`(`AuditLog`)，不 import `console`——
-`console.control.MemberController` 的 `press_key`/`submit_live_text` 是 TUI 专属,
-这里针对同一份 `tmuxctl` 原语重新实现等价逻辑,不导入它。
+`terminal_input_rows`、WEB-011 下沉的 `control.mirror` 采集核心)与更底层的
+`tmuxctl`/`bus`(`AuditLog`)，不 import `console`——`console.control.MemberController`
+的 `press_key`/`submit_live_text` 是 TUI 专属,这里针对同一份 `tmuxctl` 原语重新实现
+等价逻辑,不导入它。
+
+采集循环/背压/停采集判据本身在 `control.mirror`(TUI 同款共用，WEB-011)；本文件
+只负责 ANSI 剥离与组帧(`control` 禁 import rich，见 §6.4 结论)。
 
 完整接管(§8, WEB-008)与前端 xterm.js 接入(§10, WEB-005)不在本文件范围内。
 """
@@ -12,22 +16,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from rich.text import Text
 
 from control.lease import DEFAULT_TTL_SECONDS, LeaseDenied, MemberLeaseManager
+from control.mirror import IdleTick, MirrorHub, RawFrame
 from control.terminal import terminal_input_rows
 from tmuxctl import KeyInjector
-from tmuxctl.errors import TmuxCommandError
 
 #: §4.2:Web 侧 10Hz 上限(实时)；回滚区内容不变，降到 2Hz 足够(§4.3)。
 MIRROR_MIN_INTERVAL = 0.1
 ROLLBACK_MIN_INTERVAL = 0.5
-#: §4.2:静止画面每 5s 发一次 idle 帧，证明连接仍活。
-IDLE_PING_INTERVAL = 5.0
 #: §4.5:回滚上限，等于 tmux 默认回滚区大小(对齐 console.mirror.HISTORY_LIMIT)。
 MAX_SCROLL_OFFSET = 2000
 #: §5:太小的窗口 fit 过去 CLI 反而排不下。
@@ -68,136 +69,50 @@ class MirrorTmux(Protocol):
     def release_window_size(self, target: str) -> None: ...
 
 
-def _push_latest(queue: asyncio.Queue[dict[str, Any]], item: dict[str, Any]) -> None:
-    """§4.4:每订阅者一个 `maxsize=1` 队列，新帧到达先清空再放入，不阻塞采集循环。"""
-    while not queue.empty():
-        try:
-            queue.get_nowait()
-        except asyncio.QueueEmpty:
-            break
-    queue.put_nowait(item)
+def _mirror_min_interval(history_offset: int) -> float:
+    """§4.2:Web 侧实时 10Hz 上限；回滚区内容不变，降到 2Hz 足够(§4.3)。"""
+    return MIRROR_MIN_INTERVAL if history_offset == 0 else ROLLBACK_MIN_INTERVAL
 
 
 @dataclass
-class MirrorGroup:
-    """`(member, history_offset)` 一组共享一次采集(§4.3)。"""
+class _AsyncTmuxCapture:
+    """`control.mirror.MirrorCaptureTarget` 要的是异步接口;Web 侧 tmux 客户端
+    是同步/阻塞的，这里补一层 `asyncio.to_thread` 转发,不改 `control` 那边。"""
 
-    member: str
-    history_offset: int
     tmux: MirrorTmux
-    subscribers: dict[str, asyncio.Queue[dict[str, Any]]] = field(default_factory=dict)
-    frame_seq: int = 0
-    last_text: str | None = None
-    last_broadcast_at: float = 0.0
-    task: asyncio.Task[None] | None = None
 
-    @property
-    def min_interval(self) -> float:
-        return MIRROR_MIN_INTERVAL if self.history_offset == 0 else ROLLBACK_MIN_INTERVAL
-
-    def add(self, conn_id: str) -> asyncio.Queue[dict[str, Any]]:
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=1)
-        self.subscribers[conn_id] = queue
-        if self.task is None:
-            self.task = asyncio.create_task(self._run())
-        return queue
-
-    def remove(self, conn_id: str) -> bool:
-        """返回组内是否已空(调用方据此从 `MirrorHub` 摘除)。"""
-        self.subscribers.pop(conn_id, None)
-        if not self.subscribers and self.task is not None:
-            self.task.cancel()
-            self.task = None
-        return not self.subscribers
-
-    def _broadcast(self, frame: dict[str, Any]) -> None:
-        for queue in self.subscribers.values():
-            _push_latest(queue, frame)
-
-    def _capture(self) -> tuple[str, int, int, int]:
-        """同步、阻塞;调用方经 `asyncio.to_thread` 跑。返回 `(text, cursor_y, cols, rows)`。
-
-        回滚帧的 `cursor_y` 强制归零:`#{cursor_y}` 报的是实时光标位置，
-        与 `-S` 回滚起点无关,套进回滚画面里没有意义(§4.1 doc 同款取舍)。
-        """
-        start = -self.history_offset if self.history_offset else None
-        text, cursor_y, cols, rows = self.tmux.capture_with_geometry(
-            self.member, escape=True, start=start
+    async def capture_with_geometry(
+        self, target: str, *, escape: bool = False, start: int | str | None = None
+    ) -> tuple[str, int, int, int]:
+        return await asyncio.to_thread(
+            self.tmux.capture_with_geometry, target, escape=escape, start=start
         )
-        if self.history_offset:
-            cursor_y = 0
-        return text, cursor_y, cols, rows
-
-    async def _run(self) -> None:
-        """§4.2/§4.3:单生产者循环，无观看者时由 `remove()` 取消。"""
-        try:
-            while True:
-                try:
-                    text, cursor_y, cols, rows = await asyncio.to_thread(self._capture)
-                except TmuxCommandError:
-                    await asyncio.sleep(self.min_interval)
-                    continue
-                # §2.2:单调时钟不得出网，`*_at` 一律 epoch 秒；`now` 只用来跟
-                # `last_broadcast_at` 比节流间隔，不出网，继续用 monotonic
-                # 没问题(评审 opus 实测:之前 captured_at 直接送了 monotonic 值)。
-                now = time.monotonic()
-                if text != self.last_text:
-                    self.last_text = text
-                    self.frame_seq += 1
-                    self.last_broadcast_at = now
-                    live_allowed = self.history_offset == 0
-                    input_rows: tuple[int, ...] = ()
-                    if live_allowed:
-                        input_rows = terminal_input_rows(strip_ansi(text))
-                    self._broadcast(
-                        {
-                            "type": "frame",
-                            "member": self.member,
-                            "frame_seq": self.frame_seq,
-                            "cols": cols,
-                            "rows": rows,
-                            "history_offset": self.history_offset,
-                            "captured_at": time.time(),
-                            "cursor_y": cursor_y,
-                            "input_rows": list(input_rows),
-                            "live_allowed": live_allowed,
-                            "encoding": "ansi",
-                            "data": "[H[J" + text,
-                        }
-                    )
-                elif now - self.last_broadcast_at >= IDLE_PING_INTERVAL:
-                    self.last_broadcast_at = now
-                    self._broadcast(
-                        {"type": "idle", "member": self.member, "frame_seq": self.frame_seq}
-                    )
-                await asyncio.sleep(self.min_interval)
-        except asyncio.CancelledError:
-            pass
 
 
-class MirrorHub:
-    """进程内单例，挂在 `app.state`；管理全部 `(member, history_offset)` 组。"""
+def _frame_message(frame: RawFrame) -> dict[str, Any]:
+    """把 `control.mirror` 的原始帧组成 §4.1 协议帧:ANSI 剥离/组帧留在这一侧。"""
+    live_allowed = frame.history_offset == 0
+    input_rows: tuple[int, ...] = ()
+    if live_allowed:
+        input_rows = terminal_input_rows(strip_ansi(frame.text))
+    return {
+        "type": "frame",
+        "member": frame.member,
+        "frame_seq": frame.frame_seq,
+        "cols": frame.cols,
+        "rows": frame.rows,
+        "history_offset": frame.history_offset,
+        "captured_at": frame.captured_at,
+        "cursor_y": frame.cursor_y,
+        "input_rows": list(input_rows),
+        "live_allowed": live_allowed,
+        "encoding": "ansi",
+        "data": "\x1b[H\x1b[J" + frame.text,
+    }
 
-    def __init__(self) -> None:
-        self._groups: dict[tuple[str, int], MirrorGroup] = {}
 
-    def subscribe(
-        self, member: str, history_offset: int, conn_id: str, tmux: MirrorTmux
-    ) -> tuple[MirrorGroup, asyncio.Queue[dict[str, Any]]]:
-        key = (member, history_offset)
-        group = self._groups.get(key)
-        if group is None:
-            group = MirrorGroup(member=member, history_offset=history_offset, tmux=tmux)
-            self._groups[key] = group
-        return group, group.add(conn_id)
-
-    def unsubscribe(self, member: str, history_offset: int, conn_id: str) -> None:
-        key = (member, history_offset)
-        group = self._groups.get(key)
-        if group is None:
-            return
-        if group.remove(conn_id):
-            self._groups.pop(key, None)
+def _idle_message(tick: IdleTick) -> dict[str, Any]:
+    return {"type": "idle", "member": tick.member, "frame_seq": tick.frame_seq}
 
 
 def _lease_payload(state: Any) -> dict[str, Any]:
@@ -241,18 +156,27 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
     hub = state.hub
     lease_manager = state.lease_manager
 
-    group, queue = hub.subscribe(member, state.history_offset, owner, state.tmux)
+    group, queue = hub.subscribe(
+        member,
+        state.history_offset,
+        owner,
+        _AsyncTmuxCapture(state.tmux),
+        min_interval=_mirror_min_interval(state.history_offset),
+    )
     #: 本连接"自认为持有租约"；`lease_manager.holds()` 在被抢占的那一刻就已
     #: 变 False(文件已经是新主人)，heartbeat_loop 不能拿它当"还要不要心跳"
     #: 的判据，否则永远发现不了自己被抢——直接 heartbeat() 看返回值才对
     #: (`LeaseState`/`LeaseDenied` 语义见 control/lease.py)。
     has_lease = False
 
-    async def forward_loop(q: asyncio.Queue[dict[str, Any]]) -> None:
+    async def forward_loop(q: asyncio.Queue[RawFrame | IdleTick]) -> None:
         with contextlib.suppress(Exception):
             while True:
-                frame = await q.get()
-                await websocket.send_json(frame)
+                item = await q.get()
+                message = (
+                    _frame_message(item) if isinstance(item, RawFrame) else _idle_message(item)
+                )
+                await websocket.send_json(message)
 
     async def heartbeat_loop() -> None:
         nonlocal has_lease
@@ -274,7 +198,13 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
         hub.unsubscribe(member, state.history_offset, owner)
         state.history_offset = new_offset
         state.live_active = False
-        group, new_queue = hub.subscribe(member, new_offset, owner, state.tmux)
+        group, new_queue = hub.subscribe(
+            member,
+            new_offset,
+            owner,
+            _AsyncTmuxCapture(state.tmux),
+            min_interval=_mirror_min_interval(new_offset),
+        )
         forward_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await forward_task

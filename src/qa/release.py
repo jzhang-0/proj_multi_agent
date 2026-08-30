@@ -146,6 +146,23 @@ def _isolated_smoke(wheel: Path, version: str, *, offline: bool = False) -> None
                 cwd=project,
                 env=env,
             )
+        _run(
+            [
+                str(venv / "bin" / "python"),
+                "-c",
+                (
+                    "from importlib.resources import files; "
+                    "root=files('web').joinpath('static'); "
+                    "html=root.joinpath('index.html').read_text(encoding='utf-8'); "
+                    "assert root.joinpath('assets','app.js').is_file(); "
+                    "assert root.joinpath('assets','app.css').is_file(); "
+                    "assert './assets/app.js' in html and 'http://' not in html "
+                    "and 'https://' not in html; print('packaged web assets ok')"
+                ),
+            ],
+            cwd=project,
+            env=env,
+        )
         amux = venv / "bin" / "amux"
         version_out = _run([str(amux), "--version"], cwd=project, env=env).stdout
         if f"amux {version}" not in version_out:

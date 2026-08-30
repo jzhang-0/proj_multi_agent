@@ -19,12 +19,12 @@ jobs:
           version: "latest"
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: uv sync --locked
       - run: npm ci --prefix web
       - run: npm --prefix web run verify
+      - run: uv sync --locked
       - name: Verify tag matches package version
         if: github.event_name == 'push'
         run: test "$GITHUB_REF_NAME" = "v$(uv version --short)"

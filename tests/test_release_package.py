@@ -49,6 +49,7 @@ def test_release_workflow_has_version_guard_and_trusted_publishers() -> None:
     assert 'test "$GITHUB_REF_NAME" = "v$(uv version --short)"' in workflow
     assert "uv run python -m qa.release --out-dir dist" in workflow
     assert "actions/setup-node@v6" in workflow
+    assert 'node-version: "24"' in workflow
     assert "npm ci --prefix web" in workflow
     assert "npm --prefix web run verify" in workflow
     assert "--offline-smoke" not in workflow
@@ -134,6 +135,10 @@ def test_strict_release_smoke_installs_and_imports_dependencies(
             "-c",
             "import PIL, textual, watchfiles; print('release dependencies ok')",
         ]
+        for argv, _ in calls
+    )
+    assert any(
+        argv[-2] == "-c" and "packaged web assets ok" in argv[-1]
         for argv, _ in calls
     )
 

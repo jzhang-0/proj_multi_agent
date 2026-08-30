@@ -5,6 +5,7 @@
 | 产品范围与目标形态 | [产品定义](product/product.md) |
 | 分层、技术栈、冻结契约、安全边界 | [架构决策](architecture/architecture.md) |
 | 工程任务、完成契约、执行顺序 | [Goal 总索引](goals/README.md) |
+| Web 控制台功能盘点与架构方案 | [功能盘点](web/inventory.md)、[架构方案比较](web/architecture-options.md)、[Web Goal 卷](goals/web.md) |
 | 打包、版本与发布 | [发布工程](goals/release.md) |
 | 发布候选构建与上传流程 | [打包与发布](releasing.md) |
 | 界面改动的自验证步骤与判定清单 | [视觉自验证](quality/visual-check.md) |

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -344,25 +344,17 @@ def timeline_snapshot_view(
     *,
     work_events: tuple[WorkEvent, ...] = (),
     snapshot: WorkSnapshot | None = None,
-    timeline: Sequence[TimelineEntry] | None = None,
 ) -> TimelineSnapshotView:
-    """返回分页条目和由完整投影计算的分类计数。
-
-    `timeline` 可传入调用方已算好的全量投影(同一批 audit/`work_events`/
-    `snapshot`)，跳过重复的 `history_from_entries` 全量重建。
-    """
+    """返回分页条目和由完整投影计算的分类计数。"""
     if limit <= 0:
         raise ValueError("limit 必须大于 0")
-    if timeline is None:
-        raw_entries = audit.entries()
-        all_entries = history_from_entries(
-            raw_entries,
-            max(1, len(raw_entries) + len(work_events)),
-            work_events=work_events,
-            snapshot=snapshot,
-        )
-    else:
-        all_entries = list(timeline)
+    raw_entries = audit.entries()
+    all_entries = history_from_entries(
+        raw_entries,
+        max(1, len(raw_entries) + len(work_events)),
+        work_events=work_events,
+        snapshot=snapshot,
+    )
     counts = {"all": len(all_entries), **{str(category): 0 for category in TimelineCategory}}
     for entry in all_entries:
         counts[str(entry.resolved_category)] += 1

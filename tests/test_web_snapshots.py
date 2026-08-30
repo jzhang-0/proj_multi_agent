@@ -111,6 +111,39 @@ def test_workspace_and_work_report_unregistered(
     assert work.json()["error"]["code"] == "workspace-unregistered"
 
 
+def test_bound_but_empty_ledger_reports_empty_snapshots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "amux.toml").write_text("enabled = []\n", encoding="utf-8")
+    store = Store(tmp_path / "amux-home")
+    workspace = store.add(project, slug="project")[0]
+    teams = TeamStore(store.home)
+    teams.init_default()
+    bind_team(workspace, DEFAULT_TEAM_ID, teams=teams)
+    monkeypatch.setenv("AMUX_HOME", str(store.home))
+    monkeypatch.chdir(project)
+    client = _client()
+
+    work = client.get("/api/v1/work").json()
+    assert work["summary"]["total"] == 0
+    assert work["tasks"] == []
+    assert work["selected_default"] is None
+
+    timeline = client.get("/api/v1/timeline").json()
+    assert timeline["entries"] == []
+    assert timeline["head_seq"] == 0
+    assert timeline["oldest_seq"] is None
+    assert timeline["has_more"] is False
+
+    members = client.get("/api/v1/members").json()
+    assert members["members"] == []
+
+    health = client.get("/api/v1/health").json()
+    assert isinstance(health["degraded"], bool)
+
+
 def test_full_snapshot_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _bound_workspace(tmp_path, monkeypatch)
     client = _client()

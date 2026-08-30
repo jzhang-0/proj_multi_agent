@@ -361,8 +361,15 @@ def timeline_snapshot_view(
     *,
     work_events: tuple[WorkEvent, ...] = (),
     snapshot: WorkSnapshot | None = None,
+    projector: TimelineProjector | None = None,
 ) -> TimelineSnapshotView:
-    """返回分页条目和由完整投影计算的分类计数。"""
+    """返回分页条目和由完整投影计算的分类计数。
+
+    `projector` 用法与 `history_from_entries` 一致(T-022)：传入调用方持有的
+    `TimelineProjector`(如 TUI 的 `ConsoleApp.timeline_projector`、Web 的
+    `TimelineCache` 内部实例)，同一 key 的 seq 与该调用方其他投影路径保持
+    一致；不传则各调用一次独立分配，不跨调用共享。
+    """
     if limit <= 0:
         raise ValueError("limit 必须大于 0")
     raw_entries = audit.entries()
@@ -371,6 +378,7 @@ def timeline_snapshot_view(
         max(1, len(raw_entries) + len(work_events)),
         work_events=work_events,
         snapshot=snapshot,
+        projector=projector,
     )
     counts = {"all": len(all_entries), **{str(category): 0 for category in TimelineCategory}}
     for entry in all_entries:

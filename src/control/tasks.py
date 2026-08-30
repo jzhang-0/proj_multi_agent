@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from bus.sanitize import sanitize
 from control.time import work_timestamp
-from control.timeline import from_audit, history_from_entries
+from control.timeline import TimelineEntry, from_audit, history_from_entries
 from work import Task, TaskStatus, WorkEvent, WorkSnapshot
 from work.presentation import DETAIL_FIELDS
 
@@ -171,15 +171,23 @@ def task_communications(
     *,
     work_events: tuple[WorkEvent, ...] = (),
     snapshot: WorkSnapshot | None = None,
+    timeline: Sequence[TimelineEntry] | None = None,
 ) -> tuple[TaskCommunicationView, ...]:
-    """从总线审计中过滤任务关联 deposit，保留最近 20 条。"""
+    """从总线审计中过滤任务关联 deposit，保留最近 20 条。
+
+    `timeline` 可传入调用方已投影好的全量时间线(同一批 `entries`/
+    `work_events`/`snapshot` 算出的 key→seq 映射)，跳过一次全量重建——
+    20k 行审计下 `history_from_entries` 单次耗时约 0.28s，高频端点
+    (`/api/v1/work/tasks/{id}`)不应每次请求都重算。
+    """
     raw_entries = [dict(entry) for entry in entries]
-    timeline = history_from_entries(
-        raw_entries,
-        max(1, len(raw_entries) + len(work_events)),
-        work_events=work_events,
-        snapshot=snapshot,
-    )
+    if timeline is None:
+        timeline = history_from_entries(
+            raw_entries,
+            max(1, len(raw_entries) + len(work_events)),
+            work_events=work_events,
+            snapshot=snapshot,
+        )
     seq_by_key = {entry.key: entry.seq for entry in timeline}
     linked: list[TaskCommunicationView] = []
     for index, entry in enumerate(raw_entries):
@@ -204,6 +212,8 @@ def task_detail_view(
     snapshot: WorkSnapshot,
     task: Task,
     communications: Iterable[Mapping[str, object]],
+    *,
+    timeline: Sequence[TimelineEntry] | None = None,
 ) -> TaskDetailView:
     children = tuple(
         TaskChildView(
@@ -249,5 +259,6 @@ def task_detail_view(
             task.id,
             work_events=snapshot.events,
             snapshot=snapshot,
+            timeline=timeline,
         ),
     )

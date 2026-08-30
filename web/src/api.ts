@@ -1,5 +1,8 @@
 import type {
   BootstrapSnapshot,
+  AttachmentUpload,
+  MessageReceipt,
+  MessageRequest,
   TaskDetailSnapshot,
   TimelineCategory,
   TimelineSnapshot,
@@ -23,6 +26,10 @@ async function getJSON<T>(fetcher: Fetcher, path: string): Promise<T> {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
+  return checkedJSON<T>(response);
+}
+
+async function checkedJSON<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let message = `请求失败 (${response.status})`;
     let code: string | undefined;
@@ -63,4 +70,42 @@ export function fetchTimeline(
   const query = new URLSearchParams({ category, limit: "200" });
   if (beforeSeq !== undefined) query.set("before_seq", String(beforeSeq));
   return getJSON(fetcher, `/api/v1/timeline?${query.toString()}`);
+}
+
+export async function uploadAttachment(
+  file: Blob,
+  writeToken: string,
+  fetcher: Fetcher = fetch,
+): Promise<AttachmentUpload> {
+  const response = await fetcher("/api/v1/attachments", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": file.type || "application/octet-stream",
+      "X-Amux-Session": writeToken,
+    },
+    body: file,
+  });
+  const payload = await checkedJSON<{ attachment: AttachmentUpload }>(response);
+  return payload.attachment;
+}
+
+export async function sendMessage(
+  payload: MessageRequest,
+  writeToken: string,
+  fetcher: Fetcher = fetch,
+): Promise<MessageReceipt> {
+  const response = await fetcher("/api/v1/messages", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Amux-Session": writeToken,
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await checkedJSON<{ message: MessageReceipt }>(response);
+  return body.message;
 }

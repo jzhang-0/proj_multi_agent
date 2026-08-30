@@ -2,6 +2,7 @@ export type RevisionMap = Record<string, number>;
 
 export interface SessionSnapshot {
   actor: string;
+  write_token: string | null;
   epoch: string;
   epoch_started_at: number;
   server_time_at: number;
@@ -114,6 +115,37 @@ export interface TimelineEntry {
   attachment_count: number;
   category: Exclude<TimelineCategory, "all">;
   has_body: boolean;
+  kind: "ask" | "reply" | null;
+  reply_to: string | null;
+  attachment_ids: string[];
+}
+
+export interface AttachmentUpload {
+  id: string;
+  name: string;
+  media_type: string;
+  width: number;
+  height: number;
+  size: number;
+  download_url: string;
+}
+
+export interface MessageRequest {
+  to?: string;
+  text?: string;
+  kind?: "message" | "ask" | "reply";
+  task_id?: string;
+  reply_to?: string;
+  attachment_ids?: string[];
+}
+
+export interface MessageReceipt {
+  id: string;
+  to: string;
+  kind: "message" | "ask" | "reply";
+  reply_to: string | null;
+  task_id: string | null;
+  attachment_ids: string[];
 }
 
 export interface TimelineSnapshot {

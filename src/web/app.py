@@ -16,11 +16,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib.resources
+import uuid
 from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from starlette.websockets import WebSocketDisconnect
 
+from bus.audit import AuditLog
+from control.lease import MemberLeaseManager, leases_root
 from control.members import MemberStatusService
 from web.auth import COOKIE_NAME, WebSession
 from web.context import build_context
@@ -39,13 +43,26 @@ from web.snapshots import (
     workspace_dto,
 )
 from web.state import RevisionTracker, TimelineCache
+from web.terminal import HEARTBEAT_INTERVAL, ConnectionState, MirrorHub, run_mirror_connection
 
 API_PREFIX = "/api/v1"
+
+#: WS 握手拒绝用的私有关闭码(RFC 6455 4000-4999 段)；协议文档未定专门取值，
+#: 这里的编号只是内部约定,与 HTTP 侧 §2.4 错误码同义对照(unauthorized/
+#: not-found/service-unavailable)，方便复审核对。
+WS_CLOSE_UNAUTHORIZED = 4401
+WS_CLOSE_NOT_FOUND = 4404
+WS_CLOSE_UNAVAILABLE = 4503
 
 
 def allowed_hosts(port: int) -> frozenset[str]:
     """`Host` 头白名单(架构 §6.3):只接受本机地址 + 当前监听端口。"""
     return frozenset({f"127.0.0.1:{port}", f"localhost:{port}"})
+
+
+def allowed_origins(port: int) -> frozenset[str]:
+    """WS 握手的 `Origin` 白名单(架构 §6.3、terminal-protocol §2):只认本机。"""
+    return frozenset({f"http://127.0.0.1:{port}", f"http://localhost:{port}"})
 
 
 def _error(code: str, message: str, *, status_code: int, domain: str = "web") -> ApiJSONResponse:
@@ -74,6 +91,9 @@ async def _lifespan(app: FastAPI):
     """
     ctx = build_context()
     app.state.tmux = ctx.tmux
+    app.state.lease_manager = (
+        MemberLeaseManager(leases_root(ctx.workspace)) if ctx.workspace is not None else None
+    )
     member_status = MemberStatusService(ctx.names, ctx.tmux)
     app.state.member_status = member_status
     monitor_task: asyncio.Task[None] | None = None
@@ -107,6 +127,7 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
         lifespan=_lifespan,
     )
     hosts = allowed_hosts(port)
+    origins = allowed_origins(port)
     app.state.revisions = RevisionTracker()
     app.state.timeline_cache = TimelineCache()
     # lifespan 填 tmux/member_status；这里先占位默认值，ASGI 服务器(uvicorn)
@@ -115,6 +136,10 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
     # 而是走 §2.4 的 503(见 API router 的 require_runtime 依赖)。
     app.state.tmux = None
     app.state.member_status = None
+    app.state.lease_manager = None
+    app.state.mirror_hub = MirrorHub()
+    # 测试可收窄以避免等一个真实心跳周期(默认 5s)；生产不改。
+    app.state.heartbeat_interval = HEARTBEAT_INTERVAL
     register_error_handlers(app)
 
     @app.middleware("http")
@@ -254,6 +279,49 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
     async def get_health() -> dict:
         ctx = build_context(tmux=app.state.tmux)
         return health_dto(ctx, app.state.revisions)
+
+    @app.websocket(f"{API_PREFIX}/terminal/{{member}}/mirror")
+    async def terminal_mirror(websocket: WebSocket, member: str) -> None:
+        """WEB-007 §2/§4-§7:镜像 + 租约串行直连输入,单一端点承载全部消息类型。
+
+        HTTP 中间件不拦截 WebSocket scope(Starlette 的 `@app.middleware("http")`
+        只挂 `http` scope)，Host/Origin/cookie 三项鉴权必须在这里手动做完再
+        `accept()`；握手失败一律不建立连接，不产生任何进程/订阅。
+        """
+        host = websocket.headers.get("host", "")
+        origin = websocket.headers.get("origin", "")
+        if host not in hosts or origin not in origins:
+            await websocket.close(code=WS_CLOSE_UNAUTHORIZED)
+            return
+        if not session.verify_cookie(websocket.cookies.get(COOKIE_NAME)):
+            await websocket.close(code=WS_CLOSE_UNAUTHORIZED)
+            return
+
+        ctx = build_context(tmux=app.state.tmux)
+        if ctx.workspace is None or ctx.tmux is None or app.state.lease_manager is None:
+            await websocket.close(code=WS_CLOSE_UNAVAILABLE)
+            return
+        if member not in ctx.names:
+            await websocket.close(code=WS_CLOSE_NOT_FOUND)
+            return
+        if not await asyncio.to_thread(ctx.tmux.has_session, member):
+            await websocket.close(code=WS_CLOSE_NOT_FOUND)
+            return
+
+        await websocket.accept()
+        conn_id = uuid.uuid4().hex
+        owner = f"web:{session.session_id}:{conn_id}"
+        state = ConnectionState(
+            member=member,
+            owner=owner,
+            tmux=ctx.tmux,
+            lease_manager=app.state.lease_manager,
+            audit=AuditLog(ctx.paths),
+            hub=app.state.mirror_hub,
+            heartbeat_interval=app.state.heartbeat_interval,
+        )
+        with contextlib.suppress(WebSocketDisconnect):
+            await run_mirror_connection(websocket, state)
 
     app.include_router(api)
 

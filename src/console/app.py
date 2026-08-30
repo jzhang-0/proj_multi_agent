@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+import uuid
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
@@ -55,6 +57,7 @@ from console.theme import tokens as theme_tokens
 from console.widgets import ConversationCard, ConversationFilter, MemberCard, Timeline
 from console.workview import TaskCard, TaskDetail, TaskSummaryCard, render_task_card
 from control.health import FaultEvent, FaultKind, HealthMonitor
+from control.lease import HubDeliveryLease, LeaseDenied, MemberLeaseManager, leases_root
 from control.members import MemberStatusService, member_names, pending_counts
 from control.tasks import selected_default_task_id
 from control.timeline import TimelineProjector, timeline_snapshot_view
@@ -242,6 +245,7 @@ class ConsoleApp(App[None]):
         workspace: Workspace | None = None,
         work_service: WorkService | None = None,
         clipboard_store: ClipboardImageStore | None = None,
+        lease_owner: str | None = None,
     ) -> None:
         super().__init__()
         self.workspace = workspace
@@ -273,8 +277,17 @@ class ConsoleApp(App[None]):
         self.active_view = "work" if self.work_service is not None else "timeline"
         #: 被 /mute 静音的成员;策略在投递前据此拒收
         self.muted: set[str] = set()
+        #: 本前端在租约文件里的持有者身份;同进程多实例必须互异
+        self.lease_owner = lease_owner or f"tui:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+        self._held_members: set[str] = set()
+        self._lease_notices: set[str] = set()
+        self._install_leases()
         self.pump = BusPump(
-            self.paths, self._on_result, deliver=deliver, policy=MutePolicy(self.muted)
+            self.paths,
+            self._on_result,
+            deliver=deliver,
+            policy=MutePolicy(self.muted),
+            lease=self.hub_lease,
         )
         self.pump_enabled = pump_enabled
         roster_cwd = None if workspace is None else workspace.project_root
@@ -359,6 +372,72 @@ class ConsoleApp(App[None]):
     def _attachment_root(self, workspace: Workspace | None) -> Path:
         state = workspace.state_dir if workspace is not None else self.paths.root
         return state / "attachments"
+
+    def _leases_dir(self) -> Path:
+        if self.workspace is not None:
+            return leases_root(self.workspace)
+        return self.paths.root.parent / "control" / "leases"
+
+    def _install_leases(self) -> None:
+        root = self._leases_dir()
+        self.hub_lease = HubDeliveryLease(root / "hub.json", self.lease_owner)
+        self.member_leases = MemberLeaseManager(root)
+
+    def _claim_member(self, member: str, *, force: bool = False) -> bool:
+        """拿到或续上该成员的交互租约;被占且未要求抢占时返回 False。"""
+        try:
+            self.member_leases.acquire(member, self.lease_owner, force=force)
+        except LeaseDenied:
+            return False
+        self._held_members.add(member)
+        self._lease_notices.discard(member)
+        return True
+
+    def _lease_holder_label(self, member: str) -> str:
+        holder = self.member_leases.holder(member)
+        return holder.owner if holder is not None else "另一前端"
+
+    def _note_lease_denied(self, member: str, action: str) -> None:
+        self._note(
+            f"[总控台] {member} 正由 {self._lease_holder_label(member)} 控制，"
+            f"本端只观察；{action} 未执行"
+        )
+
+    def _on_lease_lost(self, member: str) -> None:
+        """镜像刷新路径:租约易主后降级为只观察,提示只说一次。"""
+        self._held_members.discard(member)
+        if member not in self._lease_notices:
+            self._lease_notices.add(member)
+            self._note(
+                f"[总控台] {member} 正由 {self._lease_holder_label(member)} 控制，本端只观察"
+            )
+        if not self.is_running:
+            return
+        mirror = self._mirror()
+        if mirror is not None and self.selected_member == member and mirror.live_input:
+            mirror.set_live_input(False)
+            with contextlib.suppress(Exception):
+                self._sync_suggestions()
+
+    def _release_member_interaction(self, member: str) -> None:
+        """放弃该成员的交互租约,若曾适配过窗口则把尺寸还给 tmux。不关会话。"""
+        held = member in self._held_members or self.member_leases.holds(
+            member, self.lease_owner
+        )
+        self._fitted.pop(member, None)
+        self._held_members.discard(member)
+        self._lease_notices.discard(member)
+        if not held:
+            return
+        tmux = self.member_status.tmux
+        if self.fit_windows and tmux is not None:
+            with contextlib.suppress(Exception):
+                tmux.release_window_size(member)
+        self.member_leases.release(member, self.lease_owner)
+
+    def _release_all_member_leases(self) -> None:
+        for member in tuple(self._held_members):
+            self._release_member_interaction(member)
 
     def _sidebar_items(self) -> tuple[ListItem, ...]:
         items: list[ListItem] = []
@@ -497,6 +576,8 @@ class ConsoleApp(App[None]):
         self._connect_roster()
 
     def on_unmount(self) -> None:
+        self._release_all_member_leases()
+        self.hub_lease.release()
         self.member_status.stop()
         if self.health_monitor is not None:
             self.health_monitor.stop()
@@ -766,7 +847,10 @@ class ConsoleApp(App[None]):
         self.paths = BusPaths.for_workspace(workspace).ensure()
         if self._default_clipboard_store:
             self.clipboard_store = ClipboardImageStore(self._attachment_root(workspace))
-        self.pump.rebind(self.paths)
+        self._release_all_member_leases()
+        self.hub_lease.release()
+        self._install_leases()
+        self.pump.rebind(self.paths, lease=self.hub_lease)
         if self.health_monitor is not None:
             self.health_monitor.paths = self.paths
         if self.controller is not None:
@@ -858,6 +942,10 @@ class ConsoleApp(App[None]):
         member, mirror = self.selected_member, self._mirror()
         if member is None or mirror is None or self.snapshotter is None or not mirror.display:
             return
+        if member in self._held_members and not self.member_leases.heartbeat(
+            member, self.lease_owner
+        ):
+            self._on_lease_lost(member)
         await self._fit_member_window(member, mirror.content_size)
         try:
             snapshot = await self.snapshotter.capture(
@@ -880,6 +968,9 @@ class ConsoleApp(App[None]):
         if not self.fit_windows or tmux is None:
             return
         if width < MIN_FIT_SIZE[0] or height < MIN_FIT_SIZE[1]:
+            return
+        if not self._claim_member(member):
+            self._on_lease_lost(member)
             return
         if self._fitted.get(member) == (width, height):
             return
@@ -934,6 +1025,7 @@ class ConsoleApp(App[None]):
 
     def select_member(self, name: str | None) -> None:
         """切会话:`None` 表示回工作对话记录。左栏高亮跟着走。"""
+        previous = self.selected_member if self.active_view == "member" else None
         self.active_view = "timeline" if name is None else "member"
         self.selected_member = name
         mirror = self._mirror()
@@ -943,6 +1035,8 @@ class ConsoleApp(App[None]):
         if name != self._live_input_member:
             self._live_input_member = name
             self._reset_live_draft()
+        if previous is not None and previous != name:
+            self._release_member_interaction(previous)
         self._sync_stage()
         self._highlight_conversation(name)
 
@@ -954,8 +1048,11 @@ class ConsoleApp(App[None]):
             self.selected_task_id = task_id
         elif self.selected_task_id is None:
             self.selected_task_id = self._initial_task_id(self.work_snapshot)
+        previous = self.selected_member if self.active_view == "member" else None
         self.active_view = "work"
         self.selected_member = None
+        if previous is not None:
+            self._release_member_interaction(previous)
         self._sync_stage()
         self._highlight_conversation(None)
         self._render_task_detail()
@@ -1051,6 +1148,10 @@ class ConsoleApp(App[None]):
                     "[总控台] 实时直连不可用(没接上 tmux)"
                 )
                 return
+            if not self._claim_member(self.selected_member):
+                event.mirror.set_live_input(False)
+                self._note_lease_denied(self.selected_member, "点击直连")
+                return
             if self._live_input_member != self.selected_member:
                 self._live_input_member = self.selected_member
                 self._reset_live_draft()
@@ -1065,6 +1166,12 @@ class ConsoleApp(App[None]):
             or member is None
             or self.controller is None
         ):
+            return
+        if not self.member_leases.holds(member, self.lease_owner) and not self._claim_member(
+            member
+        ):
+            event.mirror.set_live_input(False)
+            self._note_lease_denied(member, "直连输入")
             return
         if event.kind == "text":
             self._live_input_draft = (
@@ -1124,6 +1231,10 @@ class ConsoleApp(App[None]):
                     ):
                         value += self._live_input_queue.popleft()[2]
                 assert self.controller is not None
+                if not self.member_leases.holds(member, self.lease_owner):
+                    self._on_lease_lost(member)
+                    self._live_input_queue.clear()
+                    break
                 try:
                     if kind == "text":
                         await asyncio.to_thread(self.controller.insert_text, member, value)
@@ -1283,6 +1394,9 @@ class ConsoleApp(App[None]):
         if self.controller is None:
             timeline.note("[总控台] 直连不可用(没接上 tmux),用 @成员 走工作对话")
             return
+        if not self._claim_member(member):
+            self._note_lease_denied(member, "直连输入")
+            return
         prompt = "；".join(part for part in (text, attachment_prompt(attachments)) if part)
         self._accept_input(raw)
         image_note = f" [图片 {len(attachments)}]" if attachments else ""
@@ -1297,6 +1411,9 @@ class ConsoleApp(App[None]):
     def _type_worker(self, member: str, text: str) -> None:
         """工作线程里真的去敲键盘;只有出问题才回报到时间线。"""
         assert self.controller is not None
+        if not self.member_leases.holds(member, self.lease_owner):
+            self.call_from_thread(self._note_lease_denied, member, "直连输入")
+            return
         try:
             feedback = self.controller.type_text(member, text)
         except Exception as exc:
@@ -1321,6 +1438,9 @@ class ConsoleApp(App[None]):
         if self.controller is None:
             timeline.note("[总控台] 直连不可用(没接上 tmux),用 @成员 走工作对话")
             return
+        if not self._claim_member(member):
+            self._note_lease_denied(member, "直连按键")
+            return
         self._add_control_entry(member, f"按键 {label}")
         self.run_worker(
             lambda: self._key_worker(member, tmux_key), thread=True, group="direct-key"
@@ -1328,6 +1448,9 @@ class ConsoleApp(App[None]):
 
     def _key_worker(self, member: str, tmux_key: str) -> None:
         assert self.controller is not None
+        if not self.member_leases.holds(member, self.lease_owner):
+            self.call_from_thread(self._note_lease_denied, member, "直连按键")
+            return
         try:
             self.controller.press_key(member, tmux_key)
         except Exception as exc:
@@ -1339,7 +1462,11 @@ class ConsoleApp(App[None]):
             )
 
     def _note(self, line: str) -> None:
-        self.query_one("#timeline", Timeline).note(line)
+        if not self.is_running:
+            return
+        found = self.query("#timeline")
+        if found:
+            found.only_one(Timeline).note(line)
 
     def _add_control_entry(
         self,
@@ -1536,7 +1663,14 @@ class ConsoleApp(App[None]):
         if target is None:
             return
         assert self.controller is not None
-        # attach 之前把窗口尺寸还给 tmux:我们钉死过它,不还的话贴上去尺寸对不上
+        # F8 是显式抢占:先拿走交互租约,再把窗口尺寸还给 tmux,然后 attach。
+        previous = self.member_leases.holder(target)
+        self._claim_member(target, force=True)
+        if previous is not None and previous.owner != self.lease_owner:
+            self._add_control_entry(
+                target,
+                f"已抢占交互租约（原持有者 {previous.owner}）",
+            )
         self._release_member_window(target)
         invoked = False
         try:

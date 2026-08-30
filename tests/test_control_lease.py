@@ -10,6 +10,7 @@ from control.lease import (
     Lease,
     LeaseDenied,
     MemberLeaseManager,
+    leases_dir,
     leases_root,
 )
 from workspace.model import Workspace
@@ -89,6 +90,12 @@ def test_heartbeat_returns_false_once_lease_no_longer_mine(tmp_path):
     lease.acquire("front-b", now=1001.0, force=True)
 
     assert lease.heartbeat("front-a", now=1002.0) is False
+
+
+def test_release_is_noop_when_lease_dir_does_not_exist_yet(tmp_path):
+    lease = Lease(tmp_path / "missing" / "hub.json")
+    lease.release("front-a")
+    assert lease.current() is None
 
 
 def test_release_by_non_holder_is_noop(tmp_path):
@@ -172,4 +179,5 @@ def test_member_lease_release_frees_the_slot(tmp_path):
 def test_leases_root_is_under_workspace_control_state(tmp_path):
     workspace = Workspace(slug="demo", project_root=tmp_path, state_dir=tmp_path / "state")
 
+    assert leases_dir(tmp_path / "state") == tmp_path / "state" / "control" / "leases"
     assert leases_root(workspace) == tmp_path / "state" / "control" / "leases"

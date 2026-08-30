@@ -185,6 +185,7 @@ class Lease:
 
     def release(self, owner: str) -> None:
         """主动放弃;调用方不是当前持有者时是 no-op(幂等,方便退出路径统一调用)。"""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock_path.open("a+b") as lock:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
             try:
@@ -274,10 +275,15 @@ class MemberLeaseManager:
         return self._lease(member).holds(owner)
 
 
-def leases_root(workspace: Workspace) -> Path:
-    """租约文件的落盘位置约定:`<state_dir>/control/leases/`。
+def leases_dir(state_dir: Path) -> Path:
+    """租约目录:`<state_dir>/control/leases/`。
 
     独立于 `bus/`(队列扫描不会误把租约文件当消息)也独立于 `work/`(账本),
     与 WEB-001 下沉的控制面共用同一个 `<state_dir>/control` 前缀。
     """
-    return workspace.state_dir / "control" / "leases"
+    return state_dir / "control" / "leases"
+
+
+def leases_root(workspace: Workspace) -> Path:
+    """工作区租约落盘位置,见 `leases_dir`。"""
+    return leases_dir(workspace.state_dir)

@@ -4,7 +4,7 @@
 
 `create_app()` 现在带 `lifespan`(常驻 `MemberStatusService`)，所以这里一律
 用 `with TestClient(...) as client:`——不用 `with` 时 ASGI lifespan 不会
-触发，`app.state.member_status` 不存在。
+触发，snapshot API 应返回结构化 503。
 """
 
 from __future__ import annotations
@@ -76,6 +76,24 @@ def test_api_requires_session_cookie(tmp_path: Path, monkeypatch: pytest.MonkeyP
         resp = client.get("/api/v1/session")
         assert resp.status_code == 401
         assert resp.json()["error"]["code"] == "unauthorized"
+
+
+def test_snapshot_api_without_lifespan_returns_503(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """未跑 lifespan 时认证仍优先，认证后所有 snapshot 路由统一按 §2.4 降级。"""
+    _unregistered(tmp_path, monkeypatch)
+    app, session = _make_app()
+    client = TestClient(app, base_url=f"http://127.0.0.1:{PORT}")
+    try:
+        assert client.get("/api/v1/members").status_code == 401
+        client.get(f"/?token={session.token}")
+        for path in ("/api/v1/workspace", "/api/v1/members"):
+            response = client.get(path)
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "work-unavailable"
+    finally:
+        client.close()
 
 
 def test_bad_host_error_has_charset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,7 +266,7 @@ def test_members_and_health_survive_missing_tmux(
 ) -> None:
     """tmux 不可用时 lifespan 不能让应用起不来，端点也不能因此抛错(`MemberStatusService.run`
     在 `tmux is None` 时直接返回，见 `control/members.py`)。"""
-    _bound_workspace(tmp_path, monkeypatch)
+    workspace = _bound_workspace(tmp_path, monkeypatch)
 
     def _no_tmux(*_args: object, **_kwargs: object):
         raise TmuxNotFoundError("tmux 不存在(测试模拟)")
@@ -258,7 +276,18 @@ def test_members_and_health_survive_missing_tmux(
     with _client() as client:
         members = client.get("/api/v1/members")
         assert members.status_code == 200
-        assert sorted(item["name"] for item in members.json()["members"]) == ["claude", "codex"]
+        member_rows = members.json()["members"]
+        assert sorted(item["name"] for item in member_rows) == ["claude", "codex"]
+        assert all(item["alive"] is False for item in member_rows)
+        assert all(item["state"] == "dead" for item in member_rows)
+
+        (workspace.project_root / "amux.toml").write_text(
+            'enabled = ["claude", "codex", "cursor"]\n', encoding="utf-8"
+        )
+        updated_rows = client.get("/api/v1/members").json()["members"]
+        assert sorted(item["name"] for item in updated_rows) == ["claude", "codex", "cursor"]
+        assert all(item["alive"] is False for item in updated_rows)
+        assert all(item["state"] == "dead" for item in updated_rows)
 
         health = client.get("/api/v1/health")
         assert health.status_code == 200

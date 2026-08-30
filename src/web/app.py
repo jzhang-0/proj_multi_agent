@@ -67,8 +67,10 @@ async def _lifespan(app: FastAPI):
 
     tmux 不可用(或工作区未登记)时 `member_status.can_monitor` 为假，
     `MemberStatusService.run()` 直接返回(`control/members.py`)——应用照常
-    启动，`/api/v1/members` 请求路径不受影响(只是回落到未被监视的默认态，
-    与"没有 tmux 就没有更细的信号"一致，不抛错)。
+    启动。但没有后台监视任务就没有人把 `alive` 从构造默认值 `True` 纠正
+    过来(评审 opus 实测发现)：`ActivityTracker.__init__` 默认 `_alive=True`
+    (`tmuxctl/activity.py:69`)，对齐 `console/app.py:303-305` 的做法，
+    在这里显式 `set_alive(False)`。
     """
     ctx = build_context()
     app.state.tmux = ctx.tmux
@@ -77,6 +79,9 @@ async def _lifespan(app: FastAPI):
     monitor_task: asyncio.Task[None] | None = None
     if member_status.can_monitor:
         monitor_task = asyncio.create_task(member_status.run())
+    else:
+        for name in ctx.names:
+            member_status.set_alive(name, False)
     try:
         yield
     finally:
@@ -104,6 +109,12 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
     hosts = allowed_hosts(port)
     app.state.revisions = RevisionTracker()
     app.state.timeline_cache = TimelineCache()
+    # lifespan 填 tmux/member_status；这里先占位默认值，ASGI 服务器(uvicorn)
+    # 总会先跑 lifespan 再派发请求，但没有它们（比如构造 TestClient 时忘了
+    # `with`）不该让 app.state.member_status 缺失属性冒 AttributeError→500，
+    # 而是走 §2.4 的 503(见 API router 的 require_runtime 依赖)。
+    app.state.tmux = None
+    app.state.member_status = None
     register_error_handlers(app)
 
     @app.middleware("http")
@@ -153,9 +164,19 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
                 status_code=401,
             )
 
+    def require_runtime() -> None:
+        """lifespan 未运行时不把未初始化的 app.state 冒成 500。"""
+        if app.state.member_status is None:
+            raise ApiError(
+                "work-unavailable",
+                "Web snapshot 运行时尚未就绪",
+                status_code=503,
+                domain="web",
+            )
+
     api = APIRouter(
         prefix=API_PREFIX,
-        dependencies=[Depends(require_session)],
+        dependencies=[Depends(require_session), Depends(require_runtime)],
         default_response_class=ApiJSONResponse,
     )
 

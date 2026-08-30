@@ -88,6 +88,11 @@ def test_leader_gets_common_and_leader_prompt_only() -> None:
     assert "团队 `fable-core` 的唯一 Leader" in greeting
     assert "模型档案是 `Claude Fable 5`" in greeting
     assert "`sol`: 实现与验证" in greeting
+    assert "简单任务不为制造流程而强行拆分或安排独立评审" in greeting
+    assert "采用最小充分验证" in greeting
+    assert "不得惯性扩成全量测试、重复调查或多人独立评审" in greeting
+    assert "并明确升级原因" in greeting
+    assert "轻量验证不等于放弃验收" in greeting
     assert "最终验收和结项只能由你决定" in greeting
     assert "亲自接管" in greeting
 

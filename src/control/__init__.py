@@ -31,6 +31,7 @@ from control.tasks import (
     task_board_view,
     task_communications,
     task_detail_view,
+    task_event_view,
     task_list_item_view,
     task_summary_view,
 )
@@ -84,6 +85,7 @@ __all__ = [
     "task_board_view",
     "task_communications",
     "task_detail_view",
+    "task_event_view",
     "task_list_item_view",
     "task_summary_view",
     "terminal_input_rows",

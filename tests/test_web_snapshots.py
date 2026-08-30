@@ -118,7 +118,7 @@ def test_session_and_vocabulary_work_without_a_workspace(
         body = resp.json()
         assert body["actor"] == "human"
         assert body["capabilities"] == {
-            "stream": False,
+            "stream": True,
             "mirror": False,
             "compose": False,
             "control": False,

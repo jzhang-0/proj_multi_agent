@@ -88,6 +88,11 @@ class HealthMonitor:
     def track(self, names: tuple[str, ...]) -> None:
         self.names = names
 
+    @property
+    def active(self) -> dict[str, Fault]:
+        """最近一次 `update()` 后仍活跃的故障集；snapshot 读这个，不要再 `update()`。"""
+        return dict(self._active)
+
     def probe(self) -> dict[str, Fault]:
         faults: dict[str, Fault] = {}
         try:

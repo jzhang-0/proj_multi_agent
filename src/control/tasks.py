@@ -165,6 +165,19 @@ def _event_details(data: Mapping[str, object]) -> dict[str, str]:
     return details
 
 
+def task_event_view(event: WorkEvent) -> TaskEventView:
+    """把账本事件投影成 Web/TUI 共用的任务事件读模型。"""
+    return TaskEventView(
+        seq=event.seq,
+        id=event.id,
+        at=work_timestamp(event.ts),
+        ts=event.ts,
+        kind=str(event.kind),
+        actor=sanitize(event.actor),
+        details=_event_details(event.data),
+    )
+
+
 def task_communications(
     entries: Iterable[Mapping[str, object]],
     task_id: str,
@@ -223,18 +236,7 @@ def task_detail_view(
         )
         for child in snapshot.children(task.id)
     )
-    events = tuple(
-        TaskEventView(
-            seq=event.seq,
-            id=event.id,
-            at=work_timestamp(event.ts),
-            ts=event.ts,
-            kind=str(event.kind),
-            actor=sanitize(event.actor),
-            details=_event_details(event.data),
-        )
-        for event in snapshot.events_for(task.id)
-    )
+    events = tuple(task_event_view(event) for event in snapshot.events_for(task.id))
     return TaskDetailView(
         id=task.id,
         title=sanitize(task.title),

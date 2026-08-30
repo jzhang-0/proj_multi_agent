@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections import Counter
 from collections.abc import Callable, Mapping
@@ -80,8 +81,9 @@ class MemberStatusService:
         if sources is not None:
             self._update_sources(sources)
         self._overrides: dict[str, str] = {}
-        self._tasks: set[asyncio.Task[None]] = set()
+        self._watch_tasks: dict[str, asyncio.Task[None]] = {}
         self._stopped = False
+        self._wake: asyncio.Event | None = None
 
     def _new_tracker(self) -> ActivityTracker:
         return ActivityTracker(
@@ -103,6 +105,7 @@ class MemberStatusService:
             self._sources.setdefault(name, "roster")
         if sources is not None:
             self._update_sources(sources)
+        self._ensure_watchers()
 
     def _update_sources(self, sources: Mapping[str, str]) -> None:
         invalid = {source for source in sources.values() if source not in MEMBER_SOURCES}
@@ -147,9 +150,7 @@ class MemberStatusService:
             name=name,
             state=self._overrides.get(name, str(activity.state)),
             queued=queued,
-            silent_for=(
-                None if activity.last_output_at is None else activity.silent_for
-            ),
+            silent_for=(None if activity.last_output_at is None else activity.silent_for),
             alive=activity.alive,
             source=self._sources.get(name, "roster"),
         )
@@ -161,9 +162,7 @@ class MemberStatusService:
         counts = queued or {}
         return MemberSnapshotView(
             snapshot_at=self.wall_clock(),
-            members=tuple(
-                self.snapshot(name, queued=counts.get(name, 0)) for name in self.names
-            ),
+            members=tuple(self.snapshot(name, queued=counts.get(name, 0)) for name in self.names),
         )
 
     async def _watch_member(self, name: str) -> None:
@@ -187,23 +186,53 @@ class MemberStatusService:
             if not self._stopped:
                 await asyncio.sleep(self.reconnect_interval)
 
+    def _ensure_watchers(self) -> None:
+        """让 `track()` 之后新增的成员也有 `_watch_member`(T-009 遗留)。
+
+        `run()` 曾经一次性用 TaskGroup 按当时的 `names` 建任务，之后
+        `track()` 只补 tracker、不建监视任务，运行中新出现的成员
+        `working`/`stuck` 不可达。这里在已有事件循环上按当前名册补齐。
+        """
+        if self.tmux is None or self._stopped:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        wanted = set(self.names)
+        for name in wanted:
+            task = self._watch_tasks.get(name)
+            if task is None or task.done():
+                self._watch_tasks[name] = loop.create_task(
+                    self._watch_member(name), name=f"member-status:{name}"
+                )
+        for name in [item for item in self._watch_tasks if item not in wanted]:
+            self._watch_tasks.pop(name).cancel()
+
     async def run(self) -> None:
         if self.tmux is None:
             return
         self._stopped = False
+        self._wake = asyncio.Event()
+        self._ensure_watchers()
         try:
-            async with asyncio.TaskGroup() as group:
-                for name in self.names:
-                    task = group.create_task(
-                        self._watch_member(name), name=f"member-status:{name}"
-                    )
-                    self._tasks.add(task)
+            while not self._stopped:
+                self._ensure_watchers()
+                self._wake.clear()
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(self._wake.wait(), timeout=self.reconnect_interval)
         finally:
-            self._tasks.clear()
+            self.stop()
+            pending = [task for task in self._watch_tasks.values() if not task.done()]
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            self._watch_tasks.clear()
 
     def stop(self) -> None:
         self._stopped = True
-        for task in tuple(self._tasks):
+        if self._wake is not None:
+            self._wake.set()
+        for task in tuple(self._watch_tasks.values()):
             task.cancel()
 
 

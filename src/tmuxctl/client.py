@@ -150,14 +150,18 @@ class Tmux:
             "send-keys", "-t", target, "-l", "--", text, ";", "send-keys", "-t", target, "Enter"
         )
 
-    def capture_with_cursor(self, target: str) -> tuple[str, int]:
+    def capture_with_cursor(self, target: str, *, escape: bool = False) -> tuple[str, int]:
         """一次调用同时拿到画面和光标所在行(0 基,相对可见区顶端)。
 
         光标行是判断「输入框里还压着没提交的字」的关键:提交成功后输入框会
-        清空,光标就不在那行字上了。
+        清空,光标就不在那行字上了。`escape=True`(WEB-007 镜像帧用)相当于
+        `capture_pane` 的 `-e`,保留颜色；默认 `False` 保持既有调用不变。
         """
+        capture_args = ["capture-pane", "-p", "-t", target]
+        if escape:
+            capture_args.append("-e")
         out = self._run(
-            "capture-pane", "-p", "-t", target, ";", "display-message", "-p", "-t", target,
+            *capture_args, ";", "display-message", "-p", "-t", target,
             "#{cursor_y}",
         ).stdout
         lines = out.splitlines()

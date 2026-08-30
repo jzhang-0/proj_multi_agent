@@ -14,12 +14,16 @@ import asyncio
 import contextlib
 import importlib.resources
 import mimetypes
+import uuid
 from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter, Depends, FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from starlette.websockets import WebSocketDisconnect
 
+from bus.audit import AuditLog
 from control.health import HealthMonitor
+from control.lease import MemberLeaseManager, leases_root
 from control.members import MemberStatusService
 from web.auth import COOKIE_NAME, WebSession
 from web.context import build_context
@@ -39,13 +43,26 @@ from web.snapshots import (
 )
 from web.state import RevisionTracker, TimelineCache
 from web.stream import EventHub, StreamSettings, handle_stream
+from web.terminal import HEARTBEAT_INTERVAL, ConnectionState, MirrorHub, run_mirror_connection
 
 API_PREFIX = "/api/v1"
+
+#: WS 握手拒绝用的私有关闭码(RFC 6455 4000-4999 段)；协议文档未定专门取值，
+#: 这里的编号只是内部约定,与 HTTP 侧 §2.4 错误码同义对照(unauthorized/
+#: not-found/service-unavailable)，方便复审核对。
+WS_CLOSE_UNAUTHORIZED = 4401
+WS_CLOSE_NOT_FOUND = 4404
+WS_CLOSE_UNAVAILABLE = 4503
 
 
 def allowed_hosts(port: int) -> frozenset[str]:
     """`Host` 头白名单(架构 §6.3):只接受本机地址 + 当前监听端口。"""
     return frozenset({f"127.0.0.1:{port}", f"localhost:{port}"})
+
+
+def allowed_origins(port: int) -> frozenset[str]:
+    """WS 握手的 `Origin` 白名单(架构 §6.3、terminal-protocol §2):只认本机。"""
+    return frozenset({f"http://127.0.0.1:{port}", f"http://localhost:{port}"})
 
 
 def _error(code: str, message: str, *, status_code: int, domain: str = "web") -> ApiJSONResponse:
@@ -91,6 +108,9 @@ async def _lifespan(app: FastAPI):
     settings: StreamSettings = app.state.stream_settings
     ctx = build_context()
     app.state.tmux = ctx.tmux
+    app.state.lease_manager = (
+        MemberLeaseManager(leases_root(ctx.workspace)) if ctx.workspace is not None else None
+    )
     member_status = MemberStatusService(ctx.names, ctx.tmux)
     app.state.member_status = member_status
     health: HealthMonitor | None = None
@@ -147,17 +167,23 @@ def create_app(
         lifespan=_lifespan,
     )
     hosts = allowed_hosts(port)
+    origins = allowed_origins(port)
     app.state.stream_settings = stream_settings or StreamSettings()
     app.state.revisions = RevisionTracker()
     app.state.timeline_cache = TimelineCache()
-    # lifespan 填 tmux/member_status/stream；这里先占位默认值，ASGI 服务器
-    # 总会先跑 lifespan 再派发请求，但没有它们（比如构造 TestClient 时忘了
-    # `with`）不该让 app.state.member_status 缺失属性冒 AttributeError→500，
-    # 而是走 §2.4 的 503(见 API router 的 require_runtime 依赖)。
+    # lifespan 填 tmux/member_status/health_monitor/stream/lease_manager；这里
+    # 先占位默认值，ASGI 服务器总会先跑 lifespan 再派发请求，但没有它们
+    # （比如构造 TestClient 时忘了 `with`）不该让 app.state 缺失属性冒
+    # AttributeError→500，而是走 §2.4 的 503(见 API router 的 require_runtime
+    # 依赖)。
     app.state.tmux = None
     app.state.member_status = None
     app.state.health_monitor = None
     app.state.stream = None
+    app.state.lease_manager = None
+    app.state.mirror_hub = MirrorHub()
+    # 测试可收窄以避免等一个真实心跳周期(默认 5s)；生产不改。
+    app.state.heartbeat_interval = HEARTBEAT_INTERVAL
     register_error_handlers(app)
 
     @app.middleware("http")
@@ -302,6 +328,60 @@ def create_app(
         ctx = build_context(tmux=app.state.tmux)
         return health_dto(ctx, app.state.revisions, app.state.health_monitor)
 
+    @app.websocket(f"{API_PREFIX}/terminal/{{member}}/mirror")
+    async def terminal_mirror(websocket: WebSocket, member: str) -> None:
+        """WEB-007 §2/§4-§7:镜像 + 租约串行直连输入,单一端点承载全部消息类型。
+
+        HTTP 中间件不拦截 WebSocket scope(Starlette 的 `@app.middleware("http")`
+        只挂 `http` scope)，Host/Origin/cookie 三项鉴权必须在这里手动做完。
+
+        评审(opus)实测指出:`close()` 若在 `accept()` 之前调用,ASGI 服务器
+        (uvicorn)会把它变成握手阶段的 HTTP 403——浏览器 `WebSocket` API 不
+        暴露失败握手的状态码/正文给 JS,`onclose` 只会拿到无信息量的 1006。
+        必须先 `accept()` 再 `close(code=...)`,自定义关闭码才能真正送达
+        客户端(已用真实 uvicorn + `websockets` 客户端验证)。接受后立即关闭
+        不产生订阅/租约/进程,不算真正建立连接。
+        """
+
+        async def reject(code: int, reason: str) -> None:
+            await websocket.accept()
+            await websocket.close(code=code, reason=reason)
+
+        host = websocket.headers.get("host", "")
+        origin = websocket.headers.get("origin", "")
+        if host not in hosts or origin not in origins:
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
+            return
+        if not session.verify_cookie(websocket.cookies.get(COOKIE_NAME)):
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
+            return
+
+        ctx = build_context(tmux=app.state.tmux)
+        if ctx.workspace is None or ctx.tmux is None or app.state.lease_manager is None:
+            await reject(WS_CLOSE_UNAVAILABLE, "unavailable")
+            return
+        if member not in ctx.names:
+            await reject(WS_CLOSE_NOT_FOUND, "member-not-found")
+            return
+        if not await asyncio.to_thread(ctx.tmux.has_session, member):
+            await reject(WS_CLOSE_NOT_FOUND, "session-not-found")
+            return
+
+        await websocket.accept()
+        conn_id = uuid.uuid4().hex
+        owner = f"web:{session.session_id}:{conn_id}"
+        state = ConnectionState(
+            member=member,
+            owner=owner,
+            tmux=ctx.tmux,
+            lease_manager=app.state.lease_manager,
+            audit=AuditLog(ctx.paths),
+            hub=app.state.mirror_hub,
+            heartbeat_interval=app.state.heartbeat_interval,
+        )
+        with contextlib.suppress(WebSocketDisconnect):
+            await run_mirror_connection(websocket, state)
+
     app.include_router(api)
 
     @app.get("/assets/{asset_path:path}")
@@ -322,9 +402,14 @@ def create_app(
 
     @app.get("/{spa_path:path}")
     async def spa_fallback(request: Request, spa_path: str) -> Response:
-        """支持刷新 `/workspace`、`/task/<id>`、`/help` 等前端路由。"""
+        """支持刷新 `/workspace`、`/task/<id>`、`/help`、`/member/<name>/terminal` 等前端路由。"""
         require_session(request)
-        if spa_path in {"workspace", "timeline", "help"} or spa_path.startswith("task/"):
+        is_terminal_route = spa_path.startswith("member/") and spa_path.endswith("/terminal")
+        if (
+            spa_path in {"workspace", "timeline", "help"}
+            or spa_path.startswith("task/")
+            or is_terminal_route
+        ):
             return _spa_index()
         return _error("not-found", "页面不存在", status_code=404)
 

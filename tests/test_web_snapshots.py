@@ -119,7 +119,7 @@ def test_session_and_vocabulary_work_without_a_workspace(
         assert body["actor"] == "human"
         assert body["capabilities"] == {
             "stream": True,
-            "mirror": False,
+            "mirror": True,
             "compose": False,
             "control": False,
         }

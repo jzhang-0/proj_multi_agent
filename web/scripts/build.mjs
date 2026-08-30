@@ -20,6 +20,13 @@ await build({
 
 cpSync(resolve(root, "index.html"), resolve(dist, "index.html"));
 cpSync(resolve(root, "src/styles.css"), resolve(dist, "assets/app.css"));
+// WEB-007:xterm.css 不经 JS import(esbuild 单文件 outfile 没配 CSS loader，
+// 见 docs/web/terminal-protocol.md §10)，直接从包里复制一份，运行时由
+// TerminalView 挂载时动态插入 <link>，非终端页面不用背这份 CSS 的加载成本。
+cpSync(
+  resolve(root, "node_modules/@xterm/xterm/css/xterm.css"),
+  resolve(dist, "assets/xterm.css"),
+);
 const licenses = resolve(root, "THIRD_PARTY_LICENSES.json");
 if (existsSync(licenses)) {
   cpSync(licenses, resolve(dist, "THIRD_PARTY_LICENSES.json"));

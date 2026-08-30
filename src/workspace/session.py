@@ -165,8 +165,8 @@ class NamespacedTmux:
     def send_line(self, target: str, text: str) -> None:
         self._inner.send_line(self._map(target), text)
 
-    def capture_with_cursor(self, target: str) -> tuple[str, int]:
-        return self._inner.capture_with_cursor(self._map(target))
+    def capture_with_cursor(self, target: str, *, escape: bool = False) -> tuple[str, int]:
+        return self._inner.capture_with_cursor(self._map(target), escape=escape)
 
     def capture_pane(
         self,

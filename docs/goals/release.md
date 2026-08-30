@@ -31,3 +31,6 @@
 
 - [ ] **REL-006** — `qa.release` 隔离冒烟自动启动 Web 并断言实时握手：当前脚本只装包、校验包内静态资源并跑 CLI 子命令，不启动 `amux web`，`/api/v1/stream` 的 101 握手由人工旁跑(T-024)。把「在隔离环境用该环境解释器起 `amux web`(真实 pid)→首页 200→原生 WebSocket 握手 101→干净停服」并入 `qa.release`(联网与 `--offline-smoke` 两种模式都覆盖，offline 下仍起服务、仍连 /api/v1/stream，结果记为「未验证依赖解析」而非「握手通过」；若环境无 WS 实现导致 404 必须明确报错，不得静默降级为 PASS)，让 T-013 那类 WS 依赖缺失由脚本而非人工拦住。tests/test_release_package.py 补对应断言。
   - 前置:WEB-009。
+
+- [ ] **REL-007** — 发布 v0.2.0（Web 控制台首版）：human 2026-08-30 要求在 T-025/T-026 修复验收后推送 GitHub 并发布新版 amux。内容：pyproject `version` 升 0.2.0；补发行说明(README 或 CHANGELOG：WEB-001～011 能力、`amux web` 用法、`uvicorn[standard]` 依赖、安全边界、已知限制含 WEB-012/REL-006 未做)；本地复跑 `uv run ruff check .`、`npm --prefix web run verify`、`uv build`、`uv run python -m qa.release`；确认 release.yml 前端构建在 `uv build` 之前且 PyPI job 只用 build 产物；推送 `main` 与 `v0.2.0` 标签触发发布；从正式 PyPI 全新安装 `amux-team==0.2.0` 验证 `amux --version` 与 `amux web` 首页/SPA 可用。前置：T-025、T-026 验收。
+  - 前置:REL-004、WEB-009。

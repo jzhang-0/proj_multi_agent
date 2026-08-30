@@ -10,6 +10,7 @@ from textual.widgets import RichLog, Static
 
 from bus.sanitize import sanitize
 from console.theme import tokens
+from console.timeline import format_timestamp
 from work import STATUS_LABELS, Task, TaskStatus, WorkSnapshot
 from work.presentation import EVENT_LABELS, event_details
 
@@ -129,6 +130,13 @@ class TaskDetail(RichLog):
             f"状态:{STATUS_LABELS[task.status]}  Leader:{sanitize(task.leader)}  "
             f"执行:{sanitize(task.assignee or '-')}  评审:{sanitize(task.reviewer or '-')}"
         )
+        times = (
+            f"创建:{format_timestamp(task.created_at)}  "
+            f"更新:{format_timestamp(task.updated_at)}"
+        )
+        if task.completed:
+            times += f"  完成:{format_timestamp(task.updated_at)}"
+        self.write(times)
         if task.parent_id:
             self.write(f"父任务:{task.parent_id}")
         children = snapshot.children(task.id)
@@ -148,7 +156,8 @@ class TaskDetail(RichLog):
         self.write(Text("不可覆盖事件流", style="bold"))
         for event in snapshot.events_for(task.id):
             line = (
-                f"  #{event.seq} {event.ts[:16]} {EVENT_LABELS[event.kind]} · "
+                f"  #{event.seq} {format_timestamp(event.ts)[:16]} "
+                f"{EVENT_LABELS[event.kind]} · "
                 f"{sanitize(event.actor)}"
             )
             self.write(line)

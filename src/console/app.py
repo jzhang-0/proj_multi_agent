@@ -55,7 +55,7 @@ from console.mirror import WHEEL_STEP, Mirror
 from console.theme import THEMES, Tokens
 from console.theme import tokens as theme_tokens
 from console.timeline import TimelineEntry, history
-from console.widgets import ConversationCard, MemberCard, Timeline
+from console.widgets import ConversationCard, ConversationFilter, MemberCard, Timeline
 from console.workview import TaskCard, TaskDetail, TaskSummaryCard, render_task_card
 from roster import RosterError, load_effective_roster
 from roster.lifecycle import Lifecycle
@@ -120,6 +120,14 @@ class ConsoleApp(App[None]):
     #timeline {
         height: 1fr;
         padding: 0 1;
+    }
+    #timeline-filters {
+        height: 1;
+        display: none;
+        background: $panel;
+    }
+    #timeline-filters:focus {
+        background-tint: $accent 8%;
     }
     #timeline:focus {
         background-tint: $accent 8%;
@@ -391,6 +399,7 @@ class ConsoleApp(App[None]):
                 with Horizontal(id="work"):
                     yield ListView(*self._task_items(), id="tasks", initial_index=0)
                     yield TaskDetail(id="task-detail")
+                yield ConversationFilter(id="timeline-filters")
                 yield Timeline(id="timeline")
                 yield Mirror(id="detail")
         yield Static("", id="suggestions", markup=False)
@@ -432,6 +441,7 @@ class ConsoleApp(App[None]):
     def apply_theme(self, token_set: Tokens) -> None:
         self.theme = token_set.name
         self.query_one("#timeline", Timeline).rerender()
+        self._sync_timeline_filter_counts()
         self.refresh_member_cards()
         for card in self.query(TaskCard):
             card.update(render_task_card(card.snapshot))
@@ -447,7 +457,18 @@ class ConsoleApp(App[None]):
         timeline.note(f"[总控台] 总线目录 {self.paths.root}")
         if self.work_error and self.work_service is None:
             timeline.note(f"[告警] 任务账本不可用:{self.work_error}")
-        timeline.backfill(history(AuditLog(self.paths)))
+        source = "bus/log.jsonl"
+        if self.work_snapshot.events:
+            source += " + work/events.jsonl"
+        timeline.backfill(
+            history(
+                AuditLog(self.paths),
+                work_events=self.work_snapshot.events,
+                snapshot=self.work_snapshot,
+            ),
+            source=source,
+        )
+        self._sync_timeline_filter_counts()
         timeline.note(
             "[总控台] ↑↓ 选任务/工作对话/成员,F3 任务,Esc 回工作对话,"
             "Ctrl+V 粘贴图片,PgUp/PgDn 翻页;"
@@ -497,6 +518,18 @@ class ConsoleApp(App[None]):
         for card in self.query(ConversationCard):
             card.apply(self.unseen_traffic, watching=self.active_view == "timeline")
 
+    def _sync_timeline_filter_counts(self) -> None:
+        filters = self.query("#timeline-filters")
+        timelines = self.query("#timeline")
+        if filters and timelines:
+            filters.only_one(ConversationFilter).apply_counts(
+                timelines.only_one(Timeline).category_counts()
+            )
+
+    def on_conversation_filter_changed(self, event: ConversationFilter.Changed) -> None:
+        if event.source.id == "timeline-filters":
+            self.query_one("#timeline", Timeline).set_category(event.category)
+
     # --- 任务账本与责任主视图 --------------------------------------------
 
     @staticmethod
@@ -537,6 +570,7 @@ class ConsoleApp(App[None]):
         communication_changed = audit_stamp != self._work_bus_stamp
         if not ledger_changed and not communication_changed:
             return
+        old_event_ids = {event.id for event in self.work_snapshot.events}
         self.work_error = ""
         self.work_snapshot = snapshot
         self._work_digest = digest
@@ -544,6 +578,11 @@ class ConsoleApp(App[None]):
         if self.selected_task_id not in {task.id for task in snapshot.tasks}:
             self.selected_task_id = self._initial_task_id(snapshot)
         if ledger_changed:
+            timeline = self.query_one("#timeline", Timeline)
+            for event in snapshot.events:
+                if event.id not in old_event_ids:
+                    timeline.add(TimelineEntry.from_work_event(event, snapshot))
+            self._sync_timeline_filter_counts()
             await self._rebuild_task_list()
             self._sync_work_summary()
         self._render_task_detail()
@@ -752,7 +791,18 @@ class ConsoleApp(App[None]):
         timeline.reset()
         timeline.note(self._workspace_banner())
         timeline.note(f"[总控台] 总线目录 {self.paths.root}")
-        timeline.backfill(history(AuditLog(self.paths)))
+        source = "bus/log.jsonl"
+        if self.work_snapshot.events:
+            source += " + work/events.jsonl"
+        timeline.backfill(
+            history(
+                AuditLog(self.paths),
+                work_events=self.work_snapshot.events,
+                snapshot=self.work_snapshot,
+            ),
+            source=source,
+        )
+        self._sync_timeline_filter_counts()
         self._connect_roster()
         self.refresh_member_cards()
         self.query_one("#members", ListView).focus()
@@ -866,6 +916,7 @@ class ConsoleApp(App[None]):
             detail.set_live_input(False)
         detail.display = watching_member
         self.query_one("#work").display = watching_work
+        self.query_one("#timeline-filters", ConversationFilter).display = watching_timeline
         self.query_one("#timeline", Timeline).display = watching_timeline
         if self._mirror_timer is not None:
             self._mirror_timer.resume() if watching_member else self._mirror_timer.pause()
@@ -1074,18 +1125,27 @@ class ConsoleApp(App[None]):
                     if kind == "text":
                         await asyncio.to_thread(self.controller.insert_text, member, value)
                     elif kind == "key":
-                        await asyncio.to_thread(self.controller.press_key, member, value)
+                        feedback = await asyncio.to_thread(
+                            self.controller.press_key, member, value
+                        )
+                        self._add_control_entry(
+                            member, f"按键 {label}", changed=feedback.changed
+                        )
                     else:
                         feedback = await asyncio.to_thread(
                             self.controller.submit_live_text, member, value
                         )
                         shown = value or "Enter"
-                        self._note(f"[直连] → human → {member}: 实时提交 {shown}")
+                        self._add_control_entry(
+                            member, f"实时提交 {shown}", changed=feedback.changed
+                        )
                         if not feedback.changed:
-                            self._note(f"[直连] · {member}: 提交未确认，请查看成员输入区")
+                            self._add_control_entry(
+                                member, "提交未确认，请查看成员输入区", changed=False
+                            )
                 except Exception as exc:
-                    self._note(
-                        f"[直连] ✗ {member}: {type(exc).__name__}: {exc}"
+                    self._add_control_entry(
+                        member, f"{type(exc).__name__}: {exc}", changed=False
                     )
         finally:
             self._live_input_worker_running = False
@@ -1222,7 +1282,10 @@ class ConsoleApp(App[None]):
         prompt = "；".join(part for part in (text, attachment_prompt(attachments)) if part)
         self._accept_input(raw)
         image_note = f" [图片 {len(attachments)}]" if attachments else ""
-        timeline.note(f"[直连] → human → {member}: {text or '请查看附加图片。'}{image_note}")
+        self._add_control_entry(
+            member,
+            f"直接输入 {text or '请查看附加图片。'}{image_note}",
+        )
         self.run_worker(
             lambda: self._type_worker(member, prompt), thread=True, group="direct-type"
         )
@@ -1234,12 +1297,18 @@ class ConsoleApp(App[None]):
             feedback = self.controller.type_text(member, text)
         except Exception as exc:
             self.call_from_thread(
-                self._note, f"[直连] ✗ {member}: {type(exc).__name__}: {exc}"
+                self._add_control_entry,
+                member,
+                f"{type(exc).__name__}: {exc}",
+                changed=False,
             )
             return
         if not feedback.changed:
             self.call_from_thread(
-                self._note, f"[直连] · {member}: 补过 Enter,去画面上确认一下是否已提交"
+                self._add_control_entry,
+                member,
+                "补过 Enter，请在成员画面确认是否已提交",
+                changed=False,
             )
 
     def press_member_key(self, member: str, tmux_key: str, label: str) -> None:
@@ -1248,7 +1317,7 @@ class ConsoleApp(App[None]):
         if self.controller is None:
             timeline.note("[总控台] 直连不可用(没接上 tmux),用 @成员 走工作对话")
             return
-        timeline.note(f"[直连] → human → {member}: 按键 {label}")
+        self._add_control_entry(member, f"按键 {label}")
         self.run_worker(
             lambda: self._key_worker(member, tmux_key), thread=True, group="direct-key"
         )
@@ -1259,11 +1328,26 @@ class ConsoleApp(App[None]):
             self.controller.press_key(member, tmux_key)
         except Exception as exc:
             self.call_from_thread(
-                self._note, f"[直连] ✗ {member}: {type(exc).__name__}: {exc}"
+                self._add_control_entry,
+                member,
+                f"{type(exc).__name__}: {exc}",
+                changed=False,
             )
 
     def _note(self, line: str) -> None:
         self.query_one("#timeline", Timeline).note(line)
+
+    def _add_control_entry(
+        self,
+        member: str,
+        text: str,
+        *,
+        changed: bool = True,
+    ) -> None:
+        self.query_one("#timeline", Timeline).add(
+            TimelineEntry.control(member, text, changed=changed)
+        )
+        self._sync_timeline_filter_counts()
 
     def send_from_input(self, raw: str) -> None:
         """把输入框里的一行送出去。
@@ -1329,6 +1413,7 @@ class ConsoleApp(App[None]):
         ):
             self.member_status.mark_working(result.message.to)
         self.query_one("#timeline", Timeline).add(TimelineEntry.from_result(result))
+        self._sync_timeline_filter_counts()
         # 人在别的会话里时,工作对话那张卡上记未读数
         if self.active_view != "timeline":
             self.unseen_traffic += 1
@@ -1386,9 +1471,10 @@ class ConsoleApp(App[None]):
         return self.selected_member
 
     def _show_control_feedback(self, feedback: ControlFeedback) -> None:
-        mark = "✓" if feedback.changed else "·"
-        self.query_one("#timeline", Timeline).note(
-            f"[控制] {mark} {feedback.action} {feedback.target}: {feedback.detail}"
+        self._add_control_entry(
+            feedback.target,
+            f"{feedback.action} · {feedback.detail}",
+            changed=feedback.changed,
         )
 
     def _perform_control(self, action: str, target: str) -> None:
@@ -1396,8 +1482,8 @@ class ConsoleApp(App[None]):
         try:
             feedback = getattr(self.controller, action)(target)
         except Exception as exc:
-            self.query_one("#timeline", Timeline).note(
-                f"[控制] ✗ {action} {target}: {type(exc).__name__}: {exc}"
+            self._add_control_entry(
+                target, f"{action} · {type(exc).__name__}: {exc}", changed=False
             )
             return
         self._show_control_feedback(feedback)
@@ -1454,8 +1540,8 @@ class ConsoleApp(App[None]):
         except Exception as exc:
             if not invoked:
                 self.controller.record_failure("takeover", target, exc)
-            self.query_one("#timeline", Timeline).note(
-                f"[控制] ✗ takeover {target}: {type(exc).__name__}: {exc}"
+            self._add_control_entry(
+                target, f"takeover · {type(exc).__name__}: {exc}", changed=False
             )
             return
         self._show_control_feedback(feedback)

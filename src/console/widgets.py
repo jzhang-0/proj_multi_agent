@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from rich.cells import cell_len
 from rich.text import Text
+from textual import events
+from textual.binding import Binding
+from textual.message import Message
 from textual.widgets import RichLog, Static
 
 from console.layout import pad
 from console.members import STATUS_PRESENTATION, MemberCardSnapshot
 from console.theme import tokens
-from console.timeline import TimelineEntry, divider, group_header, render_entry
+from console.timeline import (
+    TimelineCategory,
+    TimelineEntry,
+    divider,
+    group_header,
+    render_entry,
+)
 
 
 def render_member_card(snapshot: MemberCardSnapshot) -> Text:
@@ -75,6 +86,94 @@ class Divider:
     text: str
 
 
+FILTER_ORDER: tuple[TimelineCategory | None, ...] = (
+    None,
+    TimelineCategory.HUMAN,
+    TimelineCategory.AI,
+    TimelineCategory.TASK,
+    TimelineCategory.CONTROL,
+)
+
+FILTER_LABELS = {
+    TimelineCategory.HUMAN: "human",
+    TimelineCategory.AI: "AI",
+    TimelineCategory.TASK: "任务",
+    TimelineCategory.CONTROL: "控制",
+}
+
+
+class ConversationFilter(Static):
+    """工作对话分类筛选；鼠标点击或聚焦后左右键都可切换。"""
+
+    can_focus = True
+    BINDINGS = [
+        Binding("left", "previous", "上一分类", show=False),
+        Binding("right", "next", "下一分类", show=False),
+    ]
+
+    class Changed(Message):
+        def __init__(
+            self,
+            control: ConversationFilter,
+            category: TimelineCategory | None,
+        ) -> None:
+            super().__init__()
+            self.source = control
+            self.category = category
+
+    def __init__(self, **kwargs: object) -> None:
+        self.category: TimelineCategory | None = None
+        self.counts: Counter[TimelineCategory] = Counter()
+        self._ranges: list[tuple[int, int, TimelineCategory | None]] = []
+        super().__init__("", markup=False, **kwargs)  # type: ignore[arg-type]
+
+    def on_mount(self) -> None:
+        self._refresh_label()
+
+    def apply_counts(self, counts: Counter[TimelineCategory]) -> None:
+        self.counts = Counter(counts)
+        self._refresh_label()
+
+    def select(self, category: TimelineCategory | None) -> None:
+        if category not in FILTER_ORDER or category == self.category:
+            return
+        self.category = category
+        self._refresh_label()
+        self.post_message(self.Changed(self, category))
+
+    def action_previous(self) -> None:
+        index = FILTER_ORDER.index(self.category)
+        self.select(FILTER_ORDER[(index - 1) % len(FILTER_ORDER)])
+
+    def action_next(self) -> None:
+        index = FILTER_ORDER.index(self.category)
+        self.select(FILTER_ORDER[(index + 1) % len(FILTER_ORDER)])
+
+    def on_click(self, event: events.Click) -> None:
+        for start, end, category in self._ranges:
+            if start <= event.x < end:
+                self.select(category)
+                self.focus()
+                event.stop()
+                return
+
+    def _refresh_label(self) -> None:
+        text = Text("分类 ", style=tokens().muted)
+        self._ranges = []
+        total = sum(self.counts.values())
+        for category in FILTER_ORDER:
+            label = "全部" if category is None else FILTER_LABELS[category]
+            count = total if category is None else self.counts[category]
+            segment = f"[{label} {count}]" if category == self.category else f" {label} {count} "
+            start = cell_len(text.plain)
+            style = "bold" if category == self.category else tokens().muted
+            if category == self.category:
+                style = f"bold {tokens().status['idle']}"
+            text.append(segment, style=style)
+            self._ranges.append((start, start + cell_len(segment), category))
+        self.update(text)
+
+
 class Timeline(RichLog):
     """工作对话记录。
 
@@ -98,6 +197,23 @@ class Timeline(RichLog):
         #: 重新露头时哪怕宽度没变也得补排一次
         self._wrote_blind = False
         self._relaying = False
+        self.active_category: TimelineCategory | None = None
+
+    def category_counts(self) -> Counter[TimelineCategory]:
+        return Counter(
+            item.resolved_category
+            for item in self._history
+            if isinstance(item, TimelineEntry)
+        )
+
+    def set_category(self, category: TimelineCategory | None) -> None:
+        if self.active_category == category:
+            return
+        self.active_category = category
+        self.rerender()
+
+    def _matches(self, entry: TimelineEntry) -> bool:
+        return self.active_category is None or entry.resolved_category == self.active_category
 
     def on_resize(self, event: object) -> None:
         super().on_resize(event)  # type: ignore[arg-type]
@@ -135,11 +251,14 @@ class Timeline(RichLog):
     def note(self, text: str) -> None:
         """总控台自己说的话(不是总线流量)。"""
         self._history.append(text)
-        self._emit(Text(text, style=tokens().divider), stick=self.sticking_to_bottom)
+        if self.active_category is None:
+            self._emit(Text(text, style=tokens().divider), stick=self.sticking_to_bottom)
 
     def add(self, entry: TimelineEntry) -> None:
         """追加一条流量,必要时先写组头。"""
         self._history.append(entry)
+        if not self._matches(entry):
+            return
         stick = self.sticking_to_bottom
         if entry.group and entry.group != self._group:
             self._group = entry.group
@@ -159,20 +278,27 @@ class Timeline(RichLog):
         for item in history:
             if isinstance(item, Divider):
                 self._history.append(item)
-                self._draw_divider(item.text)
+                if self.active_category is None:
+                    self._draw_divider(item.text)
             elif isinstance(item, str):
                 self.note(item)
             else:
                 self.add(item)
 
-    def backfill(self, entries: Iterable[TimelineEntry]) -> int:
+    def backfill(
+        self,
+        entries: Iterable[TimelineEntry],
+        *,
+        source: str = "bus/log.jsonl",
+    ) -> int:
         """回填启动前的历史,末尾画一条分界线。返回回填条数。"""
         count = 0
         for entry in entries:
             self.add(entry)
             count += 1
         if count:
-            marker = Divider(f"以上 {count} 条来自 bus/log.jsonl")
+            marker = Divider(f"以上 {count} 条来自 {source}")
             self._history.append(marker)
-            self._draw_divider(marker.text)
+            if self.active_category is None:
+                self._draw_divider(marker.text)
         return count

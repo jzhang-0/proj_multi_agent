@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
 from PIL import Image
 
 from bus import Attachment, Message, deposit
+from bus.audit import AuditLog
 from bus.paths import BusPaths
 from console.app import ConsoleApp
 from console.clipboard import ClipboardImageStore
@@ -75,6 +77,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     service.accept("fable", "T-003", "内容与实际命令一致")
     service.report("fable", "T-003", "已向 human 汇报")
 
+    # 审计日志只有秒级时间；跨过一个秒边界，确保随后四类对话在合并排序后
+    # 位于任务事件之后，截图底部能同时看到分类，而不是全被 17 条任务淹没。
+    time.sleep(1.05)
     paths = BusPaths.for_workspace(workspace).ensure()
     deposit(
         Message.create(
@@ -85,6 +90,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         paths,
     )
+    deposit(
+        Message.create(
+            "fable",
+            "请推进登录页并在完成后向我汇报",
+            sender="human",
+            task="T-001",
+        ),
+        paths,
+    )
+    deposit(
+        Message.create(
+            "human",
+            "T-003 已完成，发布说明已经更新。",
+            sender="fable",
+            task="T-003",
+        ),
+        paths,
+    )
+    audit = AuditLog(paths)
+    audit.record_control("key", "sonnet", changed=True, detail="Down")
+    audit.record_control("type", "opus", changed=True, detail="请复审 T-001")
     status = MemberStatusService(MEMBERS)
     for name in MEMBERS:
         status.override_state(name, "idle")

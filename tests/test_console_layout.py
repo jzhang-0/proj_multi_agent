@@ -126,7 +126,7 @@ def test_minimum_size_keeps_every_region_usable(paths):
             assert conversations.outer_size.width == 22
             assert conversations.size.height > 10
             assert timeline.size.width >= MIN_SIZE[0] - 22 - 3  # 减分隔线与内边距
-            assert timeline.size.height >= 15
+            assert timeline.size.height >= 14
             assert compose.outer_size.width == MIN_SIZE[0]
 
             # 80 列下选中成员,主画面照样整块给它

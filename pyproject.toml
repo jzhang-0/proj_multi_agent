@@ -52,6 +52,7 @@ packages = [
   "src/amux_runtime",
   "src/bus",
   "src/console",
+  "src/control",
   "src/gateway",
   "src/qa",
   "src/roster",

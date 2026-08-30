@@ -1,0 +1,20 @@
+{
+  "name": "amux-web-toolchain-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "serve": "node scripts/serve.mjs",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@xterm/xterm": "^6.0.0",
+    "preact": "^10.28.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

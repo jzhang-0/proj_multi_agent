@@ -6,7 +6,8 @@ amux 是一个基于 tmux 的终端总控台。Claude Code、Codex、Cursor Agen
 仍在各自独立的真实终端里运行；amux 把它们集中到一个 TUI 中，负责成员状态、终端画面、
 消息投递和审计记录。
 
-当前版本为 **v0.1.0（Alpha）**，采用 [MIT License](LICENSE)。它适合愿意尝试本地多
+当前版本为 **v0.2.0（Alpha）**，采用 [MIT License](LICENSE)。v0.2.0 起提供桌面 Web
+控制台（`amux web`），详见 [CHANGELOG.md](CHANGELOG.md)。它适合愿意尝试本地多
 Agent 工作流的开发者；当前已包含任务账本、Leader 验收和接管责任流，范围与完成证据见
 [产品定义](docs/product/product.md) 和 [Goal 清单](docs/goals/README.md)。
 

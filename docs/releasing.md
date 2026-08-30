@@ -12,10 +12,13 @@ PyPI 发行名为 `amux-team`，安装后的主要命令仍是 `amux`。PyPI 上
 
 ```bash
 uv sync --locked
+npm --prefix web run build   # 或 npm --prefix web run verify（含 typecheck/单测/构建）
 uv run ruff check .
 uv run pytest -q
 uv run python -m qa.release --out-dir dist
 ```
+
+`qa.release` 会把 `web/dist` 打进 wheel/sdist；发布前必须先用 npm 生成最新前端产物，否则制品检查会失败或带上过期静态资源。
 
 最后一条会执行 `uv build --no-sources`，检查 wheel/sdist 的资源、入口与依赖元数据，然后在源码仓库外创建临时虚拟环境和全新 uv 缓存，从包索引安装 wheel 及其完整依赖，验证依赖导入、版本、包内名册和默认团队。它不上传任何文件。
 

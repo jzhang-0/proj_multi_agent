@@ -121,11 +121,11 @@ def test_strict_release_smoke_installs_and_imports_dependencies(
     monkeypatch, tmp_path: Path
 ) -> None:
     calls: list[tuple[list[str], dict[str, str]]] = []
-    wheel = tmp_path / "amux_team-0.1.0-py3-none-any.whl"
+    wheel = tmp_path / "amux_team-0.2.0-py3-none-any.whl"
     monkeypatch.setattr(release.shutil, "which", lambda _: "/usr/bin/uv")
-    monkeypatch.setattr(release, "_run", _fake_release_runner(calls, "0.1.0"))
+    monkeypatch.setattr(release, "_run", _fake_release_runner(calls, "0.2.0"))
 
-    release._isolated_smoke(wheel, "0.1.0")
+    release._isolated_smoke(wheel, "0.2.0")
 
     install, install_env = next(
         (argv, env) for argv, env in calls if argv[1:3] == ["pip", "install"]
@@ -150,11 +150,11 @@ def test_offline_release_smoke_is_explicit_payload_only(
     monkeypatch, tmp_path: Path
 ) -> None:
     calls: list[tuple[list[str], dict[str, str]]] = []
-    wheel = tmp_path / "amux_team-0.1.0-py3-none-any.whl"
+    wheel = tmp_path / "amux_team-0.2.0-py3-none-any.whl"
     monkeypatch.setattr(release.shutil, "which", lambda _: "/usr/bin/uv")
-    monkeypatch.setattr(release, "_run", _fake_release_runner(calls, "0.1.0"))
+    monkeypatch.setattr(release, "_run", _fake_release_runner(calls, "0.2.0"))
 
-    release._isolated_smoke(wheel, "0.1.0", offline=True)
+    release._isolated_smoke(wheel, "0.2.0", offline=True)
 
     install = next(argv for argv, _ in calls if argv[1:3] == ["pip", "install"])
     assert "--offline" in install

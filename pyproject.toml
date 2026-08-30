@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "amux-team"
-version = "0.1.0"
+version = "0.2.0"
 description = "一台机器上多个 AI CLI 的协作团队指挥中心"
 readme = "README.md"
 requires-python = ">=3.11"

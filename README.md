@@ -122,6 +122,18 @@ amux member rm codex
 `member rm` 只从工作区名册移除成员，不会关闭仍在运行的会话；需要时先执行
 `roster down <成员名>`。
 
+### 启动 Web 控制台
+
+桌面 Web 控制台与 TUI 并列运行；它读取同一工作区的任务、成员、工作对话记录和健康状态，不建立第二套状态库：
+
+```bash
+uv run amux web --port 8787
+```
+
+服务只监听 `127.0.0.1`（默认端口 `8787`），启动后把终端打印的带一次性 token 地址复制到本机浏览器。首次访问会把 token 换成进程内的 `HttpOnly`、`SameSite=Strict` 会话 cookie；服务重启后旧地址失效。WebSocket 实时流同样要求受信任的 Host、Origin 和会话 cookie。
+
+Web 前端使用 Preact + TypeScript + esbuild；Node/npm 只在维护者构建和测试阶段需要，运行已构建的 Python 包不依赖 Node、源码路径或 CDN。WEB-006 的工作对话输入、@ 补全、消息/ask-reply 和附件已实现并待验收；WEB-007 的终端镜像与受限直连已实现；仅成员生命周期、危险控制和完整接管仍属 WEB-008 进行中。
+
 ### 使用默认团队
 
 如果本机已经安装了默认团队需要的 Claude、Codex、Cursor `agent` 与 `agy`（Gemini）CLI，可以初始化并激活内置的
@@ -302,6 +314,10 @@ uv run python -m qa.smoke
 - `git push`、删除文件、安装软件和访问项目外路径等操作仍应由人明确授权。
 - 消息总线会清洗控制字符，并对重复消息、发送频率和积压做传输层限制。
 - 手机网关默认无可用用户，必须显式配置白名单后才会接收请求。
+- Web 控制台只监听 `127.0.0.1`；HTTP 请求校验 Host，WebSocket 额外校验 Origin，并且 API 只接受启动时 token 换出的进程内 `HttpOnly`、`SameSite=Strict` cookie。token 不落盘，地址换 cookie 后重定向去掉查询参数。
+- 浏览器传来的 actor、工作区、路径、tmux target 和任务权限声明都不可信；Web 不开放任意 shell，服务端只允许既定的工作区/成员路由。API 响应和附件下载不得泄露本机绝对路径，终端 ANSI 只按安全的终端数据渲染。
+- WEB-008 的成员终止、重启、关闭会话、完整接管等危险动作必须二次确认并写入控制审计；WEB-006 消息/ask-reply/附件能力已实现但待验收，WEB-008 生命周期能力仍进行中。
+- Web 依赖随 `amux-team` 默认安装，维护者在发布前需先完成 `npm build`（或 `npm run verify`）再执行 `qa.release`；发布验证不等于开发服务器可以访问公网。
 
 问题和建议欢迎提交到 [GitHub Issues](https://github.com/jzhang-0/proj_multi_agent/issues)。
 

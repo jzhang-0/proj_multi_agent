@@ -30,6 +30,7 @@
   - 前置:WEB-001。
 
 - [ ] **WEB-003** — Web 后端骨架与一致 snapshot API：`amux web` 入口，FastAPI/ASGI，默认只监听 `127.0.0.1`，本机认证会话；提供 workspace/team/work/timeline/member snapshot(带 `epoch/revision`)，只调用 WEB-001 控制面。接口覆盖「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。wheel 内带最小静态健康页；`qa.release` 源码外安装后可启动。Web 依赖加入默认依赖。
+  - 处理登记:Sonnet，2026-08-30 17:13 +0800，分支 `web-003-sonnet`(T-009)。进行中:先做不依赖 WEB-001 DTO 的部分——`amux web` 入口、FastAPI/uvicorn 默认依赖、§6 本机认证会话(token→HttpOnly SameSite=Strict cookie、Host 校验、无 CORS)、`importlib.resources` 提供最小静态健康页、TestClient 测试；snapshot 端点(workspace/team/work/timeline/member)依赖 WEB-001 尚未合入,暂不做。分支先不合 main,等 WEB-001(`web-001-sol`)落地后接 snapshot 端点一起合。
   - 前置:WEB-001。
 
 - [ ] **WEB-004** — versioned 实时事件流：WebSocket 推送 work/bus/team/roster/member 的 invalidation 或 delta(watchfiles 或领域动作触发)；`epoch/revision` 断档时客户端全量 resync；每客户端有界队列，慢客户端不积压。实时验收针对「左栏工作对话记录卡」未读数、「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。以测试客户端验证，不依赖 SPA。

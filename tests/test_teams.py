@@ -163,3 +163,134 @@ def test_current_reports_absent_binding_without_creating_one(tmp_path: Path) -> 
     assert team_main(["current"], store=store, cwd=project, stdout=out) == 0
     assert f"工作区 {workspace.slug} 尚未选择团队。" in out.getvalue()
     assert not (workspace.state_dir / "team.toml").exists()
+
+
+def test_add_member_writes_validated_runtime_adapter_without_workspace_changes(
+    tmp_path: Path,
+) -> None:
+    store, workspace, project = _workspace(tmp_path)
+    teams = TeamStore(store.home)
+    teams.init_default()
+    out = io.StringIO()
+    err = io.StringIO()
+
+    assert team_main(
+        [
+            "add-member",
+            DEFAULT_TEAM_ID,
+            "worker",
+            "--model",
+            "Worker",
+            "--responsibility",
+            "执行验证",
+            "--command",
+            "sh",
+            "--arg=-c",
+            "--arg",
+            "echo ready",
+            "--env",
+            "MODE=check",
+            "--env",
+            "EMPTY=",
+        ],
+        teams=teams,
+        store=store,
+        cwd=project,
+        stdout=out,
+        stderr=err,
+    ) == 0
+
+    added = teams.load(DEFAULT_TEAM_ID).members[-1]
+    assert added.id == "worker"
+    assert added.args == ("-c", "echo ready")
+    assert dict(added.env) == {"MODE": "check", "EMPTY": ""}
+    assert "activate fable-core" in out.getvalue()
+    assert err.getvalue() == ""
+    assert not (workspace.state_dir / "members.toml").exists()
+
+
+def test_add_member_preset_fills_adapter_and_explicit_values_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, _workspace_obj, project = _workspace(tmp_path)
+    teams = TeamStore(store.home)
+    teams.init_default()
+    monkeypatch.setattr("team.store.shutil.which", lambda command: f"/bin/{command}")
+
+    assert team_main(
+        [
+            "add-member",
+            DEFAULT_TEAM_ID,
+            "preset-worker",
+            "--model",
+            "Codex Worker",
+            "--responsibility",
+            "处理 Codex 任务",
+            "--preset",
+            "codex",
+            "--command",
+            "custom-runner",
+            "--arg=--custom",
+            "--env",
+            "MODE=custom",
+        ],
+        teams=teams,
+        store=store,
+        cwd=project,
+    ) == 0
+
+    added = teams.load(DEFAULT_TEAM_ID).members[-1]
+    assert added.command == "custom-runner"
+    assert added.args == ("--custom",)
+    assert dict(added.env) == {"MODE": "custom"}
+
+
+def test_add_member_rejects_invalid_input_without_replacing_archive(tmp_path: Path) -> None:
+    store, _workspace_obj, project = _workspace(tmp_path)
+    teams = TeamStore(store.home)
+    teams.init_default()
+    target = teams.path_for(DEFAULT_TEAM_ID)
+    before = target.read_bytes()
+    err = io.StringIO()
+
+    assert team_main(
+        [
+            "add-member",
+            DEFAULT_TEAM_ID,
+            "human",
+            "--model",
+            "Bad",
+            "--responsibility",
+            "不应写入",
+            "--command",
+            "sh",
+        ],
+        teams=teams,
+        store=store,
+        cwd=project,
+        stderr=err,
+    ) == 1
+    assert target.read_bytes() == before
+    assert "保留名" in err.getvalue()
+
+    err.seek(0)
+    err.truncate()
+    assert team_main(
+        [
+            "add-member",
+            DEFAULT_TEAM_ID,
+            "bad-runner",
+            "--model",
+            "Bad",
+            "--responsibility",
+            "不应写入",
+            "--command",
+            "not-a-real-amux-runner",
+        ],
+        teams=teams,
+        store=store,
+        cwd=project,
+        stderr=err,
+    ) == 1
+    assert target.read_bytes() == before
+    assert "不存在于本机" in err.getvalue()

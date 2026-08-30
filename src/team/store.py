@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import tempfile
 import tomllib
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from pathlib import Path
 
-from team.model import Team, TeamValidationError, team_from_dict, validate_team_id
+from team.model import (
+    Team,
+    TeamMember,
+    TeamValidationError,
+    team_from_dict,
+    validate_member_id,
+    validate_team_id,
+)
 from workspace.errors import WorkspaceError
 from workspace.paths import TEAMS_DIR, amux_home
 
@@ -60,6 +73,129 @@ class TeamStore:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(_DEFAULT_TEAM, encoding="utf-8")
         return target
+
+    def add_member(
+        self,
+        team_id: str,
+        member_id: str,
+        *,
+        model: str,
+        responsibility: str,
+        command: str | None,
+        role: str = "member",
+        effort: str = "high",
+        speed: str = "standard",
+        args: Sequence[str] = (),
+        env: Mapping[str, str] | None = None,
+        preset: str | None = None,
+    ) -> Team:
+        """校验并原子追加成员；不会绑定工作区或启动进程。"""
+        validate_member_id(member_id)
+        target = self.path_for(team_id)
+        if not target.is_file():
+            raise TeamNotFound(f"没有叫 {team_id!r} 的团队。先运行 amux team init")
+        try:
+            raw = tomllib.loads(target.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            raise TeamValidationError(f"无法解析 {target}: {exc}") from exc
+        team = team_from_dict(raw, source=str(target))
+        if team.id != team_id:
+            raise TeamValidationError(
+                f"{target} 内的 id {team.id!r} 必须与文件名 {team_id!r} 一致"
+            )
+        if any(member.id == member_id for member in team.members):
+            raise TeamValidationError(f"团队 {team_id} 已有成员 {member_id!r}")
+
+        template = _default_preset(preset) if preset is not None else None
+        selected_command = command or (template.command if template else None)
+        if selected_command is None:
+            raise TeamValidationError("必须提供 --command，或使用 --preset claude|codex")
+        if shutil.which(selected_command) is None:
+            raise TeamValidationError(f"运行器 command 不存在于本机 PATH: {selected_command}")
+        selected_args = tuple(args) if args else (template.args if template else ())
+        selected_env = dict(template.env) if template else {}
+        selected_env.update(env or {})
+        member_raw = {
+            "id": member_id,
+            "role": role,
+            "model": model,
+            "effort": effort,
+            "speed": speed,
+            "responsibility": responsibility,
+            "command": selected_command,
+            "args": list(selected_args),
+            "env": selected_env,
+        }
+        updated = dict(raw)
+        updated["members"] = [*raw["members"], member_raw]
+        added = team_from_dict(updated, source=str(target))
+        self._atomic_write(target, _render_team(updated))
+        return added
+
+    @staticmethod
+    def _atomic_write(target: Path, text: str) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(text)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, target)
+            try:
+                directory_fd = os.open(target.parent, os.O_RDONLY)
+            except OSError:
+                pass
+            else:
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+        finally:
+            with suppress(FileNotFoundError):
+                os.unlink(temporary)
+
+
+def _default_preset(name: str) -> TeamMember:
+    """从内置 fable-core 适配取一个同 runner 模板，不读取用户档案。"""
+    runner = {"claude": "claude", "codex": "codex"}.get(name)
+    if runner is None:
+        raise TeamValidationError(f"未知启动预设: {name}")
+    team = team_from_dict(tomllib.loads(_DEFAULT_TEAM), source="内置 fable-core")
+    return next(member for member in team.members if member.command == runner)
+
+
+def _toml_string(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _render_team(raw: dict[str, object]) -> str:
+    """把已由 tomllib 读取且已校验的团队结构写成稳定的 TOML。"""
+    lines = [
+        f"id = {_toml_string(raw['id'])}",
+        f"name = {_toml_string(raw['name'])}",
+        f"leader = {_toml_string(raw['leader'])}",
+    ]
+    if "description" in raw:
+        lines.append(f"description = {_toml_string(raw['description'])}")
+    lines.append("")
+    for member in raw["members"]:
+        lines.append("[[members]]")
+        for key in ("id", "role", "model", "effort", "speed", "responsibility"):
+            lines.append(f"{key} = {_toml_string(member[key])}")
+        if member.get("command") is not None:
+            lines.append(f"command = {_toml_string(member['command'])}")
+        if member.get("args"):
+            args = ", ".join(_toml_string(item) for item in member["args"])
+            lines.append(f"args = [{args}]")
+        if member.get("env"):
+            env = ", ".join(
+                f"{_toml_string(key)} = {_toml_string(value)}"
+                for key, value in member["env"].items()
+            )
+            lines.append(f"env = {{ {env} }}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 _DEFAULT_TEAM = '''# 默认协作团队。command/args 是已在本机 CLI 上验证过的启动适配。

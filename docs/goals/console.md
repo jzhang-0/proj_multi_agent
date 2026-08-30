@@ -96,6 +96,8 @@
   - 证据:`src/console/compose.py` 在直连空输入且无补全候选时发布 tmux `Up`/`Down`，候选优先级、非空发言历史和 `Ctrl+↑↓` 回滚不变；`src/console/control.py` 白名单并审计两键；`tests/test_console_compose.py` 覆盖空输入透传、补全不透传和非空历史，`tests/test_console_control.py` 钉住 tmux 参数与审计。输入提示、帮助、README 与产品定义同步。
   - 视觉自验证:`tests/baseline/con-016-direct-arrows-120x30.txt`/`.ansi` 同屏可见 `[直连] → human → claude: 按键 ↑` 与 `按键 ↓`；`tests/baseline/con-016-direct-input-120x30.txt`/`.ansi` 和 `con-016-direct-input-min-80x24.txt`/`.ansi` 显示「空↑↓/Del/Enter/Shift+Tab透传;Fn+↑↓回看」，120×30 与最小 80×24 下成员画面、输入框和底栏均完整对齐。全部使用 controls 夹具，没有向真实成员终端发键。
 
-- [ ] **CON-017** — 成员画面点击直连:成员画面处于当前画面且用户点击成员 CLI 自己的底部输入区时,直接进入实时键入态；普通字符、Enter、Tab/Shift+Tab、方向键和删除键按顺序透传到该成员终端并在成员画面即时回显，`Esc` 只退出实时键入态，`Ctrl+V` 继续统一粘贴图片，F5–F8 及底部工作对话输入框保持原语义。点击历史区、回滚画面或非输入区不得误激活；界面须明确显示当前直连成员与退出方式，提交动作写审计，并用安全夹具完成实际画面验证。
+- [x] **CON-017** — 成员画面点击直连:成员画面处于当前画面且用户点击成员 CLI 自己的底部输入区时,直接进入实时键入态；普通字符、Enter、Tab/Shift+Tab、方向键和删除键按顺序透传到该成员终端并在成员画面即时回显，`Esc` 只退出实时键入态，`Ctrl+V` 继续统一粘贴图片，F5–F8 及底部工作对话输入框保持原语义。点击历史区、回滚画面或非输入区不得误激活；界面须明确显示当前直连成员与退出方式，提交动作写审计，并用安全夹具完成实际画面验证。
   - 前置:CON-006、CON-014、CON-015、CON-016。
-  - 处理登记:Codex，2026-08-30 14:11 CST，分支 `con-017-codex`。
+  - 验证（Codex，2026-08-30）:`uv run ruff check .` 通过；`uv run pytest tests/test_console_mirror.py tests/test_console_control.py tests/test_console_compose.py tests/test_console_clipboard.py tests/test_console_keyboard.py tests/test_console_app.py tests/test_visual_evidence.py -q` 为 `59 passed in 18.91s`；视觉命令使用 `live-input` 安全夹具分别运行 120×30 与 80×24 的 `--keys Down --click <成员输入行>` 场景。
+  - 证据:`src/console/mirror.py` 只识别当前画面的 Claude 双横线 composer 与 Codex 底部 `›` prompt，输出区、无法确认的区域和回滚画面不激活；`src/console/app.py` 用单消费者队列按序转发文字/编辑键/Enter，相邻文字合并并在 80ms 镜像刷新内回显，Esc 只退实时态；`src/console/control.py` 对完整提交记一条 `type` 审计而不制造逐字符噪声。测试覆盖 q 不退出、Tab/Shift+Tab、四向键、两类删除、Enter、误点击、即时回显和 Ctrl+V 继续走统一图片流。
+  - 视觉自验证:`tests/baseline/con-017-click-live-input-120x30.txt`/`.ansi` 与 `tests/baseline/con-017-click-live-input-min-80x24.txt`/`.ansi`。两种尺寸都在 Claude 原生输入行上完成真实鼠标事件后显示高对比「实时直连 claude · Esc退出 · Ctrl+V图片 · F8完整接管」状态；成员画面、工作对话入口、底部输入框和边界无错位，安全夹具未向真实成员终端发送按键。

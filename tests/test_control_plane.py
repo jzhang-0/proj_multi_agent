@@ -43,6 +43,7 @@ FORBIDDEN_IMPORT_ROOTS = {
     "rich",
     "starlette",
     "textual",
+    "web",
 }
 
 

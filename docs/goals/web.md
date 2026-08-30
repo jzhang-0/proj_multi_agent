@@ -87,3 +87,6 @@
     - 回归:`uv run ruff check .` 全过；`uv run pytest tests/ -q --ignore=tests/e2e` 628 passed；前端 `npm run verify`(typecheck + 19 Vitest + licenses + build)通过；`uv run python -m qa.release`(联网)PASS。
   - 证据:实现/文档提交见分支 `web-009a-sonnet`(T-022，合入 `111ee88`/`4d65479`)、`web-009b-sonnet`(T-023，合入 `df6c562`)、`web-009c-sonnet`(T-024，联网安装验证+WEB-004/T-013 归因更正)。
   - 前置:WEB-006、WEB-008。
+
+- [ ] **WEB-012** — 源码态运行也能提供 SPA：`uv run amux web` 从源码树启动时，包内 `web/static` 只有 `health.html`(SPA 产物仅在 wheel 构建时经 force-include 进入)，浏览器只看到 WEB-003 占位页(human 2026-08-30 实机遇到)。让源码态自动回退到仓库 `web/dist`(存在且新于源码时)或提供 `amux web --dev` 明确指向；产物缺失时首页提示如何构建，而不是静默给占位页；wheel 行为与安全边界(路径跳转拒绝、只读包内资源)不变。补一条源码态用例；README 开发章节写明 `npm --prefix web run build` 后即可 `uv run amux web` 看到完整界面。
+  - 前置:WEB-009。

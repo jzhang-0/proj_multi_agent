@@ -16,3 +16,8 @@ web/dist/*
 !web/dist/.gitkeep
 web/test-results/
 web/playwright-report/
+
+# 开发态从 web/dist 复制进来的前端产物，只随 wheel 打包，不入库
+src/web/static/index.html
+src/web/static/assets/
+src/web/static/THIRD_PARTY_LICENSES.json

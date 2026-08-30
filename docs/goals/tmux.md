@@ -31,3 +31,7 @@
   - 前置:TMX-003、TMX-006。
   - 验证:`uv run pytest tests/test_tmuxctl_activity.py tests/test_tmuxctl_output.py tests/test_tmuxctl_lifecycle.py -q && uv run ruff check .`
   - 证据:`src/tmuxctl/activity.py` 的 `ActivityTracker` 仅记录时间戳与字节数,以近期非空输出判定 `working`、存活静默判定 `idle`、显式工作标记超过可配阈值判定 `stuck`、进程消失判定 `dead`;`ActivityMonitor` 可直接消费 TMX-003 异步输出流且结束时转为 `dead`;`tests/test_tmuxctl_activity.py` 覆盖假时钟、阈值配置、语义无关性与隔离真实 tmux 输出流,连同 TMX-003/006 回归共 17 passed;README 已同步。
+
+- [ ] **TMX-008** — 成员消息可靠提交：修复 Claude/Codex 等 TUI 把总线文字留在输入框、Enter 被粘贴突发吞掉的问题。文本与提交键必须分开发送并保留 CLI 处理间隔；同一收件人的消息必须串行，上一条未确认提交时不得继续追加；提交确认不能依赖“终端光标位于输入文字行”的旧假设。未确认的消息不得只记 `deliver` 后归档，必须留下可重试状态与明确审计；补多条积压、折行输入、新版 Claude 底部光标、失败重试及真实 Claude pane 验证。
+  - 前置：TMX-002、BUS-008。
+  - 处理登记：Codex，2026-08-30 13:33 CST，分支 `tmx-008-codex`。

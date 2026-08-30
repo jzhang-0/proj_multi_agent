@@ -66,6 +66,12 @@ packages = [
   "src/work",
 ]
 
+[tool.hatch.build.targets.wheel.force-include]
+"web/dist" = "web/static"
+
+[tool.hatch.build.targets.sdist.force-include]
+"web/dist" = "src/web/static"
+
 [tool.hatch.build.targets.sdist]
 include = [
   "/AGENTS.md",

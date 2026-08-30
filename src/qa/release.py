@@ -52,6 +52,10 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "amux_runtime/prompts/leader.md",
         "amux_runtime/prompts/member.md",
         "amux_runtime/roster.toml",
+        "web/static/THIRD_PARTY_LICENSES.json",
+        "web/static/assets/app.css",
+        "web/static/assets/app.js",
+        "web/static/index.html",
         "work/__init__.py",
         f"{dist_info}/licenses/LICENSE",
         f"{dist_info}/METADATA",
@@ -86,6 +90,10 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "/src/amux_runtime/prompts/member.md",
         "/src/amux_runtime/prompts/README.md",
         "/src/amux_runtime/roster.toml",
+        "/src/web/static/THIRD_PARTY_LICENSES.json",
+        "/src/web/static/assets/app.css",
+        "/src/web/static/assets/app.js",
+        "/src/web/static/index.html",
         "/src/work/__init__.py",
     )
     missing_sdist = [

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib.resources
+import mimetypes
 from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -59,6 +60,22 @@ def _error(code: str, message: str, *, status_code: int, domain: str = "web") ->
 def _health_page() -> str:
     resource = importlib.resources.files("web").joinpath("static", "health.html")
     return resource.read_text(encoding="utf-8")
+
+
+def _static_response(*parts: str) -> Response | None:
+    """从 wheel 内 `web/static` 读取资源；拒绝路径跳转，不依赖源码目录。"""
+    if not parts or any(not part or part in {".", ".."} or "/" in part for part in parts):
+        return None
+    resource = importlib.resources.files("web").joinpath("static", *parts)
+    if not resource.is_file():
+        return None
+    media_type = mimetypes.guess_type(parts[-1])[0] or "application/octet-stream"
+    return Response(content=resource.read_bytes(), media_type=media_type)
+
+
+def _spa_index() -> Response:
+    packaged = _static_response("index.html")
+    return packaged if packaged is not None else HTMLResponse(_health_page())
 
 
 @contextlib.asynccontextmanager
@@ -154,7 +171,7 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
                 "缺少有效会话，请用启动时终端打印的地址访问",
                 status_code=401,
             )
-        return HTMLResponse(_health_page())
+        return _spa_index()
 
     def require_session(request: Request) -> None:
         if not session.verify_cookie(request.cookies.get(COOKIE_NAME)):
@@ -256,5 +273,29 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
         return health_dto(ctx, app.state.revisions)
 
     app.include_router(api)
+
+    @app.get("/assets/{asset_path:path}")
+    async def static_asset(request: Request, asset_path: str) -> Response:
+        require_session(request)
+        response = _static_response("assets", *asset_path.split("/"))
+        if response is None:
+            return _error("not-found", "静态资源不存在", status_code=404)
+        return response
+
+    @app.get("/THIRD_PARTY_LICENSES.json")
+    async def third_party_licenses(request: Request) -> Response:
+        require_session(request)
+        response = _static_response("THIRD_PARTY_LICENSES.json")
+        if response is None:
+            return _error("not-found", "第三方许可证清单不存在", status_code=404)
+        return response
+
+    @app.get("/{spa_path:path}")
+    async def spa_fallback(request: Request, spa_path: str) -> Response:
+        """支持刷新 `/workspace`、`/task/<id>`、`/help` 等前端路由。"""
+        require_session(request)
+        if spa_path in {"workspace", "timeline", "help"} or spa_path.startswith("task/"):
+            return _spa_index()
+        return _error("not-found", "页面不存在", status_code=404)
 
     return app

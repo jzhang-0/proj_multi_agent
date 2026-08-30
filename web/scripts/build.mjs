@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -7,6 +7,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = resolve(root, "dist");
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(resolve(dist, "assets"), { recursive: true });
+writeFileSync(resolve(dist, ".gitkeep"), "");
 
 await build({
   entryPoints: [resolve(root, "src/main.tsx")],

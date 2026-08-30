@@ -10,7 +10,7 @@ const contentTypes = { ".css": "text/css; charset=utf-8", ".html": "text/html; c
 const server = createServer((request, response) => {
   const requestPath = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
   const relative = requestPath === "/" ? "index.html" : requestPath.slice(1);
-  const file = resolve(normalize(join(root, relative)));
+  let file = resolve(normalize(join(root, relative)));
   if (!file.startsWith(`${root}/`)) {
     response.writeHead(403).end("forbidden");
     return;
@@ -20,6 +20,12 @@ const server = createServer((request, response) => {
     response.writeHead(200, { "Content-Type": contentTypes[extname(file)] ?? "application/octet-stream" });
     createReadStream(file).pipe(response);
   } catch {
+    if (["/timeline", "/workspace", "/help"].includes(requestPath) || requestPath.startsWith("/task/")) {
+      file = resolve(root, "index.html");
+      response.writeHead(200, { "Content-Type": contentTypes[".html"] });
+      createReadStream(file).pipe(response);
+      return;
+    }
     response.writeHead(404).end("not found");
   }
 });

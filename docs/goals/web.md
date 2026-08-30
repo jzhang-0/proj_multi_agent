@@ -65,6 +65,7 @@
   - 前置:WEB-004。
 
 - [ ] **WEB-011** — 跨前端共享终端采集：TUI(`console/mirror.py`，MIRROR_INTERVAL=0.08)与 Web 镜像通道(≈10 Hz)同看一个成员时是两条互不感知的 tmux 采集回路，叠加负载；terminal-protocol §4.3「多观看者共享单一订阅」未覆盖跨前端。把采集下沉到 `src/control`（或 tmuxctl 侧）的单一订阅源，TUI 与 Web 都作为观看者接入，帧率/背压语义不变；§4.2「无观看者停采集」判据改为跨前端总观看者计数，最后一个观看者(不论 TUI 还是 Web)退出才停采集；TUI 视觉基线与 test_console_mirror 不变。
+  - 处理登记:Sonnet，2026-08-30，分支 `web-011-sonnet`(T-020)。把 `src/web/terminal.py` 的 `MirrorGroup`/`MirrorHub` 下沉到 `src/control/mirror.py`(帧生产/背压/停采集判据与前端无关，本就该在共享层)，`console/mirror.py` 与 `src/web/terminal.py` 都改成接这个共享 Hub 的观看者，不再各自起 `PaneSnapshotter`/`capture_with_cursor` 轮询。`console` 允许 `import control`，`control` 仍禁 `import console`(现有 AST 钉子测试)。
   - 前置:WEB-007。
 
 - [ ] **WEB-009** — 全功能矩阵与发布收口：逐行勾验 inventory §2 全部条目(未完成项如实保留)；更新产品、架构、README、CLI 帮助与安全说明；前端产物进 sdist/wheel；`qa.release` 源码外联网安装并启动 Web，验证不依赖 Node/源码路径/CDN；复查「退出」只关 Web 会话不关成员。

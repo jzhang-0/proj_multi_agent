@@ -13,6 +13,8 @@ from bus.paths import BusPaths
 from console.app import TIMELINE_ITEM_ID, WORK_ITEM_ID, ConsoleApp
 from console.compose import ComposeInput
 from console.members import MemberStatusService
+from console.timeline import TimelineCategory
+from console.widgets import ConversationFilter, Timeline
 from console.workview import TaskDetail, TaskSummaryCard
 from team.binding import bind_team
 from team.store import DEFAULT_TEAM_ID, TeamStore
@@ -212,5 +214,57 @@ def test_slash_task_opens_a_specific_detail(tmp_path: Path) -> None:
             assert app.active_view == "work"
             assert app.selected_task_id == "T-002"
             assert "T-002  更新发布说明" in _lines(app.query_one(TaskDetail))
+
+    asyncio.run(scenario())
+
+
+def test_completed_task_shows_timestamps_and_task_events_are_classified(tmp_path: Path) -> None:
+    workspace, service, paths = _context(tmp_path)
+    service.accept("fable", "T-001", "证据充分，验收通过")
+    service.report("fable", "T-001", "已向 human 汇报并完成")
+    app = _app(workspace, service, paths)
+
+    async def scenario() -> None:
+        async with app.run_test(size=(120, 30)) as pilot:
+            detail = _lines(app.query_one(TaskDetail))
+            assert "创建:" in detail and "更新:" in detail and "完成:" in detail
+
+            await pilot.press("f2")
+            await pilot.pause()
+            filters = app.query_one("#timeline-filters", ConversationFilter)
+            assert filters.counts[TimelineCategory.TASK] == len(service.snapshot().events)
+            timeline_text = "\n".join(
+                "".join(segment.text for segment in line)
+                for line in app.query_one("#timeline", Timeline).lines
+            )
+            assert "[任务] [T-001]" in timeline_text
+            assert "派工 · 登录页修复 · 执行:sonnet" in timeline_text
+            assert "任务完成 · 登录页修复" in timeline_text
+            assert "完成时间:" in timeline_text
+
+    asyncio.run(scenario())
+
+
+def test_new_ledger_event_is_added_to_the_timeline_without_reloading(tmp_path: Path) -> None:
+    workspace, service, paths = _context(tmp_path)
+    app = _app(workspace, service, paths)
+
+    async def scenario() -> None:
+        async with app.run_test(size=(120, 30)) as pilot:
+            timeline = app.query_one("#timeline", Timeline)
+            before = timeline.category_counts()[TimelineCategory.TASK]
+            service.assign("fable", "T-002", "sol")
+            for _ in range(100):
+                if timeline.category_counts()[TimelineCategory.TASK] == before + 1:
+                    break
+                await pilot.pause(0.02)
+            assert timeline.category_counts()[TimelineCategory.TASK] == before + 1
+            newest = next(
+                item
+                for item in reversed(timeline._history)
+                if getattr(item, "category", None) is TimelineCategory.TASK
+            )
+            assert newest.task_id == "T-002"
+            assert "派工 · 更新发布说明 · 执行:sol" in newest.text
 
     asyncio.run(scenario())

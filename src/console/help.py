@@ -25,6 +25,7 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
         (
             Shortcut("Tab / Shift+Tab", "工作对话与非输入框焦点时在各区域间循环"),
             Shortcut("↑ / ↓", "选择任务、工作对话或成员；输入时选候选项或翻历史"),
+            Shortcut("对话分类 ← / →", "聚焦分类栏后切换 human、AI、任务与终端控制"),
             Shortcut("Esc / F2", "回到工作对话记录"),
             Shortcut("F3", "打开任务看板；/task T-001 可直达详情"),
             Shortcut("PgUp / PgDn", "翻当前画面；MacBook 对应 Fn+↑ / Fn+↓"),

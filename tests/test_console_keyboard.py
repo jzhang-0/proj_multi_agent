@@ -14,7 +14,7 @@ from console.compose import ComposeInput
 from console.help import SHORTCUT_GROUPS, ShortcutHelpScreen, render_shortcuts
 from console.members import MemberStatusService
 from console.mirror import HISTORY_STEP, WHEEL_STEP, Mirror
-from console.widgets import Timeline
+from console.widgets import ConversationFilter, Timeline
 from tmuxctl import PaneSnapshot
 
 
@@ -45,16 +45,16 @@ def test_focus_cycles_forward_and_backward_through_all_work_areas(tmp_path: Path
             assert not app.detail_visible
 
             forward = []
-            for _ in range(3):
+            for _ in range(4):
                 await pilot.press("tab")
                 forward.append(type(app.focused))
-            assert forward == [Timeline, ComposeInput, ListView]
+            assert forward == [ConversationFilter, Timeline, ComposeInput, ListView]
 
             backward = []
-            for _ in range(3):
+            for _ in range(4):
                 await pilot.press("shift+tab")
                 backward.append(type(app.focused))
-            assert backward == [ComposeInput, Timeline, ListView]
+            assert backward == [ComposeInput, Timeline, ConversationFilter, ListView]
 
             # 选中成员后主画面换成它的终端画面,循环里的主画面也跟着换
             await pilot.press("down")
@@ -126,6 +126,7 @@ def test_help_documents_every_console_binding_and_context_action() -> None:
         "Tab / Shift+Tab",
         "PgUp / PgDn",
         "Ctrl+↑ / Ctrl+↓",
+        "对话分类 ← / →",
             "@成员",
             "Ctrl+V",
         "直连空 ↑ / ↓",

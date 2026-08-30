@@ -16,8 +16,11 @@
 from __future__ import annotations
 
 import re
+import time
 import zlib
 from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from rich.text import Text
@@ -26,6 +29,8 @@ from bus import DeliveryResult
 from bus.audit import AuditLog
 from bus.sanitize import sanitize
 from console.theme import tokens
+from work import EventKind, WorkEvent, WorkSnapshot
+from work.presentation import EVENT_LABELS, event_details
 
 #: 结局 → (标记, 是否压暗)。拒收/失败都不是正常发言
 OUTCOME_MARKS = {
@@ -54,6 +59,36 @@ MENTION = re.compile(r"@[\w一-鿿-]+")
 HISTORY_LIMIT = 200
 
 
+class TimelineCategory(StrEnum):
+    """工作对话记录的结构化分类；来源于事件字段，不解析正文。"""
+
+    HUMAN = "human"
+    AI = "ai"
+    TASK = "task"
+    CONTROL = "control"
+
+
+CATEGORY_LABELS: dict[TimelineCategory, str] = {
+    TimelineCategory.HUMAN: "human往来",
+    TimelineCategory.AI: "AI协作",
+    TimelineCategory.TASK: "任务",
+    TimelineCategory.CONTROL: "终端控制",
+}
+
+
+def format_timestamp(value: str) -> str:
+    """把账本 UTC ISO 时间转成本机时间；旧消息时间保持原样。"""
+    if not value:
+        return ""
+    if "T" not in value:
+        return value
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value.replace("T", " ")[:19]
+    return parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def member_color(name: str) -> str:
     """按名字算固定颜色:同一个名字在同一套主题里永远同一个色。
 
@@ -80,6 +115,20 @@ class TimelineEntry:
     reason: str = ""
     task_id: str = ""
     attachment_count: int = 0
+    category: TimelineCategory | None = None
+
+    @property
+    def resolved_category(self) -> TimelineCategory:
+        if self.category is not None:
+            return self.category
+        if (
+            self.sender == "human"
+            or self.to == "human"
+            or self.sender.startswith("im:")
+            or self.to.startswith("im:")
+        ):
+            return TimelineCategory.HUMAN
+        return TimelineCategory.AI
 
     @property
     def group(self) -> str:
@@ -105,26 +154,109 @@ class TimelineEntry:
     @classmethod
     def from_audit(cls, entry: dict[str, Any]) -> TimelineEntry:
         to = str(entry.get("to") or "?")
-        outcome = AUDIT_TO_OUTCOME.get(str(entry.get("event", "")), "pending")
+        audit_event = str(entry.get("event", ""))
+        outcome = AUDIT_TO_OUTCOME.get(audit_event, "pending")
         # 审计日志把"送到人的屏幕上"也记成 deliver,时间线上要还原成 ★,
         # 免得历史和实时两种画法对同一条消息给出不同标记
         if outcome == "delivered" and to == "human":
             outcome = "shown"
         attachments = entry.get("attachments")
         attachment_count = len(attachments) if isinstance(attachments, list) else 0
+        preview = str(entry.get("preview", ""))
+        reason = str(entry.get("reason", ""))
+        category = None
+        if audit_event == "control":
+            category = TimelineCategory.CONTROL
+            action = str(entry.get("action") or preview)
+            label = {
+                "key": "按键",
+                "type": "直接输入",
+                "interrupt": "打断",
+                "terminate": "终止",
+                "restart": "重启",
+                "takeover": "完整接管",
+            }.get(action, action)
+            preview = f"{label}{' · ' + reason if reason else ''}"
+            reason = ""
+            if entry.get("changed") is False:
+                outcome = "deliver-failed"
         return cls(
             str(entry.get("ts", "")),
             str(entry.get("from") or "bus"),
             to,
-            str(entry.get("preview", "")),
+            preview,
             outcome,
-            str(entry.get("reason", "")),
+            reason,
             str(entry.get("task", "")),
             attachment_count,
+            category,
+        )
+
+    @classmethod
+    def from_work_event(
+        cls,
+        event: WorkEvent,
+        snapshot: WorkSnapshot,
+    ) -> TimelineEntry:
+        """把责任账本事件投影成一条带任务详情的记录。"""
+        task = snapshot.get(event.task_id)
+        if event.kind in (EventKind.CREATED, EventKind.SPLIT):
+            target = "任务账本"
+        elif event.kind is EventKind.REPORTED:
+            target = "human"
+        elif event.data.get("assignee") or event.data.get("reviewer"):
+            target = str(event.data.get("assignee") or event.data.get("reviewer"))
+        elif event.actor != task.leader:
+            target = task.leader
+        else:
+            target = task.assignee or "任务账本"
+        action = "任务完成" if event.kind is EventKind.REPORTED else EVENT_LABELS[event.kind]
+        parts = [action, task.title]
+        if event.kind in (EventKind.CREATED, EventKind.SPLIT) and task.description:
+            parts.append(f"详情:{task.description}")
+        details = event_details(event)
+        if event.kind in (EventKind.CREATED, EventKind.SPLIT):
+            details = tuple(detail for detail in details if not detail.startswith("标题:"))
+        parts.extend(details)
+        if event.kind is EventKind.REPORTED:
+            parts.append(f"完成时间:{format_timestamp(event.ts)}")
+        return cls(
+            format_timestamp(event.ts),
+            event.actor,
+            target,
+            " · ".join(parts),
+            "shown",
+            "",
+            event.task_id,
+            0,
+            TimelineCategory.TASK,
+        )
+
+    @classmethod
+    def control(
+        cls,
+        target: str,
+        text: str,
+        *,
+        changed: bool = True,
+    ) -> TimelineEntry:
+        return cls(
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+            "human",
+            target,
+            text,
+            "shown" if changed else "deliver-failed",
+            category=TimelineCategory.CONTROL,
         )
 
 
-def history(audit: AuditLog, limit: int = HISTORY_LIMIT) -> list[TimelineEntry]:
+def history(
+    audit: AuditLog,
+    limit: int = HISTORY_LIMIT,
+    *,
+    work_events: tuple[WorkEvent, ...] = (),
+    snapshot: WorkSnapshot | None = None,
+) -> list[TimelineEntry]:
     """从审计日志回填启动前的历史。
 
     同一条消息的多个事件合并成一行,结局取最后一个非 `deposit` 的事件。
@@ -133,11 +265,14 @@ def history(audit: AuditLog, limit: int = HISTORY_LIMIT) -> list[TimelineEntry]:
     """
     merged: dict[str, TimelineEntry] = {}
     order: list[str] = []
-    for raw in audit.entries():
+    for index, raw in enumerate(audit.entries()):
         entry = TimelineEntry.from_audit(raw)
         raw_id = raw.get("id")
         fallback = f"{entry.ts}|{entry.sender}|{entry.to}|{entry.text}"
-        key = raw_id if isinstance(raw_id, str) else fallback
+        if raw.get("event") == "control":
+            key = f"control:{index}"
+        else:
+            key = raw_id if isinstance(raw_id, str) else fallback
         previous = merged.get(key)
         if previous is None:
             merged[key] = entry
@@ -154,7 +289,11 @@ def history(audit: AuditLog, limit: int = HISTORY_LIMIT) -> list[TimelineEntry]:
                 entry.task_id,
                 entry.attachment_count or previous.attachment_count,
             )
-    return [merged[key] for key in order][-limit:]
+    entries = [merged[key] for key in order]
+    if work_events and snapshot is not None:
+        entries.extend(TimelineEntry.from_work_event(event, snapshot) for event in work_events)
+        entries.sort(key=lambda item: item.ts)
+    return entries[-limit:]
 
 
 def group_header(group: str) -> Text:
@@ -172,6 +311,14 @@ def render_entry(entry: TimelineEntry) -> Text:
     mark, dimmed = OUTCOME_MARKS.get(entry.outcome, ("?", True))
     line = Text(no_wrap=False)
     line.append(f"{mark} ", style=palette.muted if dimmed else palette.divider)
+    category = entry.resolved_category
+    category_style = {
+        TimelineCategory.HUMAN: palette.human,
+        TimelineCategory.AI: palette.status["working"],
+        TimelineCategory.TASK: palette.status["idle"],
+        TimelineCategory.CONTROL: palette.muted,
+    }[category]
+    line.append(f"[{CATEGORY_LABELS[category]}] ", style=f"bold {category_style}")
     if entry.task_id:
         line.append(f"[{sanitize(entry.task_id)}] ", style=f"bold {palette.accent}")
     line.append(sanitize(entry.sender), style=f"bold {member_color(entry.sender)}")

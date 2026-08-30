@@ -14,13 +14,15 @@ from bus.audit import AuditEvent, AuditLog
 from bus.paths import BusPaths
 from console.app import ConsoleApp
 from console.timeline import (
+    TimelineCategory,
     TimelineEntry,
     highlight_mentions,
     history,
     member_color,
     render_entry,
 )
-from console.widgets import Timeline
+from console.widgets import ConversationFilter, Timeline
+from work import EventKind, Task, TaskStatus, WorkEvent, WorkSnapshot
 
 #: 渲染样式需要一个 Console 上下文
 RICH = Console()
@@ -73,6 +75,19 @@ def test_rejected_line_is_dim_and_carries_the_reason():
     assert rendered.startswith("⊘ ")
     assert "10 秒内重复" in rendered
     assert all("dim" in str(segment.style) for segment in line.render(RICH) if segment.text.strip())
+
+
+def test_structured_categories_distinguish_human_ai_task_and_control():
+    human = TimelineEntry("2026-08-16 09:00:00", "fable", "human", "向人汇报")
+    ai = TimelineEntry("2026-08-16 09:00:00", "fable", "sonnet", "内部派工")
+    control = TimelineEntry.control("opus", "按键 ↓")
+
+    assert human.resolved_category is TimelineCategory.HUMAN
+    assert ai.resolved_category is TimelineCategory.AI
+    assert control.resolved_category is TimelineCategory.CONTROL
+    assert "[human往来]" in render_entry(human).plain
+    assert "[AI协作]" in render_entry(ai).plain
+    assert "[终端控制]" in render_entry(control).plain
 
 
 # --- 分组与回填 ---------------------------------------------------------
@@ -148,6 +163,57 @@ def test_history_merges_v0_messages_without_id(paths):
     ]
 
 
+def test_history_keeps_repeated_control_events_and_merges_task_ledger(paths):
+    audit = AuditLog(paths)
+    audit.record_control("key", "opus", changed=True, detail="Down")
+    audit.record_control("key", "opus", changed=True, detail="Down")
+    task = Task(
+        id="T-001",
+        title="修复登录页",
+        description="覆盖错误边界",
+        leader="fable",
+        parent_id=None,
+        status=TaskStatus.COMPLETED,
+        created_at="2026-08-30T05:00:00Z",
+        updated_at="2026-08-30T06:30:00Z",
+        assignee="sonnet",
+    )
+    created = WorkEvent(
+        1,
+        1,
+        "event-created",
+        "T-001",
+        EventKind.CREATED,
+        "fable",
+        "2026-08-30T05:00:00Z",
+        {"title": task.title, "description": task.description, "leader": "fable"},
+        "",
+        "hash-1",
+    )
+    reported = WorkEvent(
+        1,
+        2,
+        "event-reported",
+        "T-001",
+        EventKind.REPORTED,
+        "fable",
+        "2026-08-30T06:30:00Z",
+        {"summary": "已交付 human"},
+        "hash-1",
+        "hash-2",
+    )
+    snapshot = WorkSnapshot((task,), (created, reported))
+
+    entries = history(audit, work_events=snapshot.events, snapshot=snapshot)
+    controls = [entry for entry in entries if entry.category is TimelineCategory.CONTROL]
+    tasks = [entry for entry in entries if entry.category is TimelineCategory.TASK]
+    assert len(controls) == 2
+    assert all("按键 · Down" in entry.text for entry in controls)
+    assert "详情:覆盖错误边界" in tasks[0].text
+    assert "任务完成 · 修复登录页" in tasks[-1].text
+    assert "完成时间:" in tasks[-1].text
+
+
 def test_startup_backfills_history_from_the_audit_log(paths):
     audit = AuditLog(paths)
     audit.record(AuditEvent.DEPOSIT, Message.create("codex", "启动前说过的话", sender="human"))
@@ -193,5 +259,51 @@ def test_live_traffic_appends_and_scrollback_is_not_yanked(paths):
             await pilot.press("end")
             await pilot.pause()
             assert timeline.sticking_to_bottom
+
+    run_async(scenario)
+
+
+def test_filter_counts_and_keyboard_or_mouse_switch_without_losing_history(paths):
+    app = ConsoleApp(paths, deliver=lambda _message: True, members=())
+
+    async def scenario():
+        async with app.run_test(size=(120, 30)) as pilot:
+            timeline = app.query_one("#timeline", Timeline)
+            filters = app.query_one("#timeline-filters", ConversationFilter)
+            timeline.add(TimelineEntry("2026-08-16 09:00:00", "human", "fable", "请推进"))
+            timeline.add(TimelineEntry("2026-08-16 09:00:01", "fable", "sonnet", "已派工"))
+            timeline.add(TimelineEntry.control("sonnet", "按键 ↓"))
+            task_entry = TimelineEntry(
+                "2026-08-16 09:00:02",
+                "fable",
+                "sonnet",
+                "派工 · 登录页",
+                category=TimelineCategory.TASK,
+            )
+            timeline.add(task_entry)
+            app._sync_timeline_filter_counts()
+            rendered = str(filters.render())
+            assert "全部 4" in rendered
+            assert "human 1" in rendered
+            assert "AI 1" in rendered
+            assert "任务 1" in rendered
+            assert "控制 1" in rendered
+
+            filters.focus()
+            await pilot.press("right")
+            await pilot.pause()
+            assert filters.category is TimelineCategory.HUMAN
+            visible = "\n".join(plain_lines(app))
+            assert "请推进" in visible
+            assert "已派工" not in visible
+
+            task_range = next(item for item in filters._ranges if item[2] is TimelineCategory.TASK)
+            await pilot.click(filters, offset=(task_range[0] + 1, 0))
+            await pilot.pause()
+            assert filters.category is TimelineCategory.TASK
+            visible = "\n".join(plain_lines(app))
+            assert "派工 · 登录页" in visible
+            assert "请推进" not in visible
+            assert len(timeline._history) >= 4
 
     run_async(scenario)

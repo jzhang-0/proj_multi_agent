@@ -356,7 +356,7 @@ def test_takeover_suspends_console_then_returns_and_all_actions_have_bindings(tm
             assert suspends == ["enter", "exit"]
             assert controller.calls == [("takeover", "codex")]
             assert "已回到总控台" not in timeline_text(app)  # fake feedback 仍明确显示 ok
-            assert "takeover codex: ok" in timeline_text(app)
+            assert "[终端控制] human → codex: takeover · ok" in timeline_text(app)
 
     asyncio.run(scenario())
     bindings = {binding.key: binding.action for binding in ConsoleApp.BINDINGS}

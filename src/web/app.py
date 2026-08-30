@@ -29,6 +29,7 @@ from control.health import HealthMonitor
 from control.lease import HubDeliveryLease, MemberLeaseManager, leases_root
 from control.member_admin import MemberAdminController, MemberAdminError
 from control.members import MemberStatusService
+from control.timeline import TimelineCache
 from roster.schema import RosterError
 from tmuxctl import TmuxError, WindowSizeGuard
 from web.actions import (
@@ -55,7 +56,7 @@ from web.snapshots import (
     work_dto,
     workspace_dto,
 )
-from web.state import RevisionTracker, TimelineCache
+from web.state import RevisionTracker
 from web.stream import EventHub, StreamSettings, handle_stream
 from web.terminal import HEARTBEAT_INTERVAL, ConnectionState, MirrorHub, run_mirror_connection
 

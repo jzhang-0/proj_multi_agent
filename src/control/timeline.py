@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from bus import DeliveryResult
+from bus import BusPaths, DeliveryResult
 from bus.audit import AuditLog
 from bus.sanitize import sanitize
 from control.attachments import attachment_id_from_name
@@ -373,6 +373,81 @@ def history_from_entries(
     return sequenced[-limit:] if limit > 0 else []
 
 
+def log_fingerprint(paths: BusPaths | None) -> tuple[int, int]:
+    if paths is None or not paths.log.exists():
+        return (0, 0)
+    stat = paths.log.stat()
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def work_fingerprint(snapshot: WorkSnapshot | None) -> str | None:
+    if snapshot is None or not snapshot.events:
+        return None
+    return snapshot.events[-1].digest
+
+
+@dataclass(frozen=True)
+class _TimelineCacheEntry:
+    fingerprint: tuple[Any, ...]
+    raw_entries: list[dict[str, Any]] = field(repr=False)
+    entries: list[TimelineEntry] = field(repr=False)
+
+
+class TimelineCache:
+    """单槽缓存：审计日志与任务事件都未变时复用上一次的全量投影。
+
+    进程内持有 ``TimelineProjector``，指纹变化后重建时已知 key 的 seq 不变。
+    调用方(TUI/Web 均可)想要与本缓存的其它使用者(比如 Web 的
+    `/api/v1/timeline` 与 `/api/v1/work/tasks/{id}`)取到同一套 seq 时，把
+    同一个 `TimelineCache` 实例传给 `timeline_snapshot_view(..., cache=...)`
+    ——不要绕开缓存自己另建 `TimelineProjector`，那样重建时的批处理到达序
+    (审计条目在前、work 事件在后)与本缓存的历史累积到达序可能不同，同一个
+    key 会算出不同的 seq(T-022 实测复现过)。
+    """
+
+    def __init__(self) -> None:
+        self._entry: _TimelineCacheEntry | None = None
+        self._projector = TimelineProjector()
+        self._root: str | None = None
+
+    def reset(self) -> None:
+        """epoch 换代或工作区切换时丢掉投影与 seq 分配。"""
+        self._entry = None
+        self._projector = TimelineProjector()
+        self._root = None
+
+    def get(
+        self,
+        paths: BusPaths,
+        *,
+        work_events: tuple[WorkEvent, ...],
+        snapshot: WorkSnapshot | None,
+    ) -> tuple[list[dict[str, Any]], list[TimelineEntry]]:
+        root = str(paths.root)
+        if self._root is not None and self._root != root:
+            self.reset()
+        self._root = root
+        fingerprint = (
+            root,
+            log_fingerprint(paths),
+            work_fingerprint(snapshot),
+        )
+        cached = self._entry
+        if cached is not None and cached.fingerprint == fingerprint:
+            return cached.raw_entries, cached.entries
+        audit = AuditLog(paths)
+        raw_entries = audit.entries()
+        projected = history_from_entries(
+            raw_entries,
+            max(1, len(raw_entries) + len(work_events)),
+            work_events=work_events,
+            snapshot=snapshot,
+            projector=self._projector,
+        )
+        self._entry = _TimelineCacheEntry(fingerprint, raw_entries, projected)
+        return raw_entries, projected
+
+
 def timeline_snapshot_view(
     audit: AuditLog,
     limit: int = HISTORY_LIMIT,
@@ -380,24 +455,40 @@ def timeline_snapshot_view(
     work_events: tuple[WorkEvent, ...] = (),
     snapshot: WorkSnapshot | None = None,
     projector: TimelineProjector | None = None,
+    cache: TimelineCache | None = None,
 ) -> TimelineSnapshotView:
     """返回分页条目和由完整投影计算的分类计数。
 
-    `projector` 用法与 `history_from_entries` 一致(T-022)：传入调用方持有的
-    `TimelineProjector`(如 TUI 的 `ConsoleApp.timeline_projector`、Web 的
-    `TimelineCache` 内部实例)，同一 key 的 seq 与该调用方其他投影路径保持
-    一致；不传则各调用一次独立分配，不跨调用共享。
+    `projector`/`cache` 二选一，不可同传(T-022)：
+
+    - `projector`:调用方持有裸的 `TimelineProjector`(如 TUI 的
+      `ConsoleApp.timeline_projector`)，用法与 `history_from_entries` 一致。
+    - `cache`:调用方应该接入共享 `TimelineCache`(如 Web 侧任何想读取全量
+      时间线的新调用方)时传这个——本函数经 `cache.get()` 取数，与该缓存的
+      其它使用者(`/api/v1/timeline`、`/api/v1/work/tasks/{id}`)得到完全
+      相同的 seq。只给裸 `projector` 不够：如果那个 `projector` 不是缓存
+      内部实际持有的那一个,或者调用方自己重新跑一遍 `history_from_entries`
+      而不经 `cache.get()`,批处理到达序与缓存的历史累积到达序会不一致，
+      同一个 key 可能算出不同 seq(实测复现见 T-022 评审)。
+    - 都不传:本次调用独立分配，不与任何人共享，也不缓存。
     """
+    if projector is not None and cache is not None:
+        raise ValueError("projector 与 cache 二选一，不可同传")
     if limit <= 0:
         raise ValueError("limit 必须大于 0")
-    raw_entries = audit.entries()
-    all_entries = history_from_entries(
-        raw_entries,
-        max(1, len(raw_entries) + len(work_events)),
-        work_events=work_events,
-        snapshot=snapshot,
-        projector=projector,
-    )
+    if cache is not None:
+        raw_entries, all_entries = cache.get(
+            audit.paths, work_events=work_events, snapshot=snapshot
+        )
+    else:
+        raw_entries = audit.entries()
+        all_entries = history_from_entries(
+            raw_entries,
+            max(1, len(raw_entries) + len(work_events)),
+            work_events=work_events,
+            snapshot=snapshot,
+            projector=projector,
+        )
     counts = {"all": len(all_entries), **{str(category): 0 for category in TimelineCategory}}
     for entry in all_entries:
         counts[str(entry.resolved_category)] += 1

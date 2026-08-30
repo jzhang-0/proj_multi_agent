@@ -43,6 +43,7 @@ from control.tasks import (
 )
 from control.terminal import terminal_input_rows
 from control.timeline import (
+    TimelineCache,
     TimelineCategory,
     TimelineEntry,
     TimelineProjector,
@@ -82,6 +83,7 @@ __all__ = [
     "TaskListItemView",
     "TaskSummaryView",
     "TargetNotFound",
+    "TimelineCache",
     "TimelineCategory",
     "TimelineEntry",
     "TimelineProjector",

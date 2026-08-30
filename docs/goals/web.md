@@ -60,6 +60,7 @@
   - 前置:WEB-002、WEB-005。
 
 - [ ] **WEB-008** — 成员管理、生命周期与完整接管：实现「成员打断」「成员终止」「成员重启」「全屏接管 / attach」「`/up`」「`/down`」「`/restart`」「`/adopt`」「`/mute`」「`/member add/rm/list`」。危险动作二次确认与审计；完整接管为 PTY bridge 固定 `tmux attach-session -t =<会话>`，收口在 `tmuxctl`，断线 detach+关 PTY+释放租约+审计；`/adopt` 明示进程级临时状态；`/mute` 走 Hub 策略。真实 tmux + 浏览器验证。
+  - 处理登记:Sol，2026-08-30 21:10 +0800，分支 `web-008-sol`（T-019；从最新 main 独立实现，先下沉确认令牌/生命周期/PTY 结束路径，再接 Preact 成员控制与真实 tmux/浏览器验证）。
   - 前置:WEB-007。
 
 - [x] **WEB-010** — 时间线 seq 按到达顺序分配：当前 `control/timeline.py` 按 `at` 排序后位置赋 seq，与 api-protocol §4.8「按进入顺序分配的单调整数」不等价；bus 审计 ts 为秒粒度，同秒内消息与任务事件重排是常态，导致 WEB-004 delta 产出 update+append 错位、只能靠 resync 兜底。改为按到达顺序分配单调 seq(不落盘：进程启动时按账本+审计到达顺序重建，每个 epoch 内自洽即可，不建第二套状态库)，保持单一 seq 空间、窗口不重编号(T-003 已验收语义)，TUI 展示顺序不变；定死两条并写进 api-protocol.md §4.8(现 :241)与 §5.4：(1) seq 一经分配对该 key 永久不变，只按记录进入服务端的顺序递增，不随重排改变；(2) seq 不再等于时间顺序，前端排序一律用 `at`，不得拿 seq 当时序；并说明 §4.9 未读数(head_seq − last_seen_seq)以此为前提。WEB-004 的 seq 重排 resync 路径保留为防御。以 test_control_plane/test_console_timeline/test_web_stream 回归。

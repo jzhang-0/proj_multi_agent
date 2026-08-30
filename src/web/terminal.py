@@ -346,6 +346,12 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
 
     async def reader_loop() -> None:
         pending_text: list[str] = []
+
+        async def invalid_request(message: str) -> None:
+            await websocket.send_json(
+                {"type": "error", "code": "invalid-request", "message": message}
+            )
+
         while True:
             timeout = LIVE_INPUT_MERGE_WINDOW if pending_text else None
             try:
@@ -360,7 +366,7 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
                 await handle_scroll(raw)
                 continue
 
-            if msg_type == "lease":
+            if msg_type == "lease" and raw.get("action") == "acquire":
                 await flush_text(pending_text)
                 await handle_lease(raw)
                 continue
@@ -386,6 +392,10 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
                 await handle_key(raw)
             elif msg_type == "input" and raw.get("kind") == "submit":
                 await handle_submit()
+            elif msg_type == "input":
+                await invalid_request(f"未知 input kind: {raw.get('kind')!r}")
+            else:
+                await invalid_request(f"未知帧类型: {msg_type!r}")
 
     try:
         await reader_loop()

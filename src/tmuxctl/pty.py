@@ -11,6 +11,7 @@ import select
 import signal
 import struct
 import subprocess
+import sys
 import termios
 import time
 from collections.abc import Mapping
@@ -126,22 +127,39 @@ class WindowSizeGuard:
     """
 
     def __init__(self) -> None:
-        self._pid: int | None = None
+        self._process: subprocess.Popen[bytes] | None = None
         self._fd: int | None = None
         self._tracked: set[str] = set()
         self._closed = False
 
     def _ensure_started(self) -> None:
-        if self._pid is not None:
+        if self._process is not None:
             return
         read_fd, write_fd = os.pipe()
-        pid = os.fork()
-        if pid == 0:  # pragma: no cover - exercised by process-level integration test
-            os.close(write_fd)
-            self._guard_main(read_fd)
-            os._exit(0)
+        # uvicorn 的 lifespan 起了线程与 asyncio 子进程后再 ``fork``，子进程
+        # 继续执行 Python/``subprocess.run`` 在 macOS 上不可靠；实测 Web 父
+        # 进程 SIGKILL 后旧实现的 guard 会退出却不执行恢复。另外 fork 会把
+        # uvicorn 的监听 socket 一并继承。这里 exec 一个最小 helper，只传读
+        # 管道；``close_fds`` 保证 Web 的 cookie socket/PTY/监听 fd 都不过去。
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; from tmuxctl.pty import WindowSizeGuard; "
+                    "WindowSizeGuard._guard_main(int(sys.argv[1]))"
+                ),
+                str(read_fd),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            pass_fds=(read_fd,),
+            start_new_session=True,
+        )
         os.close(read_fd)
-        self._pid = pid
+        self._process = process
         self._fd = write_fd
 
     def track(self, tmux: AttachTmux, target: str, *, identity: str = "") -> None:
@@ -163,11 +181,11 @@ class WindowSizeGuard:
         if self._closed:
             return
         self._closed = True
-        if self._fd is None or self._pid is None:
+        if self._fd is None or self._process is None:
             return
         os.close(self._fd)
-        with _suppress_child_missing():
-            os.waitpid(self._pid, 0)
+        with contextlib.suppress(ChildProcessError):
+            self._process.wait()
 
     def _send(self, payload: dict[str, object]) -> None:
         raw = (json.dumps(payload, ensure_ascii=True) + "\n").encode("ascii")
@@ -199,11 +217,3 @@ class WindowSizeGuard:
                         continue
         for argv in tracked.values():
             subprocess.run(argv, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-class _suppress_child_missing:
-    def __enter__(self):
-        return None
-
-    def __exit__(self, kind, value, traceback):
-        return kind is ChildProcessError

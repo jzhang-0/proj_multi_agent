@@ -5,9 +5,11 @@ from __future__ import annotations
 import os
 import shutil
 import signal
+import socket
 import time
 import uuid
 from collections.abc import Iterator
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -269,6 +271,10 @@ def test_window_size_guard_recovers_manual_option_after_owner_sigkill(
     isolated_tmux: Tmux,
 ) -> None:
     isolated_tmux.new_session("guarded", command="cat")
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    listener_address = listener.getsockname()
     ready_r, ready_w = os.pipe()
     owner = os.fork()
     if owner == 0:  # pragma: no cover - child deliberately receives SIGKILL
@@ -276,17 +282,30 @@ def test_window_size_guard_recovers_manual_option_after_owner_sigkill(
         guard = WindowSizeGuard()
         guard.track(isolated_tmux, "guarded", identity="web-process")
         isolated_tmux.fit_window("guarded", 93, 27)
+        # helper 必须只继承 guard 管道，不能像旧的延迟 fork 实现一样把
+        # uvicorn 监听 socket 也留在崩溃守护进程里。
+        listener.close()
         os.write(ready_w, b"1")
         os.close(ready_w)
         signal.pause()
         os._exit(0)
 
+    listener.close()
     os.close(ready_w)
     assert os.read(ready_r, 1) == b"1"
     os.close(ready_r)
-    assert isolated_tmux.show_window_option("guarded", "window-size") == "manual"
-    os.kill(owner, signal.SIGKILL)
-    os.waitpid(owner, 0)
+    try:
+        probe = socket.socket()
+        try:
+            probe.bind(listener_address)
+        finally:
+            probe.close()
+        assert isolated_tmux.show_window_option("guarded", "window-size") == "manual"
+    finally:
+        with suppress(ProcessLookupError):
+            os.kill(owner, signal.SIGKILL)
+        with suppress(ChildProcessError):
+            os.waitpid(owner, 0)
 
     deadline = time.time() + 3
     while time.time() < deadline:

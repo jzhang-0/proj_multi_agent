@@ -272,3 +272,20 @@ def test_mirror_write_upgrade_requires_fresh_direct_ticket_and_defaults_closed(
             with pytest.raises(WebSocketDisconnect) as default_closed:
                 unprivileged.receive_json()
         assert default_closed.value.code == 4401
+
+        with _ws(client, session) as fake_lease_action:
+            fake_lease_action.send_json({"type": "lease", "action": "release"})
+            with pytest.raises(WebSocketDisconnect) as not_an_upgrade:
+                fake_lease_action.receive_json()
+        assert not_an_upgrade.value.code == 4401
+
+        with _ws(client, session) as elevated:
+            elevated.send_json(_acquire(client, session))
+            _wait_for(elevated, "lease_acquired")
+            elevated.send_json({"type": "future-write-frame", "payload": "ignored-before"})
+            error = _wait_for(elevated, "error")
+        assert error == {
+            "type": "error",
+            "code": "invalid-request",
+            "message": "未知帧类型: 'future-write-frame'",
+        }

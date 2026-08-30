@@ -60,9 +60,18 @@ Web 场景下 pid 是 **web 服务端进程**的 pid，浏览器崩溃或断网�
 
 若实现成"服务端起个 timer 帮所有已发放租约续期"，掉线的 tab 会永久占住成员，别人只能 `force=True` 抢占——功能上还能救，但"崩溃/断线自动释放"这条 WEB-002 验收就是假的。
 
-### 3.2 抢占
+### 3.2 提权票据与抢占
 
-- 客户端请求 `{"type":"lease","action":"acquire","force":false}`；被占时服务端回 `{"type":"lease_denied","holder":{"owner":..., "host":..., "acquired_at":...}}`，前端提示"当前由 X 控制"，并提供"强制接管"按钮 → 重发 `force:true`。
+- 纯镜像连接不需要票据；客户端要提权前，先向受 `X-Amux-Session` 双提交头保护的
+  `POST /api/v1/members/{member}/direct` 申请一次性 `direct_token`，再请求
+  `{"type":"lease","action":"acquire","force":false,"direct_token":"..."}`。票据由
+  CSPRNG 生成，以单调时钟计算不超过 30 秒的时效，绑定认证 actor、成员与
+  `action=direct`，在取得租约前原子消费。租约释放、被抢占或 `lease_lost` 后再次提权
+  必须申请新票；attach 票据不能跨通道使用。
+- 提权前客户端只允许发送 `scroll`。`input`、`resize`、`focus_input`、非 `acquire` 的
+  lease 帧及未来未知帧都按写处理并 `close(4401, "unauthorized")`。提权后收到未知帧
+  返回结构化 `{"type":"error","code":"invalid-request","message":"..."}`，不静默丢弃。
+- 被占时服务端回 `{"type":"lease_denied","holder":{"owner":..., "host":..., "acquired_at":...}}`，前端提示"当前由 X 控制"，并提供"强制接管"按钮 → 申请新票后重发 `force:true`。
 - **抢占永远是显式的**，服务端不得因为"新客户端更活跃"自动 force。
 - 抢占成功后，原持有者的下一次 `heartbeat()` 返回 `False` → 服务端立刻向其推送 `{"type":"lease_lost"}`，前端退出直连态、镜像降级为只读。原持有者若在 attach 中，则按 §8.4 断开 PTY。
 
@@ -239,7 +248,16 @@ F8 的 `MemberController.takeover()` 把**本机 TTY** 交给 `tmux attach`，�
 
 `WS /api/v1/terminal/{member}/attach`
 
-建立前依次检查：会话 cookie → 交互租约(`acquire`，被占则 `LeaseDenied` → 提示抢占) → `Tmux.has_session(session)`。任一不过即拒绝升级，不创建任何进程。
+浏览器先向受 `X-Amux-Session` 双提交头保护的
+`POST /api/v1/members/{member}/attach` 申请一次性 `attach_token`。WS 握手仍完整校验
+cookie、`Host`、`Origin`；建连后的首个客户端帧必须是
+`{"type":"attach","attach_token":"...","force":false,"cols":120,"rows":40}`。服务端在
+5 秒首帧超时内原子消费票据；票据以单调时钟计算不超过 30 秒的时效，绑定认证 actor、
+成员与 `action=attach`，不能拿 `direct_token` 代替。非法、过期、错成员、跨 action 或重复
+消费一律 `close(4401, "unauthorized")`，票据只在帧中出现，不进 URL。
+
+票据消费成功后依次检查：目标会话存在 → 交互租约 `acquire`(被占则 `LeaseDenied` →
+提示抢占并申请**新票据**) → 启动 PTY。任一不过即拒绝升级，不创建 PTY 进程。
 
 ### 8.2 启动序列
 
@@ -289,6 +307,13 @@ attach 期间，同一成员的 mirror 直连态自动降级为只读——两�
 | 关闭 | `POST /api/v1/members/{name}/down` | **是** | `Lifecycle.down(name)` |
 | 收编 | `POST /api/v1/members/adopt` | 否 | `SessionAdopter` |
 | 静音 | `POST /api/v1/members/{name}/mute` | 否 | `MutePolicy` / Hub |
+| 加入预设 | `POST /api/v1/members` | 否 | `workspace.members.add_member()` |
+| 移除名册成员 | `DELETE /api/v1/members/{name}` | 否(不关闭会话) | `workspace.members.remove_member()` |
+
+`GET /api/v1/member-management` 汇总名册成员、进程级收编成员、可收编 tmux 会话与固定
+预设；不接受任意 runner/命令。以上所有写端点(包括确认和票据签发)统一挂
+`require_write_session`，缺失或不匹配 `X-Amux-Session` 必须在解析业务请求体前返回
+`unauthorized/401`。actor 恒取认证上下文，客户端自报 `actor` 直接拒绝。
 
 ### 9.1 二次确认必须由服务端强制
 
@@ -341,7 +366,13 @@ WEB-007/008 是"高"难度项，测试通过不能替代看图([Goal 总索引](
 2. **capture 帧与真实终端有细微差异**。`capture-pane -e` 输出的是 SGR 着色的当前网格，不含 DECSET 等终端模式；vim 这类全屏程序在 xterm 里重放可能与原终端有出入。attach 通道无此问题。**列为已知限制**，不是缺陷——镜像的定位本就是"看"，要精确交互就用完整接管。
 3. **ANSI 剥离等价性**是点击直连正确性的单点。§6.4 已给出钉子测试写法；若两端规则漂移，症状是"看得见输入框但点不进去"，很难从现象反推原因。
 4. **PTY bridge 的进程回收**。忘记 `waitpid` 会攒僵尸进程，长时间运行的 web 服务端上会累积。§8.4 第 2 步不可省。
-5. **`fit_window` 把 `window-size` 设为 `manual` 是全局副作用**，不会因为 web 进程退出而自动恢复。若 web 崩溃时未走到 `release_window_size`，成员窗口会被永久钉在某个尺寸，TUI 之后看到的画面也不对。建议 WEB-007 在成员采集循环退出与进程退出路径上都调用 `release_window_size`，并在 §11 的验证里加一条"kill -9 web 进程后 TUI 画面尺寸恢复正常"。
+5. **`fit_window` 把 `window-size` 设为 `manual` 是全局副作用**。WEB-008 已用独立
+   `WindowSizeGuard` helper 处理崩溃路径：helper 由 `subprocess.Popen` + `close_fds`
+   启动，只继承一条只读管道；Web 父进程正常释放时撤销跟踪，SIGKILL 时写端消失触发
+   helper 对仍跟踪窗口执行固定 `release_window_size_argv()`。不得改回多线程 ASGI 进程内
+   延迟 `fork()` 后继续执行 Python——macOS 真机复现过 helper 退出却未恢复，且会继承
+   uvicorn 监听 socket。验证必须保留"浏览器直连令 `window-size=manual` → kill -9 Web
+   父进程 → option 未设置、成员 session 存活 → TUI 重新适配并捕获原画面"这一整条。
 6. **`terminal_input_rows` 只认 Claude 双横线 composer 与 Codex 底部 `›`**。名册里出现第三类 CLI 时，Web 的点击直连会静默失效(返回空元组，点哪都不进直连态)。这不是本文引入的限制，但 Web 上表现为"功能好像坏了"，界面应给出可见提示而不是无反应。
 7. **TUI 与 Web 同看一个成员时是两条独立采集回路**。两者是独立进程(§4.3)，各自按自己的节奏轮询同一个 pane：Web 侧实测约 9.5 Hz(`min_interval=0.1`，差值是每轮 `to_thread` 与处理开销)，TUI 侧是 `console/app.py` 的 `MIRROR_INTERVAL=0.08`，叠加频率是两者之和。**列为已知限制，判定不做**(WEB-011，2026-08-30)：跨进程共享需要 `control/lease.py` 那样的文件级协调，会引入新的失效模式(采集持有者进程崩溃后，另一端停在旧帧直到接管)，而 `capture-pane` 本身廉价，且只有"同一成员同时被 TUI 与浏览器盯着"时才叠加，这个组合并不常见。若将来实测表明它确有代价，再单独立 Goal 做 IPC 协调。
 

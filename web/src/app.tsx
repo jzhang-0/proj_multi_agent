@@ -7,8 +7,10 @@ import {
   type Fetcher,
 } from "./api";
 import { formatTime, memberColor, minuteGroup, relativeActivity, vocabularyItem } from "./format";
+import { applyTimelineDelta, connectEventStream, type StreamStatus } from "./stream";
 import type {
   BootstrapSnapshot,
+  Fault,
   RouteState,
   TaskDetailSnapshot,
   TimelineCategory,
@@ -57,6 +59,11 @@ function readLastSeen(): { epoch: string; seq: number } | null {
 
 function writeLastSeen(epoch: string, seq: number): void {
   localStorage.setItem(LAST_SEEN_KEY, JSON.stringify({ epoch, seq }));
+}
+
+function onNextFrame(callback: () => void): void {
+  if (window.requestAnimationFrame) window.requestAnimationFrame(callback);
+  else window.setTimeout(callback, 0);
 }
 
 function Glyph({ value }: { value: string }) {
@@ -134,7 +141,7 @@ function Sidebar({
                   {member.name.slice(0, 1).toUpperCase()}
                 </span>
                 <div class="member-card__main">
-                  <strong>{member.name}</strong>
+                  <strong>{member.name}{member.source === "adopted" ? <em class="source-badge">临时</em> : null}</strong>
                   <small>{relativeActivity(member.silent_for, snapshot.members.snapshot_at, nowMs)}</small>
                 </div>
                 <span class={`member-state member-state--${member.state}`}>
@@ -234,7 +241,7 @@ function TaskView({
         <section class="panel">
           <div class="panel-heading"><h3>关联沟通</h3><span>{detail.communications.length}</span></div>
           <div class="communication-list">
-            {detail.communications.map((item) => (
+            {[...detail.communications].sort((left, right) => left.at - right.at).map((item) => (
               <article key={item.timeline_seq}>
                 <span class="mini-avatar" style={{ background: memberColor(item.sender) }} />
                 <div><strong>{item.sender} → {item.to}</strong><p>{item.text}</p></div>
@@ -273,7 +280,9 @@ function TaskView({
 function mergeTimeline(current: TimelineEntry[], incoming: TimelineEntry[]): TimelineEntry[] {
   const byKey = new Map(current.map((entry) => [entry.key, entry]));
   for (const entry of incoming) byKey.set(entry.key, entry);
-  return [...byKey.values()].sort((left, right) => left.seq - right.seq);
+  return [...byKey.values()].sort(
+    (left, right) => left.at - right.at || left.key.localeCompare(right.key),
+  );
 }
 
 function TimelineView({
@@ -290,19 +299,47 @@ function TimelineView({
   const [category, setCategory] = useState<TimelineCategory>("all");
   const [page, setPage] = useState(snapshot);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [loadingCategory, setLoadingCategory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToLatest = useRef(true);
 
   useEffect(() => {
-    setPage((current) => ({ ...snapshot, entries: mergeTimeline(current.entries, snapshot.entries) }));
+    setPage((current) => {
+      const incoming = category === "all"
+        ? snapshot.entries
+        : snapshot.entries.filter((entry) => entry.category === category);
+      if (current.epoch !== snapshot.epoch) return { ...snapshot, entries: incoming };
+      if (category === "all") {
+        return { ...snapshot, entries: mergeTimeline(current.entries, incoming) };
+      }
+      return {
+        ...current,
+        epoch: snapshot.epoch,
+        revision: snapshot.revision,
+        entries: mergeTimeline(current.entries, incoming),
+        category_counts: snapshot.category_counts,
+        head_seq: snapshot.head_seq,
+      };
+    });
     onSeen(snapshot.head_seq);
-  }, [snapshot, onSeen]);
+  }, [category, snapshot, onSeen]);
 
   const filtered = category === "all"
     ? page.entries
     : page.entries.filter((entry) => entry.category === category);
 
+  useEffect(() => {
+    if (!stickToLatest.current) return;
+    onNextFrame(() => {
+      const surface = scrollRef.current;
+      if (surface) surface.scrollTop = surface.scrollHeight;
+    });
+  }, [filtered.length]);
+
   async function loadOlder() {
     if (page.oldest_seq === null) return;
+    const surface = scrollRef.current;
+    const previousHeight = surface?.scrollHeight ?? 0;
     setLoadingOlder(true);
     try {
       const older = await fetchTimeline(category, page.oldest_seq, fetcher);
@@ -311,28 +348,64 @@ function TimelineView({
         entries: mergeTimeline(older.entries, current.entries),
         head_seq: current.head_seq,
       }));
+      onNextFrame(() => {
+        if (surface) surface.scrollTop += surface.scrollHeight - previousHeight;
+      });
     } finally {
       setLoadingOlder(false);
     }
+  }
+
+  async function chooseCategory(value: TimelineCategory) {
+    setCategory(value);
+    stickToLatest.current = true;
+    setLoadingCategory(true);
+    try {
+      setPage(await fetchTimeline(value, undefined, fetcher));
+    } catch {
+      // Keep the locally filtered current page; reconnect/resync will retry.
+    } finally {
+      setLoadingCategory(false);
+    }
+  }
+
+  function scrollLatest() {
+    const surface = scrollRef.current;
+    stickToLatest.current = true;
+    surface?.scrollTo({ top: surface.scrollHeight, behavior: "smooth" });
   }
 
   return (
     <div class="timeline-view">
       <header class="content-header">
         <div><p class="eyebrow">TEAM / CONVERSATION</p><h2>工作对话时间线</h2></div>
-        <button class="quiet-button" onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })}>回到最新 ↓</button>
+        <button class="quiet-button" onClick={scrollLatest}>回到最新 ↓</button>
       </header>
       <div class="filter-bar" role="toolbar" aria-label="时间线分类筛选">
         {CATEGORY_ORDER.map((value) => {
-          const item = vocabularyItem(vocabulary?.timeline_category, value);
+          const item = value === "all"
+            ? { label: "全部" }
+            : vocabularyItem(vocabulary?.timeline_category, value);
           return (
-            <button class={category === value ? "is-active" : ""} onClick={() => setCategory(value)} key={value}>
+            <button
+              class={category === value ? "is-active" : ""}
+              disabled={loadingCategory}
+              onClick={() => void chooseCategory(value)}
+              key={value}
+            >
               {item.label}<span>{page.category_counts[value] ?? 0}</span>
             </button>
           );
         })}
       </div>
-      <div class="timeline-scroll" ref={scrollRef}>
+      <div
+        class="timeline-scroll"
+        ref={scrollRef}
+        onScroll={(event) => {
+          const surface = event.currentTarget;
+          stickToLatest.current = surface.scrollHeight - surface.scrollTop - surface.clientHeight < 80;
+        }}
+      >
         {page.has_more ? <button class="load-older" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? "读取中…" : "载入更早记录"}</button> : null}
         <div class="timeline-list">
           {filtered.map((entry, index) => {
@@ -349,7 +422,11 @@ function TimelineView({
                     <p>{entry.text}</p>
                     {entry.reason ? <small>{entry.reason}</small> : null}
                   </div>
-                  <div class="timeline-entry__meta"><span>#{entry.seq}</span><small class={outcome.dim ? "is-dim" : ""}>{outcome.glyph} {outcome.label}</small></div>
+                  <div class="timeline-entry__meta">
+                    <span>#{entry.seq}</span>
+                    <small class={outcome.dim ? "is-dim" : ""}>{outcome.glyph} {outcome.label}</small>
+                    {entry.attachment_count ? <small>附件 {entry.attachment_count}</small> : null}
+                  </div>
                 </article>
               </div>
             );
@@ -423,6 +500,7 @@ export function App({
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(Date.now());
   const [exited, setExited] = useState(false);
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>("offline");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const saved = localStorage.getItem(THEME_KEY);
     if (saved === "light" || saved === "dark") return saved;
@@ -432,11 +510,16 @@ export function App({
   const selectedTask = route.view === "task"
     ? route.taskId ?? snapshot?.work.selected_default ?? null
     : detail?.task.id ?? snapshot?.work.selected_default ?? null;
+  const snapshotRef = useRef(snapshot);
+  const selectedTaskRef = useRef(selectedTask);
+  const streamConnectedRef = useRef(false);
 
   const [lastSeen, setLastSeen] = useState(() => {
     const stored = readLastSeen();
     if (!initialBootstrap) return stored?.seq ?? 0;
-    return stored?.epoch === initialBootstrap.epoch ? stored.seq : initialBootstrap.timeline.head_seq;
+    if (stored?.epoch === initialBootstrap.epoch) return stored.seq;
+    writeLastSeen(initialBootstrap.epoch, initialBootstrap.timeline.head_seq);
+    return initialBootstrap.timeline.head_seq;
   });
 
   const navigate = (next: RouteState, replace = false) => {
@@ -449,6 +532,11 @@ export function App({
     document.documentElement.dataset.theme = theme;
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+    selectedTaskRef.current = selectedTask;
+  }, [selectedTask, snapshot]);
 
   useEffect(() => {
     const onPopState = () => setRoute(routeFromPath());
@@ -480,30 +568,120 @@ export function App({
   }, [route.view, selectedTask]);
 
   useEffect(() => {
+    if (exited) return;
     let cancelled = false;
     const refresh = async () => {
       try {
         const next = await fetchBootstrap(fetcher);
         if (cancelled) return;
         setSnapshot((current) => {
-          if (current && current.epoch !== next.epoch) {
+          const stored = readLastSeen();
+          if (current?.epoch !== next.epoch && stored?.epoch !== next.epoch) {
             setLastSeen(next.timeline.head_seq);
             writeLastSeen(next.epoch, next.timeline.head_seq);
           }
+          snapshotRef.current = next;
           return next;
         });
         setError(null);
       } catch (caught) {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
+        if (!cancelled && snapshotRef.current === null) {
+          setError(caught instanceof Error ? caught.message : String(caught));
+        }
       }
     };
     if (!initialBootstrap) void refresh();
-    const timer = pollMs > 0 ? window.setInterval(refresh, pollMs) : undefined;
+    const timer = pollMs > 0 ? window.setInterval(() => {
+      if (!streamConnectedRef.current) void refresh();
+    }, pollMs) : undefined;
     return () => {
       cancelled = true;
       if (timer !== undefined) window.clearInterval(timer);
     };
-  }, [fetcher, initialBootstrap, pollMs]);
+  }, [exited, fetcher, initialBootstrap, pollMs]);
+
+  useEffect(() => {
+    if (exited || !snapshot?.session.capabilities.stream) return;
+
+    const acceptSnapshot = (next: BootstrapSnapshot) => {
+      const previous = snapshotRef.current;
+      if (previous?.epoch !== next.epoch) {
+        setLastSeen(next.timeline.head_seq);
+        writeLastSeen(next.epoch, next.timeline.head_seq);
+      }
+      snapshotRef.current = next;
+      setSnapshot(next);
+    };
+    const reload = async () => {
+      const next = await fetchBootstrap(fetcher);
+      acceptSnapshot(next);
+      const taskId = selectedTaskRef.current;
+      if (taskId) {
+        try {
+          const nextDetail = await fetchTaskDetail(taskId, fetcher);
+          setDetail(nextDetail);
+          setError(null);
+        } catch (caught) {
+          setError(caught instanceof Error ? caught.message : String(caught));
+        }
+      }
+      return { epoch: next.epoch, revisions: next.revisions };
+    };
+    const disconnect = connectEventStream({
+      current: () => {
+        const current = snapshotRef.current;
+        return current
+          ? { epoch: current.epoch, revisions: current.revisions }
+          : { epoch: "", revisions: {} };
+      },
+      resync: reload,
+      delta: async (frame) => {
+        if (frame.domain === "work") return reload();
+        if (frame.domain === "timeline") {
+          setSnapshot((current) => {
+            if (!current) return current;
+            const next = {
+              ...current,
+              revisions: { ...current.revisions, timeline: frame.revision ?? current.revisions.timeline },
+              timeline: applyTimelineDelta(current.timeline, frame),
+            };
+            snapshotRef.current = next;
+            return next;
+          });
+          return;
+        }
+        if (frame.domain === "health") {
+          setSnapshot((current) => {
+            if (!current) return current;
+            const faults = new Map(current.health.faults.map((fault) => [fault.key, fault]));
+            for (const operation of frame.ops ?? []) {
+              const fault = operation.fault as Fault | undefined;
+              if (!fault) continue;
+              if (operation.op === "raise") faults.set(fault.key, fault);
+              if (operation.op === "clear") faults.delete(fault.key);
+            }
+            const next = {
+              ...current,
+              revisions: { ...current.revisions, health: frame.revision ?? current.revisions.health },
+              health: {
+                ...current.health,
+                revision: frame.revision ?? current.health.revision,
+                degraded: faults.size > 0,
+                faults: [...faults.values()],
+              },
+            };
+            snapshotRef.current = next;
+            return next;
+          });
+        }
+      },
+      status: (status) => {
+        streamConnectedRef.current = status === "connected";
+        setStreamStatus(status);
+      },
+    });
+    return disconnect;
+  }, [exited, fetcher, snapshot?.session.capabilities.stream]);
 
   useEffect(() => {
     if (initialVocabulary) return;
@@ -515,6 +693,7 @@ export function App({
   }, [fetcher, initialVocabulary]);
 
   useEffect(() => {
+    if (exited) return;
     if (!selectedTask) {
       setDetail(null);
       return;
@@ -536,12 +715,14 @@ export function App({
       }
     };
     void refresh();
-    const timer = pollMs > 0 ? window.setInterval(refresh, pollMs) : undefined;
+    const timer = pollMs > 0 ? window.setInterval(() => {
+      if (!streamConnectedRef.current) void refresh();
+    }, pollMs) : undefined;
     return () => {
       cancelled = true;
       if (timer !== undefined) window.clearInterval(timer);
     };
-  }, [detail?.task.id, fetcher, initialTaskDetail, pollMs, selectedTask]);
+  }, [detail?.task.id, exited, fetcher, initialTaskDetail, pollMs, selectedTask]);
 
   const markSeen = useMemo(() => (seq: number) => {
     if (!snapshot) return;
@@ -580,7 +761,7 @@ export function App({
           <button class={route.view === "workspace" ? "is-active" : ""} onClick={() => navigate({ view: "workspace" })}>工作区</button>
         </nav>
         <div class="header-actions">
-          <span class="live-indicator"><i /> snapshot · r{snapshot.revisions.work ?? 0}</span>
+          <span class={`live-indicator live-indicator--${streamStatus}`}><i /> {snapshot.session.capabilities.stream ? streamStatus : "snapshot"} · r{snapshot.revisions.work ?? 0}</span>
           <button aria-label="切换深浅主题" title="切换主题 (T)" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>{theme === "dark" ? "☼" : "◐"}</button>
           <button aria-label="打开帮助" title="帮助 (?)" onClick={() => navigate({ view: "help" })}>?</button>
           <button class="exit-button" onClick={() => setExited(true)}>退出</button>

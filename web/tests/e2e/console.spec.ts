@@ -16,6 +16,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.clear();
     localStorage.setItem("amux.web.last-seen", JSON.stringify({ epoch: "4f4b5d2a88d31001", seq: 38 }));
+    localStorage.setItem("amux.web.theme", "dark");
   });
 });
 
@@ -32,9 +33,9 @@ test("task board exposes the complete read-only work surface", async ({ page }) 
 test("timeline filters, workspace, help and safe exit form a navigation loop", async ({ page }) => {
   await page.goto("/timeline");
   await expect(page.getByRole("heading", { name: "工作对话时间线" })).toBeVisible();
+  await page.screenshot({ path: baseline("web-005-timeline-1440x1000.png"), fullPage: true });
   await page.getByRole("button", { name: /控制事件/ }).click();
   await expect(page.getByText("tmux session missing")).toBeVisible();
-  await page.screenshot({ path: baseline("web-005-timeline-1440x1000.png"), fullPage: true });
 
   await page.getByRole("button", { name: "工作区", exact: true }).click();
   await expect(page.getByRole("heading", { name: "proj-multi-agent" })).toBeVisible();

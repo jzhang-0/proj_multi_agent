@@ -7,6 +7,14 @@ import { bootstrapFixture, taskDetailFixture, vocabularyFixture } from "../fixtu
 
 function mount() {
   const root = document.createElement("div");
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    const body = path.includes("/timeline") ? bootstrapFixture.timeline : taskDetailFixture;
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
   document.body.append(root);
   act(() => {
     render(
@@ -16,6 +24,7 @@ function mount() {
         initialTaskDetail={taskDetailFixture}
         initialRoute={{ view: "task", taskId: "T-014" }}
         pollMs={0}
+        fetcher={fetcher}
       />,
       root,
     );
@@ -29,7 +38,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  act(() => render(null, document.body.firstElementChild as Element));
+  const root = document.body.firstElementChild;
+  if (root) act(() => render(null, root));
   document.body.innerHTML = "";
   vi.restoreAllMocks();
 });
@@ -39,7 +49,7 @@ describe("snapshot console", () => {
     const root = mount();
 
     expect(root.querySelector("h2")?.textContent).toContain("WEB-005");
-    expect(root.textContent).toContain("Fable Core");
+    expect(root.textContent).toContain("任务态势");
     expect(root.textContent).toContain("tests/baseline/web-005-task-board-1440x1000.png");
     expect(root.textContent).toContain("不可覆盖事件流");
     expect(root.textContent).toContain("关联沟通");
@@ -60,17 +70,35 @@ describe("snapshot console", () => {
 
     const control = [...root.querySelectorAll<HTMLButtonElement>(".filter-bar button")]
       .find((button) => button.textContent?.includes("控制事件"));
-    await act(async () => control?.click());
+    await act(async () => {
+      control?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
     expect(root.querySelectorAll(".timeline-entry")).toHaveLength(1);
     expect(root.textContent).toContain("tmux session missing");
   });
 
+  it("resets last_seen_seq to the new head when the stored epoch is stale", () => {
+    localStorage.setItem("amux.web.last-seen", JSON.stringify({ epoch: "old-epoch", seq: 1 }));
+    const root = mount();
+
+    expect(root.querySelector(".unread-badge")?.textContent).toBe("0");
+    expect(JSON.parse(localStorage.getItem("amux.web.last-seen") ?? "{}")).toEqual({
+      epoch: bootstrapFixture.epoch,
+      seq: bootstrapFixture.timeline.head_seq,
+    });
+  });
+
   it("supports keyboard help, theme, and safe local exit", async () => {
     const root = mount();
-    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "?" })));
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "?" }));
+    });
     expect(root.querySelector("h2")?.textContent).toBe("快捷导航");
 
-    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "t" })));
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "t" }));
+    });
     expect(document.documentElement.dataset.theme).toBe("light");
 
     const exit = [...root.querySelectorAll<HTMLButtonElement>("button")]
@@ -82,7 +110,7 @@ describe("snapshot console", () => {
 
 describe("presentation protocol rules", () => {
   it("uses stable crc32 colors and raw ts minute groups", () => {
-    expect(crc32("sol")).toBe(crc32("sol"));
+    expect(crc32("sol")).toBe(261575936);
     expect(memberColor("sol")).toBe(memberColor("sol"));
     expect(memberColor("sol")).toMatch(/^var\(--member-[0-7]\)$/);
     expect(minuteGroup("2026-08-30T18:44:59Z")).toBe("2026-08-30 18:44");

@@ -5,7 +5,7 @@
 ## 已定的设计(2026-08-30 human 拍板)
 
 1. Web 视图目标是对齐 TUI 现有全部功能；TUI 保留并与 Web 并列。手机 UI 暂缓，现有 gateway 手机群聊页继续承担低权限远程群聊，不升级为控制台。
-2. 技术路线 B：同仓库、同 wheel 的 FastAPI/ASGI 后端 + TypeScript SPA。TypeScript/Node 只作构建依赖，编译产物打进 wheel；运行时不依赖 Node、源码路径或 CDN。WEB-005 定案 **Preact + TypeScript + esbuild**（沿用 WEB-011 已锁定的轻量脚手架）。
+2. 技术路线 B：同仓库、同 wheel 的 FastAPI/ASGI 后端 + TypeScript SPA。TypeScript/Node 只作构建依赖，编译产物打进 wheel；运行时不依赖 Node、源码路径或 CDN。WEB-005 定案 **Preact + TypeScript + esbuild**（沿用 T-011 已锁定的轻量脚手架）。
 3. FastAPI/ASGI server 等 Web 依赖**默认随 `amux-team` 安装**，不做 extra。
 4. 首版只监听 `127.0.0.1`；局域网/公网访问、TLS、登录另立 Goal。
 5. 多端控制：多人可看；每成员同一时间仅一个交互租约(resize/直连/接管)，显式抢占；每工作区仅一个 Hub 投递者。

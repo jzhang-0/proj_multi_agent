@@ -9,6 +9,7 @@ from control.lease import (
     LeaseDenied,
     LeaseState,
     MemberLeaseManager,
+    leases_dir,
     leases_root,
 )
 from control.members import (
@@ -73,6 +74,7 @@ __all__ = [
     "Vocabulary",
     "WorkBoardView",
     "history",
+    "leases_dir",
     "leases_root",
     "member_names",
     "pending_counts",

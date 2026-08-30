@@ -19,7 +19,7 @@
 
 ## Goal
 
-执行顺序：WEB-001 → WEB-002 → WEB-003 → WEB-004 为主线，之后 WEB-005～008 可按前置并行，WEB-009 收口。每个 Goal 单独可合入 `main` 且不破坏既有 TUI。Goal 中引用的「」条目名即 inventory §2 的完整枚举，不得删减。
+执行顺序：WEB-001 → WEB-002 → WEB-003 → WEB-004 为主线，之后 WEB-005～008 可按前置并行，WEB-009 收口。human 已放宽(2026-08-30)：前置 Goal 未合入时，可先开分支实现不依赖前置的部分，分支暂不合 `main`，待前置合入后再接线合并。每个 Goal 单独可合入 `main` 且不破坏既有 TUI。Goal 中引用的「」条目名即 inventory §2 的完整枚举，不得删减。
 
 - [x] **WEB-001** — Web/TUI 共用控制面与读模型：新建不依赖 Textual/HTTP 的控制面层(建议 `src/control/`)，下沉 `console.timeline` 的审计+任务事件→工作对话读模型投影、`console.control.MemberController` 的成员控制与审计编排、`console.app` 中的成员状态汇总，以及 `console.mirror.terminal_input_rows` 等纯文本识别函数；返回 dataclass/枚举等可 JSON 序列化的 DTO，不返回 Rich `Text`/Textual widget/HTML。TUI 改为调用该层。覆盖「左栏任务摘要」「左栏成员卡片」「中栏任务详情」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」的数据语义，以及「成员打断」「成员终止」「成员重启」的控制/审计语义。控制面模块禁止 import `console`(以测试钉住)；现有 console 测试与视觉基线不变。
   - 验证(Sol，2026-08-30):`uv run ruff check .` 通过；`uv run pytest tests/test_control_plane.py tests/test_console_timeline.py tests/test_console_members.py tests/test_console_control.py tests/test_console_mirror.py tests/test_console_health.py tests/test_console_work.py tests/test_control_lease.py tests/test_release_package.py -q` 为 81 passed。`uv run python -m qa.visual --goal WEB-001 --fixture task-board` 分别以 120x30、80x24 实际截取并逐项查看，任务层级、成员卡、证据/事件流/关联沟通及中英文窄屏换行均可辨认，既有 baseline 文件未改写。

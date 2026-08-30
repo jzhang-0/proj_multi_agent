@@ -40,6 +40,7 @@ SHORTCUT_GROUPS: tuple[tuple[str, tuple[Shortcut, ...]], ...] = (
             Shortcut("/ 命令", "斜杠命令补全,含 /workspace；/task 打开任务"),
             Shortcut("Enter", "接受补全，再按一次发送或执行"),
             Shortcut("成员会话里直接打字", "不带 @ 就是直接键入该成员终端，等于在它窗口里敲"),
+            Shortcut("点击成员输入区", "进入实时直连；按键在成员画面即时回显，Esc 退出"),
             Shortcut("直连空 ↑ / ↓", "透传 Up / Down，操作成员终端里的交互菜单"),
             Shortcut("直连空 Del", "只删除成员当前未提交草稿；已提交消息不可编辑"),
             Shortcut("直连空 ↵", "透传 Enter 给成员当前输入框"),

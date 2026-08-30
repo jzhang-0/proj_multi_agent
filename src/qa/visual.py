@@ -82,6 +82,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--size", default="120x30", help="终端尺寸,如 120x30 或 80x24")
     parser.add_argument("--keys", default="", help="截图前发的按键,逗号分隔,如 Down,Tab")
     parser.add_argument(
+        "--click",
+        default="",
+        help="截图前点击终端坐标，使用从 1 开始的 x,y（例如 40,18）",
+    )
+    parser.add_argument(
         "--type",
         default="",
         help="截图前向当前窗格键入字面文本并回车(用来跑 /workspace 这类命令)",
@@ -95,6 +100,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "console",
             "member-cards",
             "controls",
+            "live-input",
             "health",
             "workspaces",
             "task-board",
@@ -136,6 +142,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "qa.controls",
                 "--bus-root",
                 str(bus_root),
+            ]
+        elif args.fixture == "live-input":
+            command = [
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "qa.controls",
+                "--bus-root",
+                str(bus_root),
+                "--live-input",
             ]
         elif args.fixture == "health":
             command = [
@@ -207,6 +224,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         for key in (k.strip() for k in args.keys.split(",") if k.strip()):
             tmux("send-keys", "-t", session, key)
             time.sleep(0.3)
+        if args.click:
+            x_text, separator, y_text = args.click.partition(",")
+            if not separator:
+                parser.error("--click 必须是 x,y")
+            x, y = int(x_text), int(y_text)
+            # Textual 开启 SGR mouse tracking；直接向应用发送一次左键按下/抬起。
+            tmux("send-keys", "-t", session, "-l", f"\x1b[<0;{x};{y}M")
+            tmux("send-keys", "-t", session, "-l", f"\x1b[<0;{x};{y}m")
+            time.sleep(0.5)
         if args.type:
             tmux("send-keys", "-t", session, "-l", args.type)
             time.sleep(0.2)

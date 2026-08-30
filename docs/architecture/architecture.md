@@ -17,6 +17,7 @@ console (TUI, Textual)          ← 人机界面,内嵌投递循环
 - `tmuxctl` 是拼装 tmux 命令的唯一出口。启动时探测 tmux ≥ 3.2,不满足则明确报错;会话存在性/结束使用 `=name` 精确匹配,`send-keys` 使用普通会话名(tmux 不接受 `send-keys -t =name`)。
 - 通用长文本注入走 `KeyInjector.text`:先按 capture-pane 末行启发式判断是否有未提交输入,有则等待,超时则先 Enter 换行隔离再注入,避免拼接到半行字上。
 - 总线向成员投递走 `KeyInjector.deliver`：字面文本与 Enter 分成两次 tmux 注入，默认间隔 10ms，避免 Claude/Codex 把 Enter 吞进同一次粘贴突发。该间隔已在真实 Claude 2.1.251 pane 验证；每条消息在归档前还必须确认 composer 已清空。Claude 双横线输入框按整块内容识别，其他 CLI 才回退光标行指纹。同一收件人严格串行，未确认的队首消息留在 queue 重试且只记一次失败审计，不得继续追加或提前记成 `deliver`；其他收件人不受阻塞。
+- 成员画面的点击直连只在当前画面中识别 Claude 底部双横线 composer 或 Codex 底部 `›` prompt；无法确认结构、点击输出区或正在回看 tmux 历史时不得激活。实时字符经 `MemberController` 的单一串行队列走 `tmuxctl`，Enter 作为一次完整 `type` 动作审计；`Ctrl+V` 仍由 console 读取图片，不作为字符透传。
 - `console` 内嵌 hub 的投递循环,但投递循环必须能脱离 TUI 独立运行(headless hub,兼容现在的 `python3 hub.py` 用法)。
 - v0 的 `hub.py`、`msg`、`start.sh` 在对应 Goal 完成前保持可用;完成后 `hub.py`/`start.sh` 变成新实现的薄入口,`msg` 接口永不变。`start.sh` 已改为读仓库根 `roster.toml`(见 `src/roster`)。
 

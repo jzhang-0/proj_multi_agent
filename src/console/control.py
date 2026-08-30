@@ -15,7 +15,7 @@ from textual.widgets import Button, Static
 
 from bus.audit import AuditLog
 from roster.lifecycle import Lifecycle
-from tmuxctl import ProcessController, Tmux
+from tmuxctl import KeyInjector, ProcessController, Tmux
 from workspace.session import session_for
 
 
@@ -32,6 +32,10 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 #: 直连输入时文本与 Enter 之间的间隔(秒)。太短会被 CLI 当成粘贴,
 #: 那一下 Enter 就只在输入框里换行(cursor-agent 实测)。
 SUBMIT_GAP_S = 0.15
+
+# 实时键入的字符已经逐个到达成员终端；Enter 前只需留下一个很短的突发
+# 边界，避免自动化快速键入时最后一个字符和 Enter 又被 CLI 合并成粘贴。
+LIVE_SUBMIT_GAP_S = 0.01
 
 
 class MemberController:
@@ -86,8 +90,6 @@ class MemberController:
         框里换行、不提交(2026-08-16 实测:它的输入框里压着一条 14:58 的群消息
         和后来键入的 `11111`,补一个单独的 Enter 两条一起就提交了)。
         """
-        from tmuxctl import KeyInjector
-
         try:
             self.tmux.send_keys(target, text, literal=True)
             self._sleep(SUBMIT_GAP_S)
@@ -100,9 +102,44 @@ class MemberController:
             self._failed("type", target, exc)
             raise
 
+    def insert_text(self, target: str, text: str) -> None:
+        """实时直连的一段可打印文字；不提交，也不为每个字符制造审计噪声。"""
+        if not text:
+            return
+        try:
+            self.tmux.send_keys(target, text, literal=True)
+        except Exception as exc:
+            self._failed("type", target, exc)
+            raise
+
+    def submit_live_text(self, target: str, text: str) -> ControlFeedback:
+        """提交已经实时键入成员 composer 的文字，并把整次提交记为一条审计。"""
+        try:
+            self._sleep(LIVE_SUBMIT_GAP_S)
+            self.tmux.send_keys(target, "Enter")
+            outcome = KeyInjector(self.tmux).ensure_submitted(target, text) if text else None
+            submitted = outcome is None or outcome.submitted
+            detail = text or "Enter"
+            if outcome is not None and not outcome.submitted:
+                detail = f"{detail}(可能没提交,已补 Enter)"
+            return self._record(ControlFeedback("type", target, submitted, detail))
+        except Exception as exc:
+            self._failed("type", target, exc)
+            raise
+
     def press_key(self, target: str, key: str) -> ControlFeedback:
         """向成员终端发送一枚白名单内的非文本按键,并记录审计。"""
-        if key not in {"Enter", "BTab", "BSpace", "DC", "Up", "Down"}:
+        if key not in {
+            "Enter",
+            "Tab",
+            "BTab",
+            "BSpace",
+            "DC",
+            "Up",
+            "Down",
+            "Left",
+            "Right",
+        }:
             raise ValueError(f"不允许透传的成员按键: {key}")
         try:
             self.tmux.send_keys(target, key)

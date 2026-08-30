@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  connectTerminalAttach,
   connectTerminalMirror,
   directInputMessageForKeyEvent,
   leaseAcquireMessage,
@@ -56,8 +57,13 @@ describe("terminal mirror WebSocket client", () => {
     socket.emit(frame);
     expect(message).toHaveBeenCalledWith(frame);
 
-    connection.send(leaseAcquireMessage(false));
-    expect(socket.sent).toEqual([{ type: "lease", action: "acquire", force: false }]);
+    connection.send(leaseAcquireMessage(false, "direct-ticket"));
+    expect(socket.sent).toEqual([{
+      type: "lease",
+      action: "acquire",
+      force: false,
+      direct_token: "direct-ticket",
+    }]);
 
     connection.disconnect();
     expect(socket.readyState).toBe(3);
@@ -145,5 +151,46 @@ describe("directInputMessageForKeyEvent", () => {
     expect(directInputMessageForKeyEvent(key({ key: "Escape" }))).toBeNull();
     expect(directInputMessageForKeyEvent(key({ key: "c", ctrlKey: true }))).toBeNull();
     expect(directInputMessageForKeyEvent(key({ key: "a", metaKey: true }))).toBeNull();
+  });
+});
+
+describe("terminal attach WebSocket client", () => {
+  it("puts the one-time ticket in the first frame, never in the URL", () => {
+    let openedUrl = "";
+    const sent: Array<string | ArrayBufferView> = [];
+    const socket = {
+      binaryType: "blob" as BinaryType,
+      onopen: null as ((event: Event) => void) | null,
+      onmessage: null as ((event: MessageEvent<unknown>) => void) | null,
+      onclose: null as ((event: CloseEvent) => void) | null,
+      onerror: null as ((event: Event) => void) | null,
+      readyState: 1,
+      send: (data: string | ArrayBufferView) => sent.push(data),
+      close: vi.fn(),
+    };
+    const data = vi.fn();
+    connectTerminalAttach(
+      "claude",
+      { attach_token: "single-use-ticket", force: false, cols: 100, rows: 30 },
+      { status: vi.fn(), data, control: vi.fn() },
+      (url) => {
+        openedUrl = url;
+        return socket;
+      },
+    );
+
+    socket.onopen?.(new Event("open"));
+    expect(openedUrl).not.toContain("single-use-ticket");
+    expect(JSON.parse(sent[0] as string)).toEqual({
+      type: "attach",
+      attach_token: "single-use-ticket",
+      force: false,
+      cols: 100,
+      rows: 30,
+    });
+
+    const bytes = new Uint8Array([27, 91, 72]).buffer;
+    socket.onmessage?.(new MessageEvent("message", { data: bytes }));
+    expect(data).toHaveBeenCalledWith(new Uint8Array(bytes));
   });
 });

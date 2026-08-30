@@ -170,8 +170,8 @@ export function connectTerminalMirror(
 
 // 客户端 -> 服务端消息构造(docs/web/terminal-protocol.md §3.2/§4.5/§5/§6.2/§7.1)。
 
-export function leaseAcquireMessage(force: boolean): Record<string, unknown> {
-  return { type: "lease", action: "acquire", force };
+export function leaseAcquireMessage(force: boolean, directToken: string): Record<string, unknown> {
+  return { type: "lease", action: "acquire", force, direct_token: directToken };
 }
 
 export function scrollMessage(offset: number): Record<string, unknown> {
@@ -217,4 +217,94 @@ export function directInputMessageForKeyEvent(event: KeyboardEvent): Record<stri
   if (event.key === "Escape") return null; // 本地退出直连态,不发送(§7.3)
   if (event.key.length === 1) return inputTextMessage(event.key);
   return null;
+}
+
+// WEB-008 §8:完整接管是另一条真 PTY 通道。浏览器只给尺寸和 force，绝不
+// 给命令/参数/会话名；终端输入编码成二进制帧原样交给服务端 PTY。
+export type AttachStatus = "connecting" | "attached" | "denied" | "closed";
+
+export interface AttachControlMessage {
+  type: "attached" | "lease_denied" | "denied";
+  reason?: string;
+  holder?: LeaseHolder;
+}
+
+interface AttachHandlers {
+  status: (status: AttachStatus) => void;
+  data: (data: Uint8Array) => void;
+  control: (message: AttachControlMessage) => void;
+}
+
+interface AttachSocketLike {
+  binaryType: BinaryType;
+  onopen: ((event: Event) => void) | null;
+  onmessage: ((event: MessageEvent<unknown>) => void) | null;
+  onclose: ((event: CloseEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  readonly readyState: number;
+  send(data: string | ArrayBufferView): void;
+  close(code?: number): void;
+}
+
+type AttachSocketFactory = (url: string) => AttachSocketLike;
+
+function defaultAttachSocketFactory(url: string): AttachSocketLike {
+  return new WebSocket(url);
+}
+
+function attachUrl(member: string): string {
+  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${scheme}//${window.location.host}/api/v1/terminal/${encodeURIComponent(member)}/attach`;
+}
+
+export interface AttachConnection {
+  sendData: (data: string) => void;
+  resize: (cols: number, rows: number) => void;
+  exit: () => void;
+  disconnect: () => void;
+}
+
+export function connectTerminalAttach(
+  member: string,
+  options: { attach_token: string; force: boolean; cols: number; rows: number },
+  handlers: AttachHandlers,
+  socketFactory: AttachSocketFactory = defaultAttachSocketFactory,
+): AttachConnection {
+  const socket = socketFactory(attachUrl(member));
+  const encoder = new TextEncoder();
+  socket.binaryType = "arraybuffer";
+  handlers.status("connecting");
+  socket.onopen = () => {
+    socket.send(JSON.stringify({ type: "attach", ...options }));
+  };
+  socket.onmessage = (event) => {
+    if (typeof event.data === "string") {
+      try {
+        const message = JSON.parse(event.data) as AttachControlMessage;
+        handlers.control(message);
+        handlers.status(message.type === "attached" ? "attached" : "denied");
+      } catch {
+        // 单个坏控制帧不污染后续 PTY 字节。
+      }
+      return;
+    }
+    if (event.data instanceof ArrayBuffer) handlers.data(new Uint8Array(event.data));
+  };
+  socket.onerror = () => socket.close();
+  socket.onclose = () => handlers.status("closed");
+
+  return {
+    sendData: (data) => {
+      if (socket.readyState === SOCKET_OPEN) socket.send(encoder.encode(data));
+    },
+    resize: (cols, rows) => {
+      if (socket.readyState === SOCKET_OPEN) {
+        socket.send(JSON.stringify({ type: "resize", cols, rows }));
+      }
+    },
+    exit: () => {
+      if (socket.readyState === SOCKET_OPEN) socket.send(JSON.stringify({ type: "exit" }));
+    },
+    disconnect: () => socket.close(1000),
+  };
 }

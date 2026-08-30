@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
+  fetchMemberManagement,
   fetchBootstrap,
   fetchTaskDetail,
   fetchTimeline,
   fetchVocabulary,
+  memberControl,
   type Fetcher,
 } from "./api";
 import { ComposeBar, replyContext, type ReplyContext } from "./compose";
@@ -11,6 +13,7 @@ import { formatTime, memberColor, minuteGroup, relativeActivity, vocabularyItem 
 import { applyTimelineDelta, connectEventStream, type StreamStatus } from "./stream";
 import {
   connectTerminalMirror,
+  connectTerminalAttach,
   directInputMessageForKeyEvent,
   focusInputMessage,
   leaseAcquireMessage,
@@ -18,10 +21,12 @@ import {
   type LeaseHolder,
   type TerminalConnection,
   type TerminalStatus,
+  type AttachConnection,
 } from "./terminal-stream";
 import type {
   BootstrapSnapshot,
   Fault,
+  MemberManagementSnapshot,
   RouteState,
   TaskDetailSnapshot,
   TimelineCategory,
@@ -509,7 +514,61 @@ function TimelineView({
   );
 }
 
-function WorkspaceView({ snapshot }: { snapshot: BootstrapSnapshot }) {
+function WorkspaceView({
+  snapshot,
+  fetcher,
+  writeToken,
+}: {
+  snapshot: BootstrapSnapshot;
+  fetcher: Fetcher;
+  writeToken: string | null;
+}) {
+  const [management, setManagement] = useState<MemberManagementSnapshot | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState("");
+  const [managementError, setManagementError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const refresh = async () => {
+    if (!writeToken) return;
+    try {
+      const next = await fetchMemberManagement(fetcher);
+      setManagement(next);
+      setSelectedPreset((current) => current || next.presets[0] || "");
+      setManagementError(null);
+    } catch (caught) {
+      setManagementError(caught instanceof Error ? caught.message : "成员列表读取失败");
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, [writeToken]);
+
+  const mutate = async (
+    key: string,
+    path: string,
+    body: Record<string, unknown> = {},
+    method = "POST",
+  ) => {
+    if (!writeToken) return;
+    setBusy(key);
+    setManagementError(null);
+    try {
+      await memberControl(path, writeToken, body, fetcher, method);
+      await refresh();
+    } catch (caught) {
+      setManagementError(caught instanceof Error ? caught.message : "成员操作失败");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const configured = new Set(management?.members.map((member) => member.name) ?? []);
+  const availablePresets = management?.presets.filter((name) => !configured.has(name)) ?? [];
+  const preset = availablePresets.includes(selectedPreset)
+    ? selectedPreset
+    : availablePresets[0] ?? "";
+
   return (
     <div class="workspace-view">
       <header class="content-header"><div><p class="eyebrow">WORKSPACE</p><h2>{snapshot.workspace.slug ?? "未登记工作区"}</h2></div><span class="ledger-seal">只读视图</span></header>
@@ -533,6 +592,63 @@ function WorkspaceView({ snapshot }: { snapshot: BootstrapSnapshot }) {
           ))}
         </div>
       </section>
+      {writeToken ? (
+        <section class="panel member-management">
+          <div class="panel-heading">
+            <h3>成员管理</h3>
+            <span>/member add · rm · list · /adopt</span>
+          </div>
+          {managementError ? <p class="management-error" role="alert">{managementError}</p> : null}
+          <div class="management-add">
+            <label>
+              <span>从预设加入</span>
+              <select value={preset} onChange={(event) => setSelectedPreset(event.currentTarget.value)}>
+                {availablePresets.length ? availablePresets.map((name) => (
+                  <option value={name} key={name}>{name}</option>
+                )) : <option value="">没有可加入预设</option>}
+              </select>
+            </label>
+            <button
+              disabled={!preset || busy !== null}
+              onClick={() => void mutate(`add:${preset}`, "/api/v1/members", { name: preset })}
+            >加入成员</button>
+          </div>
+          <div class="managed-member-list">
+            {management?.members.map((member) => (
+              <article key={member.name}>
+                <span class="member-avatar" style={{ background: memberColor(member.name) }}>{member.name[0].toUpperCase()}</span>
+                <div>
+                  <strong>{member.name}</strong>
+                  <small>{member.source === "adopted" ? "临时收编 · 仅本进程有效" : "持久名册"} · {member.running ? "运行中" : "未运行"}{member.muted ? " · 已静音" : ""}</small>
+                </div>
+                {member.source === "roster" ? (
+                  <button
+                    class="danger-button"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      if (window.confirm(`确认从工作区名册移除 ${member.name}？这不会关闭其会话。`)) {
+                        void mutate(`rm:${member.name}`, `/api/v1/members/${encodeURIComponent(member.name)}`, {}, "DELETE");
+                      }
+                    }}
+                  >移除</button>
+                ) : <span class="temporary-badge">TEMP</span>}
+              </article>
+            ))}
+          </div>
+          {management?.adoptable.length ? (
+            <div class="adoptable-list">
+              <p>发现名册外 tmux 会话；收编仅保存在当前 Web 进程，重启即失效。</p>
+              {management.adoptable.map((candidate) => (
+                <button
+                  disabled={busy !== null}
+                  key={candidate.name}
+                  onClick={() => void mutate(`adopt:${candidate.name}`, "/api/v1/members/adopt", { name: candidate.name })}
+                >收编 {candidate.name}<small>{candidate.commands.join(" · ")}</small></button>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -552,7 +668,146 @@ function HelpView() {
   );
 }
 
-function TerminalView({ member }: { member: string }) {
+function AttachTerminal({
+  member,
+  writeToken,
+  fetcher,
+  initialForce,
+  onClose,
+}: {
+  member: string;
+  writeToken: string;
+  fetcher: Fetcher;
+  initialForce: boolean;
+  onClose: () => void;
+}) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const connectionRef = useRef<AttachConnection | null>(null);
+  const [force, setForce] = useState(initialForce);
+  const [generation, setGeneration] = useState(0);
+  const [status, setStatus] = useState("authorizing");
+  const [holder, setHolder] = useState<LeaseHolder | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup = () => undefined;
+    ensureXtermStylesheet();
+    setStatus("authorizing");
+    setHolder(null);
+    setNotice(null);
+
+    void (async () => {
+      try {
+        const authorization = await memberControl<{ attach_token: string }>(
+          `/api/v1/members/${encodeURIComponent(member)}/attach`,
+          writeToken,
+          {},
+          fetcher,
+        );
+        const { Terminal } = await import("@xterm/xterm");
+        if (disposed || !surfaceRef.current) return;
+        const term = new Terminal({
+          disableStdin: false,
+          convertEol: false,
+          fontFamily: TERMINAL_FONT_FAMILY,
+          fontSize: TERMINAL_FONT_SIZE,
+          lineHeight: TERMINAL_LINE_HEIGHT,
+          cursorBlink: true,
+        });
+        term.open(surfaceRef.current);
+        const fit = () => {
+          const surface = surfaceRef.current;
+          if (!surface) return { cols: 80, rows: 24 };
+          const cell = measureCell();
+          const cols = Math.min(500, Math.max(20, Math.floor(surface.clientWidth / cell.width)));
+          const rows = Math.min(200, Math.max(5, Math.floor(surface.clientHeight / cell.height)));
+          term.resize(cols, rows);
+          connectionRef.current?.resize(cols, rows);
+          return { cols, rows };
+        };
+        const size = fit();
+        const connection = connectTerminalAttach(
+          member,
+          { attach_token: authorization.attach_token, force, ...size },
+          {
+            status: setStatus,
+            data: (data) => term.write(data),
+            control: (message) => {
+              if (message.type === "lease_denied") {
+                setHolder(message.holder ?? null);
+                setNotice("交互租约被占用；确认后可抢占完整接管。 ");
+              } else if (message.type === "denied") {
+                setNotice(message.reason ?? "完整接管被拒绝");
+              }
+            },
+          },
+        );
+        connectionRef.current = connection;
+        const input = term.onData((data) => connection.sendData(data));
+        const observer = new ResizeObserver(fit);
+        observer.observe(surfaceRef.current);
+        term.focus();
+        cleanup = () => {
+          observer.disconnect();
+          input.dispose();
+          connection.disconnect();
+          term.dispose();
+          if (connectionRef.current === connection) connectionRef.current = null;
+        };
+      } catch (caught) {
+        if (!disposed) {
+          setStatus("closed");
+          setNotice(caught instanceof Error ? caught.message : "完整接管授权失败");
+        }
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }, [member, writeToken, fetcher, force, generation]);
+
+  const retryWithForce = () => {
+    setForce(true);
+    setGeneration((value) => value + 1);
+  };
+  const leave = () => {
+    connectionRef.current?.exit();
+    window.setTimeout(onClose, 100);
+  };
+
+  return (
+    <div class="attach-overlay" role="dialog" aria-modal="true" aria-label={`${member} 完整接管`}>
+      <header>
+        <div><p class="eyebrow">FULL ATTACH / {member}</p><h2>完整终端接管</h2></div>
+        <div class="attach-actions">
+          <span class={`live-indicator live-indicator--${status}`}><i /> {status}</span>
+          <button onClick={leave}>退出接管</button>
+        </div>
+      </header>
+      <p class="attach-safety">输入直接进入成员 PTY；退出只断开 tmux client，不会关闭成员会话。</p>
+      {notice ? (
+        <div class="terminal-notice">
+          {notice}{holder ? ` 当前持有者：${holder.owner}` : ""}
+          {holder ? <button onClick={retryWithForce}>确认抢占</button> : null}
+        </div>
+      ) : null}
+      <div class="attach-surface" ref={surfaceRef} />
+    </div>
+  );
+}
+
+function TerminalView({
+  member,
+  writeToken,
+  fetcher,
+}: {
+  member: string;
+  writeToken: string;
+  fetcher: Fetcher;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const connectionRef = useRef<TerminalConnection | null>(null);
@@ -570,6 +825,10 @@ function TerminalView({ member }: { member: string }) {
   const [liveActive, setLiveActive] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachInitialForce, setAttachInitialForce] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -703,8 +962,7 @@ function TerminalView({ member }: { member: string }) {
     const rect = containerRef.current.getBoundingClientRect();
     const row = Math.max(0, Math.floor((event.clientY - rect.top) / cellHeightRef.current));
     if (!leaseHeldRef.current) {
-      pendingFocusRowRef.current = row;
-      connectionRef.current?.send(leaseAcquireMessage(false));
+      void acquireDirect(false, row);
       return;
     }
     connectionRef.current?.send(focusInputMessage(frameSeqRef.current, row));
@@ -715,6 +973,64 @@ function TerminalView({ member }: { member: string }) {
     offsetRef.current = next;
     setOffset(next);
     connectionRef.current?.send(scrollMessage(next));
+  };
+
+  const acquireDirect = async (force: boolean, focusRow: number | null = null) => {
+    try {
+      const authorization = await memberControl<{ direct_token: string }>(
+        `/api/v1/members/${encodeURIComponent(member)}/direct`,
+        writeToken,
+        {},
+        fetcher,
+      );
+      pendingFocusRowRef.current = focusRow;
+      connectionRef.current?.send(leaseAcquireMessage(force, authorization.direct_token));
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : "直连授权失败");
+    }
+  };
+
+  const runMemberAction = async (
+    action: "interrupt" | "terminate" | "restart" | "up" | "down" | "mute",
+    dangerous = false,
+  ) => {
+    if (dangerous && !window.confirm(`确认对 ${member} 执行“${action}”？该操作会影响正在运行的任务。`)) {
+      return;
+    }
+    setActionBusy(action);
+    setActionNotice(null);
+    try {
+      let body: Record<string, unknown> = {};
+      if (dangerous) {
+        const confirmation = await memberControl<{ confirm_token: string }>(
+          `/api/v1/members/${encodeURIComponent(member)}/${action}/confirm`,
+          writeToken,
+          {},
+          fetcher,
+        );
+        body = { confirm_token: confirmation.confirm_token };
+      }
+      const result = await memberControl<{ detail?: string; muted?: boolean }>(
+        `/api/v1/members/${encodeURIComponent(member)}/${action}`,
+        writeToken,
+        body,
+        fetcher,
+      );
+      setActionNotice(
+        action === "mute"
+          ? result.muted ? "已静音：该成员消息将由 Hub 策略拒收" : "已取消静音"
+          : result.detail ?? `${action} 已执行`,
+      );
+    } catch (caught) {
+      setActionNotice(caught instanceof Error ? caught.message : "成员动作失败");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const openAttach = () => {
+    setAttachInitialForce(leaseHeldRef.current);
+    setAttachOpen(true);
   };
 
   if (rejection) {
@@ -736,6 +1052,22 @@ function TerminalView({ member }: { member: string }) {
         </div>
         <span class={`live-indicator live-indicator--${status}`}><i /> {status}</span>
       </header>
+      <section class="panel member-controls" aria-label="成员控制">
+        <div>
+          <strong>成员控制</strong>
+          <small>所有动作由认证身份执行并写入审计</small>
+        </div>
+        <div class="member-control-actions">
+          <button disabled={actionBusy !== null} onClick={() => void runMemberAction("interrupt")}>打断</button>
+          <button disabled={actionBusy !== null} onClick={() => void runMemberAction("up")}>/up</button>
+          <button class="danger-button" disabled={actionBusy !== null} onClick={() => void runMemberAction("terminate", true)}>终止</button>
+          <button class="danger-button" disabled={actionBusy !== null} onClick={() => void runMemberAction("restart", true)}>/restart</button>
+          <button class="danger-button" disabled={actionBusy !== null} onClick={() => void runMemberAction("down", true)}>/down</button>
+          <button disabled={actionBusy !== null} onClick={() => void runMemberAction("mute")}>/mute</button>
+          <button class="attach-button--primary" onClick={openAttach}>完整接管</button>
+        </div>
+        {actionNotice ? <p class="management-feedback">{actionNotice}</p> : null}
+      </section>
       <section class="panel terminal-panel">
         <div class="terminal-toolbar">
           <span class="terminal-lease-state">
@@ -746,7 +1078,7 @@ function TerminalView({ member }: { member: string }) {
                 : "只读镜像(点击画面获取控制权)"}
           </span>
           {leaseHolder && !leaseHeld ? (
-            <button onClick={() => connectionRef.current?.send(leaseAcquireMessage(true))}>
+            <button onClick={() => void acquireDirect(true)}>
               强制接管
             </button>
           ) : null}
@@ -760,6 +1092,15 @@ function TerminalView({ member }: { member: string }) {
         {notice ? <p class="terminal-notice">{notice}</p> : null}
         <div class="terminal-surface" ref={containerRef} onClick={handleSurfaceClick} />
       </section>
+      {attachOpen ? (
+        <AttachTerminal
+          member={member}
+          writeToken={writeToken}
+          fetcher={fetcher}
+          initialForce={attachInitialForce}
+          onClose={() => setAttachOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1062,9 +1403,21 @@ export function App({
         <section class="content-surface">
           {route.view === "task" ? <TaskView detail={detail} loading={loadingDetail} error={error} vocabulary={vocabulary} onNavigate={navigate} /> : null}
           {route.view === "timeline" ? <TimelineView snapshot={snapshot.timeline} vocabulary={vocabulary} fetcher={fetcher} onSeen={markSeen} actor={snapshot.session.actor} onReply={(entry) => setReplying(replyContext(entry))} /> : null}
-          {route.view === "workspace" ? <WorkspaceView snapshot={snapshot} /> : null}
+          {route.view === "workspace" ? (
+            <WorkspaceView
+              snapshot={snapshot}
+              fetcher={fetcher}
+              writeToken={snapshot.session.write_token}
+            />
+          ) : null}
           {route.view === "help" ? <HelpView /> : null}
-          {route.view === "terminal" ? <TerminalView member={route.member} /> : null}
+          {route.view === "terminal" && snapshot.session.write_token ? (
+            <TerminalView
+              member={route.member}
+              writeToken={snapshot.session.write_token}
+              fetcher={fetcher}
+            />
+          ) : null}
         </section>
       </div>
       {snapshot.session.capabilities.compose && (route.view === "task" || route.view === "timeline") ? (

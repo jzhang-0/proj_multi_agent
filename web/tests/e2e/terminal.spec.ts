@@ -9,6 +9,9 @@ async function stubSnapshots(page: Page) {
   await page.route("**/api/v1/vocabulary", (route) => route.fulfill({ json: vocabularyFixture }));
   await page.route("**/api/v1/work/tasks/*", (route) => route.fulfill({ json: taskDetailFixture }));
   await page.route("**/api/v1/timeline?*", (route) => route.fulfill({ json: bootstrapFixture.timeline }));
+  await page.route("**/api/v1/members/*/direct", (route) => route.fulfill({
+    json: { direct_token: "e2e-direct-ticket", expires_in: 30 },
+  }));
 }
 
 test.beforeEach(async ({ page }) => {

@@ -152,7 +152,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .status-pill--accepted, .status-pill--reviewed { color: var(--blue); }
 
 .content-surface { overflow: auto; min-height: 0; padding: clamp(1.2rem, 2.8vw, 2.4rem); }
-.task-view, .timeline-view, .workspace-view, .help-view { width: min(100%, 76rem); margin: 0 auto; }
+.task-view, .timeline-view, .workspace-view, .help-view, .terminal-view { width: min(100%, 76rem); margin: 0 auto; }
 .content-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
 .eyebrow { margin: 0 0 .4rem; color: var(--accent); font: 700 .66rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; }
 h1, h2, h3, p { margin-top: 0; }
@@ -286,6 +286,23 @@ h3 { margin-bottom: 0; font-size: .8rem; letter-spacing: .04em; text-transform: 
 .team-grid article { display: flex; gap: .7rem; padding: .7rem; border: 1px solid var(--line); }
 .team-grid article > div { display: grid; }
 .team-grid small { margin-top: .2rem; color: var(--muted); font-size: .67rem; line-height: 1.45; }
+.member-management { margin-top: .8rem; }
+.management-add { display: flex; align-items: end; gap: .55rem; margin-bottom: .8rem; }
+.management-add label { display: grid; min-width: 14rem; gap: .3rem; color: var(--muted); font-size: .65rem; }
+.management-add select { height: 2.25rem; padding: 0 .55rem; border: 1px solid var(--line-strong); border-radius: 0; color: var(--text); background: var(--bg); }
+.management-add button, .managed-member-list button, .adoptable-list button { padding: .48rem .65rem; border: 1px solid var(--line); color: var(--blue); background: var(--surface); cursor: pointer; }
+.management-add button:disabled, .managed-member-list button:disabled, .adoptable-list button:disabled { opacity: .45; cursor: not-allowed; }
+.management-error, .management-feedback { margin: 0 0 .7rem; padding: .45rem .6rem; border-left: 2px solid var(--warn); color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); font-size: .7rem; }
+.managed-member-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .45rem; }
+.managed-member-list article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .6rem; padding: .6rem; border: 1px solid var(--line); }
+.managed-member-list article > div { display: grid; min-width: 0; }
+.managed-member-list small { color: var(--muted); font-size: .62rem; }
+.danger-button { color: var(--danger) !important; border-color: color-mix(in srgb, var(--danger) 40%, var(--line)) !important; }
+.temporary-badge { color: var(--warn); font: .58rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+.adoptable-list { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--line); }
+.adoptable-list p { width: 100%; margin: 0; color: var(--warn); font-size: .68rem; }
+.adoptable-list button { display: grid; gap: .15rem; text-align: left; }
+.adoptable-list small { color: var(--muted); font-size: .56rem; }
 .help-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem; }
 .help-grid > div { display: flex; align-items: center; gap: .8rem; padding: .9rem; border: 1px solid var(--line); }
 kbd { min-width: 2.4rem; padding: .4rem; border: 1px solid var(--line-strong); border-bottom-width: 3px; color: var(--accent); background: var(--bg); font: .7rem ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
@@ -333,6 +350,14 @@ kbd { min-width: 2.4rem; padding: .4rem; border: 1px solid var(--line-strong); b
 }
 
 .terminal-panel { display: flex; flex-direction: column; gap: .6rem; padding: .8rem; }
+.member-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .7rem 1rem; }
+.member-controls > div:first-child { display: grid; }
+.member-controls > div:first-child small { margin-top: .15rem; color: var(--muted); font-size: .62rem; }
+.member-control-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
+.member-control-actions button, .attach-actions button, .terminal-notice button { padding: .38rem .58rem; border: 1px solid var(--line); color: var(--blue); background: var(--surface); cursor: pointer; font-size: .68rem; }
+.member-control-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.attach-button--primary { border-color: var(--accent) !important; color: var(--accent) !important; }
+.member-controls .management-feedback { grid-column: 1 / -1; margin-bottom: 0; }
 .terminal-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font: .68rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
 .terminal-toolbar__spacer { flex: 1 1 auto; }
 .terminal-toolbar button { padding: .3rem .55rem; border: 1px solid var(--line); color: var(--blue); background: var(--surface); font: inherit; }
@@ -341,3 +366,20 @@ kbd { min-width: 2.4rem; padding: .4rem; border: 1px solid var(--line-strong); b
 .terminal-notice { margin: 0; padding: .5rem .7rem; border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: .74rem; }
 .terminal-surface { height: min(60vh, 32rem); overflow: hidden; border: 1px solid var(--line); background: #000; cursor: text; }
 .terminal-surface .xterm { height: 100%; padding: .4rem; }
+.attach-overlay { position: fixed; z-index: 50; inset: 0; display: flex; flex-direction: column; gap: .65rem; padding: 1rem; background: #05070a; }
+.attach-overlay > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.attach-overlay h2 { font-size: 1.15rem; }
+.attach-actions { display: flex; align-items: center; gap: .5rem; }
+.attach-safety { margin: 0; color: var(--muted); font-size: .7rem; }
+.attach-overlay .terminal-notice { display: flex; align-items: center; justify-content: space-between; gap: .7rem; }
+.attach-surface { min-height: 0; flex: 1; overflow: hidden; border: 1px solid var(--line-strong); background: #000; }
+.attach-surface .xterm { height: 100%; padding: .45rem; }
+
+@media (max-width: 680px) {
+  .member-controls { grid-template-columns: 1fr; }
+  .member-control-actions { justify-content: flex-start; }
+  .management-add { align-items: stretch; flex-direction: column; }
+  .management-add label { min-width: 0; }
+  .attach-overlay { padding: .65rem; }
+  .attach-overlay > header { align-items: flex-start; }
+}

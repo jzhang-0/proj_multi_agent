@@ -3,6 +3,7 @@ import type {
   AttachmentUpload,
   MessageReceipt,
   MessageRequest,
+  MemberManagementSnapshot,
   TaskDetailSnapshot,
   TimelineCategory,
   TimelineSnapshot,
@@ -70,6 +71,32 @@ export function fetchTimeline(
   const query = new URLSearchParams({ category, limit: "200" });
   if (beforeSeq !== undefined) query.set("before_seq", String(beforeSeq));
   return getJSON(fetcher, `/api/v1/timeline?${query.toString()}`);
+}
+
+export function fetchMemberManagement(
+  fetcher: Fetcher = fetch,
+): Promise<MemberManagementSnapshot> {
+  return getJSON(fetcher, "/api/v1/member-management");
+}
+
+export async function memberControl<T>(
+  path: string,
+  writeToken: string,
+  body: Record<string, unknown> = {},
+  fetcher: Fetcher = fetch,
+  method = "POST",
+): Promise<T> {
+  const response = await fetcher(path, {
+    method,
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Amux-Session": writeToken,
+    },
+    body: method === "DELETE" ? undefined : JSON.stringify(body),
+  });
+  return checkedJSON<T>(response);
 }
 
 export async function uploadAttachment(

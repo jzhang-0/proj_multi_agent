@@ -85,6 +85,25 @@ export interface MembersSnapshot {
   members: MemberSnapshot[];
 }
 
+export interface ManagedMember {
+  name: string;
+  source: "roster" | "adopted";
+  temporary: boolean;
+  muted: boolean;
+  running: boolean;
+}
+
+export interface AdoptableMember {
+  name: string;
+  commands: string[];
+}
+
+export interface MemberManagementSnapshot {
+  members: ManagedMember[];
+  adoptable: AdoptableMember[];
+  presets: string[];
+}
+
 export interface Fault {
   key: string;
   kind: string;

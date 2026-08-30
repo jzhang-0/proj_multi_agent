@@ -146,7 +146,7 @@ export const bootstrapFixture: BootstrapSnapshot = {
     epoch_started_at: now - 7200,
     server_time_at: now,
     revisions: { workspace: 1, team: 2, roster: 3, work: 14, timeline: 41, member: 32, health: 2 },
-    capabilities: { stream: false, mirror: false, compose: true, control: false },
+    capabilities: { stream: false, mirror: true, compose: true, control: true },
   },
   workspace: {
     epoch,

@@ -90,3 +90,100 @@ test("member card in the sidebar navigates to that member's terminal", async ({ 
   await expect(page).toHaveURL(/\/member\/sol\/terminal$/);
   await expect(page.getByRole("heading", { name: "终端镜像" })).toBeVisible();
 });
+
+test("member controls use double-submit HTTP and full attach sends its ticket first", async ({ page }) => {
+  const controlRequests: Array<{ path: string; token: string | null }> = [];
+  const attachFrames: Array<Record<string, unknown>> = [];
+
+  await page.routeWebSocket(/\/api\/v1\/terminal\/.+\/mirror$/, (ws) => {
+    ws.send(JSON.stringify({
+      type: "frame",
+      member: "sol",
+      frame_seq: 1,
+      cols: 80,
+      rows: 24,
+      history_offset: 0,
+      captured_at: 0,
+      cursor_y: 2,
+      input_rows: [2],
+      live_allowed: true,
+      encoding: "ansi",
+      data: "$ sol ready\r\n",
+    }));
+  });
+  await page.route(/\/api\/v1\/members\/sol\/(interrupt|restart(?:\/confirm)?|attach)$/, async (route) => {
+    const url = new URL(route.request().url());
+    controlRequests.push({
+      path: url.pathname,
+      token: await route.request().headerValue("x-amux-session"),
+    });
+    if (url.pathname.endsWith("/restart/confirm")) {
+      await route.fulfill({ json: { confirm_token: "restart-confirm", expires_in: 30 } });
+    } else if (url.pathname.endsWith("/attach")) {
+      await route.fulfill({ json: { attach_token: "attach-ticket", expires_in: 30 } });
+    } else {
+      await route.fulfill({ json: { action: "interrupt", changed: true, detail: "已执行" } });
+    }
+  });
+  await page.routeWebSocket(/\/api\/v1\/terminal\/.+\/attach$/, (ws) => {
+    ws.onMessage((raw) => {
+      if (typeof raw !== "string") return;
+      const message = JSON.parse(raw) as Record<string, unknown>;
+      attachFrames.push(message);
+      if (message.type === "attach") {
+        ws.send(JSON.stringify({
+          type: "attached",
+          holder: { owner: "web-attach:e2e", host: "test", acquired_at: 0 },
+        }));
+        ws.send(Buffer.from("\u001b[32mPTY attached to sol\u001b[0m\r\n"));
+      } else if (message.type === "exit") {
+        ws.close();
+      }
+    });
+  });
+
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/member/sol/terminal");
+  await page.getByRole("button", { name: "打断" }).click();
+  await expect(page.getByText("已执行")).toBeVisible();
+  await page.getByRole("button", { name: "/restart" }).click();
+  await expect.poll(() => controlRequests.filter((item) => item.path.includes("restart")).length).toBe(2);
+  expect(controlRequests.every((item) => item.token === "fixture-write-token")).toBe(true);
+
+  await page.getByRole("button", { name: "完整接管" }).click();
+  await expect(page.getByRole("dialog", { name: "sol 完整接管" })).toBeVisible();
+  await expect(page.locator(".attach-surface")).toContainText("PTY attached to sol");
+  await expect.poll(() => attachFrames.some((item) => item.type === "attach")).toBe(true);
+  const first = attachFrames[0];
+  expect(first.attach_token).toBe("attach-ticket");
+  expect(first).not.toHaveProperty("actor");
+
+  await page.screenshot({ path: baseline("web-008-attach-1440x1000.png"), fullPage: true });
+});
+
+test("workspace member management shows persistent and process-local members", async ({ page }) => {
+  let addedWithToken: string | null = null;
+  await page.route("**/api/v1/member-management", (route) => route.fulfill({
+    json: {
+      members: [
+        { name: "sol", source: "roster", temporary: false, muted: false, running: true },
+        { name: "helper", source: "adopted", temporary: true, muted: true, running: true },
+      ],
+      adoptable: [{ name: "reviewer", commands: ["codex"] }],
+      presets: ["claude", "codex", "gemini", "sol"],
+    },
+  }));
+  await page.route("**/api/v1/members", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    addedWithToken = await route.request().headerValue("x-amux-session");
+    await route.fulfill({ json: { name: "claude", created: true } });
+  });
+
+  await page.goto("/workspace");
+  await expect(page.getByRole("heading", { name: "成员管理" })).toBeVisible();
+  await expect(page.getByText("临时收编 · 仅本进程有效")).toBeVisible();
+  await expect(page.getByText("重启即失效")).toBeVisible();
+  await page.getByRole("button", { name: "加入成员" }).click();
+  await expect.poll(() => addedWithToken).toBe("fixture-write-token");
+  await page.screenshot({ path: baseline("web-008-member-management-1440x1000.png"), fullPage: true });
+});

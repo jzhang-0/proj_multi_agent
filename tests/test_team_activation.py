@@ -54,7 +54,7 @@ def _old_roster() -> Roster:
     )
 
 
-def test_default_fable_team_uses_only_claude_and_codex_runners(tmp_path: Path) -> None:
+def test_default_fable_team_projects_all_runners(tmp_path: Path) -> None:
     _workspace_obj, teams = _workspace(tmp_path)
 
     roster = roster_for_team(teams.load(DEFAULT_TEAM_ID))
@@ -65,8 +65,10 @@ def test_default_fable_team_uses_only_claude_and_codex_runners(tmp_path: Path) -
         ("opus", "claude"),
         ("luna", "codex"),
         ("sol", "codex"),
+        ("composer", "agent"),
+        ("grok", "agent"),
+        ("agy", "agy"),
     ]
-    assert all(member.command != "agent" for member in roster.members)
     assert roster.get("fable").team_id == DEFAULT_TEAM_ID
     assert roster.get("fable").role == "leader"
     assert roster.get("fable").leader_name == "fable"
@@ -137,6 +139,9 @@ def test_activate_replaces_only_old_enabled_roster_and_starts_fable_team(tmp_pat
         "opus",
         "luna",
         "sol",
+        "composer",
+        "grok",
+        "agy",
     ]
     assert all(result.changed for result in activation.started)
     assert tmux.sessions == {
@@ -145,17 +150,23 @@ def test_activate_replaces_only_old_enabled_roster_and_starts_fable_team(tmp_pat
         "opus@project",
         "luna@project",
         "sol@project",
+        "composer@project",
+        "grok@project",
+        "agy@project",
         "unrelated@other",
     }
     stored = load_workspace_members(workspace)
     assert stored is not None
-    assert stored.names == ("fable", "sonnet", "opus", "luna", "sol")
+    assert stored.names == ("fable", "sonnet", "opus", "luna", "sol", "composer", "grok", "agy")
     assert [member.command for member in stored.custom] == [
         "claude",
         "claude",
         "claude",
         "codex",
         "codex",
+        "agent",
+        "agent",
+        "agy",
     ]
     assert stored.custom[0].env["CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"] == "1"
     assert stored.custom[0].env["NO_COLOR"] == ""
@@ -199,7 +210,7 @@ def test_missing_runner_keeps_existing_binding_and_members_untouched(tmp_path: P
     )
     tmux = FakeTmux(("claude@project",))
 
-    with pytest.raises(TeamRuntimeError, match="找不到团队所需命令: codex"):
+    with pytest.raises(TeamRuntimeError, match="找不到团队所需命令: agent, agy, codex"):
         activate_team(
             workspace,
             DEFAULT_TEAM_ID,

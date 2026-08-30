@@ -35,6 +35,9 @@ def test_default_team_records_the_agreed_leader_and_members(tmp_path: Path) -> N
         ("opus", "high", "standard"),
         ("luna", "high", "fast"),
         ("sol", "xhigh", "standard"),
+        ("composer", "high", "standard"),
+        ("grok", "xhigh", "standard"),
+        ("agy", "high", "fast"),
     ]
     assert "接管" in team.leader_member.responsibility
     for member in team.members[:3]:
@@ -43,7 +46,7 @@ def test_default_team_records_the_agreed_leader_and_members(tmp_path: Path) -> N
             "NO_COLOR": "",
         }
         assert member.args[-2:] == ("--permission-mode", "auto")
-    for member in team.members[3:]:
+    for member in team.members[3:5]:
         assert dict(member.env) == {}
         assert member.args[-4:] == ("-s", "danger-full-access", "-a", "never")
     with pytest.raises(Exception, match="已存在"):

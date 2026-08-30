@@ -576,6 +576,18 @@ function TerminalView({ member }: { member: string }) {
             frameSeqRef.current = message.frame_seq;
             offsetRef.current = message.history_offset;
             setOffset(message.history_offset);
+            // §5:只有租约持有者的 viewport 决定 canonical size；非持有者
+            // 跟着帧里的权威 cols/rows 走，不能只信本地测量(评审 opus)。
+            const term = termRef.current;
+            if (
+              term &&
+              !leaseHeldRef.current &&
+              message.cols > 0 &&
+              message.rows > 0 &&
+              (term.cols !== message.cols || term.rows !== message.rows)
+            ) {
+              term.resize(message.cols, message.rows);
+            }
             termRef.current?.write(message.data);
           } else if (message.type === "idle") {
             frameSeqRef.current = message.frame_seq;

@@ -103,6 +103,12 @@ def test_concurrent_viewers_share_the_same_broadcast(
             frame_a = _wait_for(tui_view, "frame", where=has_text)
             frame_b = _wait_for(web_view, "frame", where=has_text)
             assert frame_a["frame_seq"] == frame_b["frame_seq"]
+            # 评审(opus)实测退回:①之前 captured_at 送的是 time.monotonic()
+            # (进程运行秒数)，api-protocol §2.2 明令单调时钟不得出网，*_at
+            # 必须是 epoch 秒；②帧缺 cols/rows，§5 canonical size 由租约
+            # 持有者决定，非持有者只能靠帧里的这两个字段知道权威尺寸。
+            assert frame_a["captured_at"] > 1_700_000_000  # 明显是 epoch 秒不是单调钟
+            assert frame_a["cols"] > 0 and frame_a["rows"] > 0
 
 
 def test_preemption_notifies_the_previous_holder(

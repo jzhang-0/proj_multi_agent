@@ -300,3 +300,31 @@ def test_clicking_output_or_scrollback_does_not_activate_live_input(paths):
             assert not mirror.live_input
 
     run_async(scenario)
+
+
+def test_ansi_stripping_matches_web_terminal_mirror(paths):
+    """§6.4 钉子测试(评审 opus 更正文档 5341806):剥离函数留在两个调用侧
+    (不下沉 control——control 禁 import rich，见 WEB-001 的 AST 边界测试)，
+    但两侧结果必须与 `Text.from_ansi(...).plain` 逐字符一致，否则同一画面
+    TUI 认得出 composer、Web 认不出(或反之)。"""
+    from rich.text import Text
+
+    from web.terminal import strip_ansi
+
+    sample = "\x1b[32m❯ echo 你好\x1b[0m\n────────────────\n状态: 完成 🎉"
+    reference = Text.from_ansi(sample, no_wrap=True, overflow="crop").plain
+
+    assert strip_ansi(sample) == reference
+
+    pane = FakePane()
+    app = make_app(paths, pane)
+
+    async def scenario():
+        async with app.run_test(size=(120, 30)) as pilot:
+            app.select_member("codex")
+            await pilot.pause()
+            mirror = app.query_one("#detail", Mirror)
+            mirror.show_screen(sample)
+            assert mirror.screen_text == reference
+
+    run_async(scenario)

@@ -26,7 +26,10 @@ from web.app import create_app
 from web.auth import COOKIE_NAME, WebSession
 from web.state import RevisionTracker, TimelineCache, timeline_revision_fingerprint
 from web.stream import (
+    CLOSE_NOT_FOUND,
     CLOSE_SLOW,
+    CLOSE_UNAUTHORIZED,
+    CLOSE_UNAVAILABLE,
     DeltaRing,
     EventHub,
     StreamClient,
@@ -66,13 +69,15 @@ def _bound_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return workspace, service, paths
 
 
-def _must_reject(client: TestClient, headers: dict[str, str]) -> None:
+def _must_reject(
+    client: TestClient, headers: dict[str, str], *, code: int = CLOSE_UNAUTHORIZED
+) -> None:
     with (
+        client.websocket_connect("/api/v1/stream", headers=headers) as ws,
         pytest.raises(WebSocketDisconnect) as rejected,
-        client.websocket_connect("/api/v1/stream", headers=headers),
     ):
-        pass
-    assert rejected.value.code == 1008
+        ws.receive_json()
+    assert rejected.value.code == code
 
 
 def _ws(client: TestClient):
@@ -236,6 +241,48 @@ def test_stream_rejects_missing_cookie_and_bad_origin(
             client,
             {"Origin": "http://evil.example", "Host": f"127.0.0.1:{PORT}"},
         )
+
+
+def test_stream_handshake_close_codes_align_with_terminal() -> None:
+    assert CLOSE_UNAUTHORIZED == 4401
+    assert CLOSE_NOT_FOUND == 4404
+    assert CLOSE_UNAVAILABLE == 4503
+
+
+def test_stream_rejects_missing_hub_as_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _bound_workspace(tmp_path, monkeypatch)
+    session = WebSession.generate()
+    app = create_app(session=session, port=PORT, stream_settings=FAST)
+    with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client:
+        client.get(f"/?token={session.token}")
+        app.state.stream = None
+        headers = dict(WS_HEADERS)
+        cookie = client.cookies.get(COOKIE_NAME)
+        headers["Cookie"] = f"{COOKIE_NAME}={cookie}"
+        _must_reject(client, headers, code=CLOSE_UNAVAILABLE)
+
+
+def test_wait_primed_times_out_and_still_emits_hello() -> None:
+    hub = EventHub(
+        tracker=RevisionTracker(),
+        cache=TimelineCache(),
+        member_status=MemberStatusService(()),
+        health=None,
+        tmux=None,
+        settings=StreamSettings(
+            hello_wait_s=0.05,
+            ping_interval_s=3600.0,
+            idle_timeout_s=3600.0,
+            member_interval_s=3600.0,
+            health_interval_s=3600.0,
+        ),
+    )
+    asyncio.run(hub.wait_primed())
+    hello = hub.hello()
+    assert hello["type"] == "hello"
+    assert hello["epoch"] == hub.tracker.epoch
 
 
 def test_hello_subscribe_and_timeline_work_deltas(

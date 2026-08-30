@@ -36,13 +36,16 @@ from web.snapshots import (
 )
 from web.state import DOMAINS, RevisionTracker, TimelineCache
 
-CLOSE_POLICY = 1008
+CLOSE_UNAUTHORIZED = 4401
+CLOSE_NOT_FOUND = 4404
+CLOSE_UNAVAILABLE = 4503
 CLOSE_SLOW = 1013
 DELTA_DOMAINS = frozenset({"timeline", "work", "health"})
 RING_CAPACITIES = {"timeline": 512, "work": 512, "health": 128}
 CLIENT_FRAME_TYPES = frozenset({"subscribe", "unsubscribe", "pong"})
 DEFAULT_QUEUE_MAX = 256
 FILE_DEBOUNCE_MS = 50
+HELLO_WAIT_S = 1.0
 _UNSET: object = object()
 
 
@@ -66,6 +69,7 @@ class StreamSettings:
     health_interval_s: float = 0.5
     file_debounce_ms: int = FILE_DEBOUNCE_MS
     watch_poll_s: float = 0.2
+    hello_wait_s: float = HELLO_WAIT_S
 
 
 class DeltaRing:
@@ -554,8 +558,11 @@ class EventHub:
         )
 
     async def wait_primed(self) -> None:
-        """hello 必须在首轮扫描之后，避免 known 早于 priming、replay 拿不到那一档。"""
-        await self._primed.wait()
+        """升级后尽快发 hello；首轮扫描完成或超时（§5.3 不能无限等）。"""
+        try:
+            await asyncio.wait_for(self._primed.wait(), timeout=self.settings.hello_wait_s)
+        except TimeoutError:
+            self._primed.set()
 
     async def scan_files(self) -> None:
         self.scan_files_now()
@@ -564,9 +571,11 @@ class EventHub:
         self.scan_members_now()
 
     async def run(self) -> None:
-        self.scan_files_now()
-        self.scan_members_now()
-        self._primed.set()
+        try:
+            self.scan_files_now()
+            self.scan_members_now()
+        finally:
+            self._primed.set()
         tasks = [
             asyncio.create_task(self._watch_files(), name="web-stream-watch"),
             asyncio.create_task(self._poll_members(), name="web-stream-members"),
@@ -644,8 +653,13 @@ def _error_frame(epoch: str, code: str, message: str) -> dict[str, Any]:
 
 
 async def reject_websocket(
-    websocket: WebSocket, code: int = CLOSE_POLICY, reason: str = ""
+    websocket: WebSocket, code: int = CLOSE_UNAUTHORIZED, reason: str = ""
 ) -> None:
+    """先 accept 再 close，自定义码才能到浏览器。
+
+    uvicorn 在握手阶段 ``close()`` 会变成 HTTP 403，浏览器只看到 1006。
+    """
+    await websocket.accept()
     await websocket.close(code=code, reason=reason)
 
 
@@ -658,17 +672,17 @@ async def handle_stream(
 ) -> None:
     host = websocket.headers.get("host", "")
     if host not in {f"127.0.0.1:{port}", f"localhost:{port}"}:
-        await reject_websocket(websocket, reason=f"host:{host}")
+        await reject_websocket(websocket, code=CLOSE_UNAUTHORIZED, reason=f"host:{host}")
         return
     origin = websocket.headers.get("origin", "")
     if origin not in allowed_origins(port):
-        await reject_websocket(websocket, reason=f"origin:{origin}")
+        await reject_websocket(websocket, code=CLOSE_UNAUTHORIZED, reason=f"origin:{origin}")
         return
     if not session.verify_cookie(websocket.cookies.get(COOKIE_NAME)):
-        await reject_websocket(websocket, reason="cookie")
+        await reject_websocket(websocket, code=CLOSE_UNAUTHORIZED, reason="cookie")
         return
     if hub is None:
-        await reject_websocket(websocket, code=CLOSE_SLOW, reason="hub")
+        await reject_websocket(websocket, code=CLOSE_UNAVAILABLE, reason="hub")
         return
 
     await websocket.accept()

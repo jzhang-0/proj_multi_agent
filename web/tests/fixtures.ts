@@ -63,7 +63,7 @@ const timelineEntries = [
     seq: 38,
     key: "task-38",
     at: now - 330,
-    ts: "2026-08-30T10:42:31Z",
+    ts: "2026-08-30T18:42:31Z",
     sender: "work",
     to: "team",
     text: "T-014 · 进展：完成界面信息架构与框架定案",

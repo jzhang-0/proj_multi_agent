@@ -64,7 +64,8 @@
   - 证据:`src/control/timeline.py` 的 `history_from_entries` 按审计文件序+账本序到达赋 seq，不再 `sort(at)` 后 enumerate；`TimelineCache` 进程内持有 `TimelineProjector`，指纹变化后已知 key 的 seq 不变；epoch 换代 `cache.reset()`。TUI `backfill` 经 `by_display_time` 按 at 排。`docs/web/api-protocol.md` §4.8/§4.9/§5.4 写死：(1) seq 对 key 永久；(2) 展示用 at；(3) 未读用 head_seq。WEB-004 `_timeline_ops` 在 key 的 seq 被挤走时仍 resync。`test_seq_follows_arrival_and_survives_earlier_at_insert`、`test_timeline_middle_work_event_appends_without_renumbering`。
   - 前置:WEB-004。
 
-- [ ] **WEB-011** — 跨前端共享终端采集：TUI(`console/mirror.py`，MIRROR_INTERVAL=0.08)与 Web 镜像通道(≈10 Hz)同看一个成员时是两条互不感知的 tmux 采集回路，叠加负载；terminal-protocol §4.3「多观看者共享单一订阅」未覆盖跨前端。把采集下沉到 `src/control`（或 tmuxctl 侧）的单一订阅源，TUI 与 Web 都作为观看者接入，帧率/背压语义不变；§4.2「无观看者停采集」判据改为跨前端总观看者计数，最后一个观看者(不论 TUI 还是 Web)退出才停采集；TUI 视觉基线与 test_console_mirror 不变。
+- [ ] **WEB-011** — 统一终端采集源(进程内)：TUI `console/mirror.py`(MIRROR_INTERVAL=0.08)与 Web `src/web/terminal.py` MirrorGroup 各自实现了一套 tmux 帧采集。把不依赖 rich 的部分(采集循环、frame_seq、maxsize=1 背压、无观看者停采集)下沉到 `src/control/mirror.py` 单一 Hub，返回原始 ANSI 文本；TUI 与 Web 都作为观看者接入，ANSI 剥离/组帧留在各自调用侧(control 禁 import rich，见 T-015 §6.4 结论)。帧率/背压语义不变；「无观看者停采集」按本进程观看者计数；TUI 视觉基线与 test_console_mirror 不变；允许 console 依赖 control，control 仍禁 import console。
+  - 范围裁定(fable，2026-08-30)：TUI(`amux`)与 `amux web` 是独立 OS 进程，不共享内存(sonnet T-020 调研确认)；跨进程共享同一条 tmux 采集需文件级 IPC(类 lease.py)，而 `capture-pane` 廉价、同看场景罕见，**判定不做**。terminal-protocol §4.3「多观看者共享单一订阅」按进程内理解。
   - 前置:WEB-007。
 
 - [ ] **WEB-009** — 全功能矩阵与发布收口：逐行勾验 inventory §2 全部条目(未完成项如实保留)；更新产品、架构、README、CLI 帮助与安全说明；前端产物进 sdist/wheel；`qa.release` 源码外联网安装并启动 Web，验证不依赖 Node/源码路径/CDN；复查「退出」只关 Web 会话不关成员。 收口清单追加：(a) `control.timeline_snapshot_view` 自建 projector，seq 可能与 TimelineCache/delta 流不一致——接 projector 或 docstring 注明限制(T-017 遗留)；(b) 评估依赖由 `uvicorn[standard]` 改显式 `websockets` 以减小安装体积，若改需重跑真实握手冒烟并同步 test_release_package 断言(T-013 遗留)。

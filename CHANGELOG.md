@@ -3,10 +3,13 @@
 本文件记录 `amux-team` 公开发行的用户可见变更。开发中的 Goal 与验收证据见
 [`docs/goals/`](docs/goals/README.md)。
 
-## Unreleased
+## v0.2.0 — 2026-08-31
+
+桌面 Web 控制台首版，与既有 TUI 共用同一工作区状态、任务账本与消息总线。
 
 ### 修复
 
+- **成员终端镜像帧渲染错位(T-026，human 实机复现）**：tmux `capture-pane` 帧以裸 LF 分行，而镜像 xterm 此前 `convertEol:false`，每行起点不回列首，真实 Claude/Codex 画面呈阶梯状右移。现在镜像终端启用 `convertEol:true`（完整接管仍为原始 PTY 流，保持 false），并以真实 tmux 会话逐行断言 xterm 缓冲区与 `capture-pane` 一致。
 - **成员终端镜像误报 unauthorized(T-025，human 实机复现）**：镜像 WebSocket
   非拒绝码断线重连（网络抖动、服务重启）后，浏览器前端此前不会清空"已持有
   交互租约"的本地状态；重连是全新服务端连接、租约需要重新获取，若此时窗口
@@ -14,10 +17,6 @@
   就此显示"无法连接成员终端 unauthorized"且不会自动恢复。现在重连时会同步
   清空本地租约状态，画面正确回到只读镜像。同时补上此前完全空白的 WebSocket
   握手/票据拒绝结构化日志，标注具体是 Host/Origin/cookie 哪一项校验失败。
-
-## v0.2.0 — 2026-08-30
-
-桌面 Web 控制台首版，与既有 TUI 共用同一工作区状态、任务账本与消息总线。
 
 ### 新能力（WEB-001～011）
 

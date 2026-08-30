@@ -56,5 +56,8 @@
 - [ ] **WEB-008** — 成员管理、生命周期与完整接管：实现「成员打断」「成员终止」「成员重启」「全屏接管 / attach」「`/up`」「`/down`」「`/restart`」「`/adopt`」「`/mute`」「`/member add/rm/list`」。危险动作二次确认与审计；完整接管为 PTY bridge 固定 `tmux attach-session -t =<会话>`，收口在 `tmuxctl`，断线 detach+关 PTY+释放租约+审计；`/adopt` 明示进程级临时状态；`/mute` 走 Hub 策略。真实 tmux + 浏览器验证。
   - 前置:WEB-007。
 
+- [ ] **WEB-010** — 时间线 seq 按到达顺序分配：当前 `control/timeline.py` 按 `at` 排序后位置赋 seq，与 api-protocol §4.8「按进入顺序分配的单调整数」不等价；bus 审计 ts 为秒粒度，同秒内消息与任务事件重排是常态，导致 WEB-004 delta 产出 update+append 错位、只能靠 resync 兜底。改为按到达顺序分配单调 seq(持久化或可重建)，保持单一 seq 空间、窗口不重编号(T-003 已验收语义)，TUI 展示顺序不变；§4.8 措辞同步；WEB-004 的 seq 重排 resync 路径保留为防御。以 test_control_plane/test_console_timeline/test_web_stream 回归。
+  - 前置:WEB-004。
+
 - [ ] **WEB-009** — 全功能矩阵与发布收口：逐行勾验 inventory §2 全部条目(未完成项如实保留)；更新产品、架构、README、CLI 帮助与安全说明；前端产物进 sdist/wheel；`qa.release` 源码外联网安装并启动 Web，验证不依赖 Node/源码路径/CDN；复查「退出」只关 Web 会话不关成员。
   - 前置:WEB-006、WEB-008。

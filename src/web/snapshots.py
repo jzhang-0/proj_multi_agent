@@ -345,7 +345,7 @@ def session_dto(tracker: RevisionTracker) -> dict[str, Any]:
         "epoch_started_at": tracker.epoch_started_at,
         "server_time_at": time.time(),
         "revisions": tracker.revisions(),
-        "capabilities": {"stream": True, "mirror": False, "compose": False, "control": False},
+        "capabilities": {"stream": True, "mirror": True, "compose": False, "control": False},
     }
 
 

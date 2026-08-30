@@ -402,9 +402,14 @@ def create_app(
 
     @app.get("/{spa_path:path}")
     async def spa_fallback(request: Request, spa_path: str) -> Response:
-        """支持刷新 `/workspace`、`/task/<id>`、`/help` 等前端路由。"""
+        """支持刷新 `/workspace`、`/task/<id>`、`/help`、`/member/<name>/terminal` 等前端路由。"""
         require_session(request)
-        if spa_path in {"workspace", "timeline", "help"} or spa_path.startswith("task/"):
+        is_terminal_route = spa_path.startswith("member/") and spa_path.endswith("/terminal")
+        if (
+            spa_path in {"workspace", "timeline", "help"}
+            or spa_path.startswith("task/")
+            or is_terminal_route
+        ):
             return _spa_index()
         return _error("not-found", "页面不存在", status_code=404)
 

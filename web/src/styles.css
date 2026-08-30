@@ -270,3 +270,13 @@ kbd { min-width: 2.4rem; padding: .4rem; border: 1px solid var(--line-strong); b
   .timeline-entry { grid-template-columns: auto minmax(0, 1fr); }
   .timeline-entry__meta { grid-column: 2; grid-template-columns: auto auto; justify-content: space-between; }
 }
+
+.terminal-panel { display: flex; flex-direction: column; gap: .6rem; padding: .8rem; }
+.terminal-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font: .68rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.terminal-toolbar__spacer { flex: 1 1 auto; }
+.terminal-toolbar button { padding: .3rem .55rem; border: 1px solid var(--line); color: var(--blue); background: var(--surface); font: inherit; }
+.terminal-toolbar button:disabled { color: var(--quiet); border-color: var(--line); cursor: not-allowed; }
+.live-active-badge { padding: .2rem .5rem; border: 1px solid var(--accent); color: var(--accent); }
+.terminal-notice { margin: 0; padding: .5rem .7rem; border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: .74rem; }
+.terminal-surface { height: min(60vh, 32rem); overflow: hidden; border: 1px solid var(--line); background: #000; cursor: text; }
+.terminal-surface .xterm { height: 100%; padding: .4rem; }

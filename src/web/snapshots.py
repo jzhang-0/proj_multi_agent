@@ -19,7 +19,7 @@ from team.model import TeamValidationError
 from team.store import TeamNotFound
 from web.context import SnapshotContext, load_bound_team, require_paths, require_workspace
 from web.errors import ApiError
-from web.state import RevisionTracker, TimelineCache
+from web.state import RevisionTracker, TimelineCache, timeline_revision_fingerprint
 from work import WorkError, WorkSnapshot, WorkValidationError
 from work.model import validate_task_id
 from work.service import WorkService
@@ -183,11 +183,7 @@ def _projected_timeline(
     snapshot = _optional_work_snapshot(workspace)
     work_events = snapshot.events if snapshot is not None else ()
     raw_entries, projected = cache.get(paths, work_events=work_events, snapshot=snapshot)
-    fingerprint = (
-        len(raw_entries),
-        projected[-1].key if projected else "",
-        projected[-1].outcome if projected else "",
-    )
+    fingerprint = timeline_revision_fingerprint(paths, snapshot, projected)
     return raw_entries, projected, fingerprint
 
 

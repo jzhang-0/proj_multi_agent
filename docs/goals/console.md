@@ -95,3 +95,7 @@
   - 验证（Codex，2026-08-23）:`uv run --offline ruff check src/console tests/test_console_compose.py tests/test_console_control.py tests/test_console_keyboard.py tests/test_console_mirror.py tests/test_visual_evidence.py` 通过；`uv run --offline pytest tests/test_console_compose.py tests/test_console_control.py tests/test_console_keyboard.py tests/test_console_mirror.py tests/test_visual_evidence.py -q` 为 `44 passed in 13.13s`；视觉命令分别使用安全 `controls` 夹具运行 120×30 的 `Down,Tab,Tab,Up,Down,Escape`、120×30 与 80×24 的 `Down,Tab,Tab` 场景。
   - 证据:`src/console/compose.py` 在直连空输入且无补全候选时发布 tmux `Up`/`Down`，候选优先级、非空发言历史和 `Ctrl+↑↓` 回滚不变；`src/console/control.py` 白名单并审计两键；`tests/test_console_compose.py` 覆盖空输入透传、补全不透传和非空历史，`tests/test_console_control.py` 钉住 tmux 参数与审计。输入提示、帮助、README 与产品定义同步。
   - 视觉自验证:`tests/baseline/con-016-direct-arrows-120x30.txt`/`.ansi` 同屏可见 `[直连] → human → claude: 按键 ↑` 与 `按键 ↓`；`tests/baseline/con-016-direct-input-120x30.txt`/`.ansi` 和 `con-016-direct-input-min-80x24.txt`/`.ansi` 显示「空↑↓/Del/Enter/Shift+Tab透传;Fn+↑↓回看」，120×30 与最小 80×24 下成员画面、输入框和底栏均完整对齐。全部使用 controls 夹具，没有向真实成员终端发键。
+
+- [ ] **CON-017** — 成员画面点击直连:成员画面处于当前画面且用户点击成员 CLI 自己的底部输入区时,直接进入实时键入态；普通字符、Enter、Tab/Shift+Tab、方向键和删除键按顺序透传到该成员终端并在成员画面即时回显，`Esc` 只退出实时键入态，`Ctrl+V` 继续统一粘贴图片，F5–F8 及底部工作对话输入框保持原语义。点击历史区、回滚画面或非输入区不得误激活；界面须明确显示当前直连成员与退出方式，提交动作写审计，并用安全夹具完成实际画面验证。
+  - 前置:CON-006、CON-014、CON-015、CON-016。
+  - 处理登记:Codex，2026-08-30 14:11 CST，分支 `con-017-codex`。

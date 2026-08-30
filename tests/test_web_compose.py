@@ -207,6 +207,15 @@ def test_upload_is_content_addressed_download_is_path_free_and_image_only_sends(
         assert stored.is_file()
         assert stat.S_IMODE(stored.stat().st_mode) == 0o600
 
+        outside = tmp_path / "outside.png"
+        outside.write_bytes(b"must-not-be-reused")
+        stored.unlink()
+        stored.symlink_to(outside)
+        replaced = client.post("/api/v1/attachments", headers=headers, content=_png())
+        assert replaced.status_code == 200
+        assert not stored.is_symlink()
+        assert outside.read_bytes() == b"must-not-be-reused"
+
         downloaded = client.get(safe["download_url"])
         assert downloaded.status_code == 200
         assert downloaded.content.startswith(b"\x89PNG\r\n\x1a\n")

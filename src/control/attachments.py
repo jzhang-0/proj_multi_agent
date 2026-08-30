@@ -93,7 +93,13 @@ class ContentAddressedImageStore:
         name = f"clipboard-{digest}.png"
         target = self.root / name
         self.root.mkdir(parents=True, exist_ok=True)
-        if not target.exists():
+        reusable = False
+        if target.is_file() and not target.is_symlink():
+            try:
+                reusable = target.read_bytes() == payload
+            except OSError:
+                reusable = False
+        if not reusable:
             temporary: Path | None = None
             try:
                 with tempfile.NamedTemporaryFile(
@@ -109,6 +115,8 @@ class ContentAddressedImageStore:
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
+        else:
+            os.chmod(target, 0o600)
         return self._attachment(target, width=width, height=height, size=len(payload))
 
     def resolve(self, attachment_id: str) -> Attachment:

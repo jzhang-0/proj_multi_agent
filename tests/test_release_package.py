@@ -30,6 +30,9 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     }
     assert "Development Status :: 3 - Alpha" in project["classifiers"]
     assert "pillow>=10.0" in project["dependencies"]
+    # 裸 uvicorn 没有 WebSocket 实现，/api/v1/stream 在真实服务器下会 404(T-013 opus 复审实测)。
+    assert "uvicorn[standard]>=0.32" in project["dependencies"]
+    assert "uvicorn>=0.32" not in project["dependencies"]
     packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/amux_runtime" in packages
     assert "src/control" in packages

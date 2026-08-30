@@ -405,7 +405,7 @@ WS 握手校验(会话 cookie、`Host`、`Origin`，见 §6.3)失败时，**必�
 - **`Host` 头**只接受 `127.0.0.1:<port>` 与 `localhost:<port>`，否则 401。防 DNS rebinding：攻击者把自己的域名解析到 `127.0.0.1` 就能让受害者浏览器带着 cookie 访问本地服务，Host 校验是标准防线。
 - **WS 握手的 `Origin` 头**只接受 `http://127.0.0.1:<port>` 与 `http://localhost:<port>`，否则拒绝升级。WebSocket **不受同源策略与 CORS 保护**，任意网页都能对本地 WS 发起连接，Origin 校验是这里唯一的门。
 - **不设置任何 CORS 响应头**。没有 `Access-Control-Allow-Origin`，跨站页面就读不到响应体。
-- 写操作(WEB-006/008)另需自定义头 `X-Amux-Session: <会话id>`，与 SameSite cookie 构成双重提交。自定义头会触发预检，跨站页面在没有 CORS 放行的前提下发不出去。
+- 写操作(WEB-006/008)另需自定义头 `X-Amux-Session: <会话id>`，与 SameSite cookie 构成双重提交。自定义头会触发预检，跨站页面在没有 CORS 放行的前提下发不出去。缺失或不匹配一律 `unauthorized` + 401(§2.4)，**在业务校验之前拒绝**，不要先解析请求体。这条对**所有**写端点生效，WEB-008 的打断/终止/重启/接管与 WEB-006 的发消息/上传同等对待；新增写端点时挂同一个依赖，不要各写各的判断。
 
 ### 6.4 actor 与不可信输入
 

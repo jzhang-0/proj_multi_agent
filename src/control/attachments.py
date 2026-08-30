@@ -53,11 +53,14 @@ class ContentAddressedImageStore:
             )
         try:
             with Image.open(BytesIO(payload)) as opened:
+                width, height = opened.size
+                if width <= 0 or height <= 0 or width * height > self.max_pixels:
+                    raise ImageAttachmentError("上传图片尺寸无效或超过像素上限")
                 opened.load()
                 return self.store_image(opened)
         except ImageAttachmentError:
             raise
-        except (OSError, UnidentifiedImageError, ValueError) as exc:
+        except (Image.DecompressionBombError, OSError, UnidentifiedImageError, ValueError) as exc:
             raise ImageAttachmentError("上传内容不是可读取的图片") from exc
 
     def store_image(self, image: Any) -> Attachment:
@@ -112,16 +115,19 @@ class ContentAddressedImageStore:
         if not isinstance(attachment_id, str) or _ATTACHMENT_ID.fullmatch(attachment_id) is None:
             raise ImageAttachmentError("附件 id 必须是 16 位小写十六进制")
         target = self.root / f"clipboard-{attachment_id}.png"
-        if not target.is_file():
+        if target.is_symlink() or not target.is_file():
             raise FileNotFoundError(attachment_id)
-        size = target.stat().st_size
+        payload = target.read_bytes()
+        size = len(payload)
         if size <= 0 or size > self.max_bytes:
             raise ImageAttachmentError("附件文件大小无效")
+        if hashlib.sha256(payload).hexdigest()[:16] != attachment_id:
+            raise ImageAttachmentError("附件内容与 id 不匹配")
         try:
-            with Image.open(target) as image:
+            with Image.open(BytesIO(payload)) as image:
                 width, height = image.size
                 image.verify()
-        except (OSError, UnidentifiedImageError, ValueError) as exc:
+        except (Image.DecompressionBombError, OSError, UnidentifiedImageError, ValueError) as exc:
             raise ImageAttachmentError("附件文件不是有效图片") from exc
         if width <= 0 or height <= 0 or width * height > self.max_pixels:
             raise ImageAttachmentError("附件图片尺寸无效")

@@ -221,6 +221,11 @@ def test_upload_is_content_addressed_download_is_path_free_and_image_only_sends(
         queued = read_message(pending(BusPaths.for_workspace(workspace))[-1])
         assert queued.text == "请查看附加图片。"
         assert queued.attachments[0].path == str(stored)
+        timeline = client.get("/api/v1/timeline").json()
+        entry = next(item for item in timeline["entries"] if item["key"] == queued.id)
+        assert entry["attachment_ids"] == [safe["id"]]
+        assert entry["attachment_count"] == 1
+        assert str(workspace.state_dir) not in json.dumps(entry)
 
 
 def test_invalid_member_task_attachment_and_non_image_are_structured_errors(

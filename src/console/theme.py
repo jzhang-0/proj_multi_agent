@@ -17,14 +17,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-#: 每种状态的图形与短标签。与颜色分开:颜色只是加成,形状才是主证据
-STATUS_GLYPHS: dict[str, tuple[str, str]] = {
-    "idle": ("○", "IDLE"),
-    "working": ("▶", "WORK"),
-    "stuck": ("◐", "STUCK"),
-    "dead": ("✕", "DEAD"),
-    "failed": ("‼", "FAIL"),
-}
+from control.vocabulary import MEMBER_STATE_GLYPHS
+
+# 兼容既有 console 导出；词表事实来源已下沉，颜色仍在本模块。
+STATUS_GLYPHS = MEMBER_STATE_GLYPHS
 
 
 @dataclass(frozen=True)

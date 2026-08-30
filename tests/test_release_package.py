@@ -32,6 +32,7 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     assert "pillow>=10.0" in project["dependencies"]
     packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/amux_runtime" in packages
+    assert "src/control" in packages
     assert "src/work" in packages
     license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
     assert "MIT License" in license_text

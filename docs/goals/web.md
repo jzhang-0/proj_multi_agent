@@ -21,8 +21,9 @@
 
 执行顺序：WEB-001 → WEB-002 → WEB-003 → WEB-004 为主线，之后 WEB-005～008 可按前置并行，WEB-009 收口。每个 Goal 单独可合入 `main` 且不破坏既有 TUI。Goal 中引用的「」条目名即 inventory §2 的完整枚举，不得删减。
 
-- [ ] **WEB-001** — Web/TUI 共用控制面与读模型：新建不依赖 Textual/HTTP 的控制面层(建议 `src/control/`)，下沉 `console.timeline` 的审计+任务事件→工作对话读模型投影、`console.control.MemberController` 的成员控制与审计编排、`console.app` 中的成员状态汇总，以及 `console.mirror.terminal_input_rows` 等纯文本识别函数；返回 dataclass/枚举等可 JSON 序列化的 DTO，不返回 Rich `Text`/Textual widget/HTML。TUI 改为调用该层。覆盖「左栏任务摘要」「左栏成员卡片」「中栏任务详情」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」的数据语义，以及「成员打断」「成员终止」「成员重启」的控制/审计语义。控制面模块禁止 import `console`(以测试钉住)；现有 console 测试与视觉基线不变。
-  - 处理登记:Sol，2026-08-30 16:57 +0800，分支 `web-001-sol`。
+- [x] **WEB-001** — Web/TUI 共用控制面与读模型：新建不依赖 Textual/HTTP 的控制面层(建议 `src/control/`)，下沉 `console.timeline` 的审计+任务事件→工作对话读模型投影、`console.control.MemberController` 的成员控制与审计编排、`console.app` 中的成员状态汇总，以及 `console.mirror.terminal_input_rows` 等纯文本识别函数；返回 dataclass/枚举等可 JSON 序列化的 DTO，不返回 Rich `Text`/Textual widget/HTML。TUI 改为调用该层。覆盖「左栏任务摘要」「左栏成员卡片」「中栏任务详情」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」的数据语义，以及「成员打断」「成员终止」「成员重启」的控制/审计语义。控制面模块禁止 import `console`(以测试钉住)；现有 console 测试与视觉基线不变。
+  - 验证(Sol，2026-08-30):`uv run ruff check` 针对 `src/control`、受影响 console 模块及相关测试通过；`uv run pytest tests/test_control_plane.py tests/test_console_timeline.py tests/test_console_members.py tests/test_console_control.py tests/test_console_mirror.py tests/test_console_health.py tests/test_console_work.py tests/test_control_lease.py tests/test_release_package.py -q` 为 79 passed；同步最新 main 后重复运行结果相同。`uv run python -m qa.visual --goal WEB-001 --fixture task-board` 分别以 120x30、80x24 实际截取并逐项查看，任务层级、成员卡、证据/事件流/关联沟通及中英文窄屏换行均可辨认，既有 baseline 文件未改写。
+  - 证据:`tests/test_control_plane.py` 以 AST 静态扫描禁止 `control` import console/Rich/Textual/HTTP，并对成员、任务、时间线、健康、控制反馈和词表 DTO 执行 `json.dumps(asdict(...))` 与禁用类型检查；`tests/baseline/web-001-task-board-120x30.txt`、`tests/baseline/web-001-task-board-min-80x24.txt`（同名 `.ansi` 保留颜色）；实现提交 `e403a93`、`ddf0026`，main 合入 `4c8ffb0`。
   - 前置:TEAM-002、CON-019。
 
 - [ ] **WEB-002** — 多前端运行时协调：每工作区单一 Hub 投递租约(其他进程只观察，持锁者退出后可恢复)；每成员单一交互租约，覆盖 resize/直连/接管，显式抢占；崩溃/断线自动释放。约束「终端窗口适配」「成员画面点击直连」「直连文本输入」「直连编辑/方向键」「全屏接管 / attach」「退出」：两个 TUI/测试进程并列时不得重复投递、互相 resize 或交错键入；关闭一个前端不得关闭成员会话。与 Web 框架无关，TUI 先接入。

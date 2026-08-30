@@ -5,7 +5,7 @@
 | 指标 | 预算 | 怎么测 |
 |---|---|---|
 | 消息入队 → 注入收件人终端 | P95 < 200ms | 临时 tmux 会话跑 `cat`,复用 `bus.bench` |
-| 消息 → 时间线上屏 | < 200ms | 起 console(Textual 测试驱动),从入队计时到那行出现在时间线 |
+| 消息 → 工作对话记录上屏 | < 200ms | Textual 测试驱动量入队到记录出现 |
 | 成员详情画面刷新 | < 100ms | 真开一个不停输出的窗格,量镜像相邻两次更新的间隔 |
 | 键入回显 | 单帧 < 16ms | 量一次按键让应用消耗的 CPU 时间(墙上时间里绝大部分是等空闲) |
 
@@ -177,7 +177,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     delivery = Metric("入队 → 注入终端", 200, "p95")
     delivery.samples, delivery.skipped = measure_delivery(args.samples)
 
-    onscreen = Metric("消息 → 时间线上屏", 200, "p95")
+    onscreen = Metric("消息 → 工作对话记录上屏", 200, "p95")
     keystroke = Metric("键入回显 CPU(单帧)", 16, "p95")
     onscreen.samples, keystroke.samples = asyncio.run(
         measure_timeline_and_keystrokes(args.samples)

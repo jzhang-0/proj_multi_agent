@@ -192,8 +192,8 @@ def test_deliver_exception_does_not_break_loop(tmp_path):
     assert pending(paths) == []
 
 
-def test_submission_is_confirmed_once_per_recipient(tmp_path):
-    """一轮投递之后按收件人确认提交,不是每条消息都去抓一次画面。"""
+def test_every_submission_is_confirmed_before_next_message(tmp_path):
+    """同一收件人的每条消息都要确认，不能只确认最后一条。"""
     paths = make_paths(tmp_path)
     for text in ("第一条", "第二条"):
         deposit(Message.create("codex", text, sender="claude"), paths)
@@ -210,25 +210,54 @@ def test_submission_is_confirmed_once_per_recipient(tmp_path):
     hub.drain_once()
     hub.wait_for_confirms()
 
-    assert confirmed == ["codex", "cursor"]
+    assert confirmed == ["codex", "codex", "cursor"]
 
 
 def test_unconfirmed_submission_is_audited(tmp_path):
-    """补完 Enter 还卡在输入框:投递结果照常返回,但审计里要留下这一笔。"""
+    """补完 Enter 仍卡住：留队且不重复注入，确认成功后才归档。"""
     paths = make_paths(tmp_path)
     deposit(Message.create("codex", "卡在输入框的一条", sender="claude"), paths)
 
-    hub = Hub(paths, deliver=lambda message: True, confirm=lambda target: False)
-    results = hub.drain_once()
-    hub.wait_for_confirms()
+    delivered = []
+    ready = False
 
-    assert [r.outcome for r in results] == [DeliveryOutcome.DELIVERED]
+    def deliver(message):
+        delivered.append(message.text)
+        return True
+
+    def confirm(target):
+        return ready
+
+    reported = []
+    hub = Hub(paths, deliver=deliver, confirm=confirm, on_result=reported.append)
+    results = hub.drain_once()
+
+    assert [r.outcome for r in results] == [DeliveryOutcome.FAILED]
+    assert delivered == ["卡在输入框的一条"]
+    assert len(pending(paths)) == 1
     events = [
         json.loads(line) for line in paths.log.read_text(encoding="utf-8").strip().splitlines()
     ]
     stuck = [e for e in events if e["event"] == "deliver-failed"]
     assert len(stuck) == 1
     assert "卡在输入框" in stuck[0]["reason"]
+    assert len(reported) == 1
+
+    # 轮询期间再次失败不重复注入，也不重复刷失败审计。
+    hub.drain_once()
+    events = [json.loads(line) for line in paths.log.read_text(encoding="utf-8").splitlines()]
+    assert delivered == ["卡在输入框的一条"]
+    assert len([e for e in events if e["event"] == "deliver-failed"]) == 1
+    assert len(reported) == 1
+
+    ready = True
+    assert [r.outcome for r in hub.drain_once()] == [DeliveryOutcome.DELIVERED]
+    assert delivered == ["卡在输入框的一条"]
+    assert pending(paths) == []
+    assert [result.outcome for result in reported] == [
+        DeliveryOutcome.FAILED,
+        DeliveryOutcome.DELIVERED,
+    ]
 
 
 def test_confirm_failure_does_not_break_loop(tmp_path):
@@ -240,8 +269,49 @@ def test_confirm_failure_does_not_break_loop(tmp_path):
 
     hub = Hub(paths, deliver=lambda message: True, confirm=boom)
     results = hub.drain_once()
-    hub.wait_for_confirms()
-    assert [r.outcome for r in results] == [DeliveryOutcome.DELIVERED]
+    assert [r.outcome for r in results] == [DeliveryOutcome.FAILED]
+    assert "tmux 挂了" in results[0].detail
+    assert len(pending(paths)) == 1
+
+
+def test_unconfirmed_message_blocks_only_same_recipient(tmp_path):
+    """同一成员必须串行；一个成员卡住不能拖住其他成员。"""
+    paths = make_paths(tmp_path)
+    deposit(Message.create("codex", "第一条", sender="claude"), paths)
+    deposit(Message.create("codex", "第二条", sender="claude"), paths)
+    deposit(Message.create("cursor", "另一个成员", sender="claude"), paths)
+
+    delivered = []
+    codex_ready = False
+
+    def deliver(message):
+        delivered.append((message.to, message.text))
+        return True
+
+    def confirm(target):
+        return target != "codex" or codex_ready
+
+    hub = Hub(paths, deliver=deliver, confirm=confirm)
+    first = hub.drain_once()
+    assert [result.outcome for result in first] == [
+        DeliveryOutcome.FAILED,
+        DeliveryOutcome.DELIVERED,
+    ]
+    assert delivered == [("codex", "第一条"), ("cursor", "另一个成员")]
+    assert [read_message(path).text for path in pending(paths)] == ["第一条", "第二条"]
+
+    codex_ready = True
+    second = hub.drain_once()
+    assert [result.outcome for result in second] == [
+        DeliveryOutcome.DELIVERED,
+        DeliveryOutcome.DELIVERED,
+    ]
+    assert delivered == [
+        ("codex", "第一条"),
+        ("cursor", "另一个成员"),
+        ("codex", "第二条"),
+    ]
+    assert pending(paths) == []
 
 
 def test_human_message_is_shown_not_delivered(tmp_path):

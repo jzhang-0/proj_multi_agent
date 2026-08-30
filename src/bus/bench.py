@@ -17,10 +17,10 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from bus.hub import DeliveryOutcome, DeliveryResult, Hub, format_line, tmux_deliver
+from bus.hub import DeliveryOutcome, DeliveryResult, Hub, format_line
 from bus.message import Message
 from bus.paths import BusPaths
 from bus.queue import deposit
@@ -60,10 +60,28 @@ class BenchSession:
         subprocess.run(["tmux", "kill-session", "-t", self.name], capture_output=True)
 
 
-def run_bench(count: int, interval: float, target: str, deliver=tmux_deliver) -> list[float]:
-    """发 `count` 条消息,返回每条的入队 → 投递完成耗时(毫秒)。"""
+def run_bench(
+    count: int,
+    interval: float,
+    target: str,
+    deliver: Callable[[Message], bool] | None = None,
+) -> list[float]:
+    """发 `count` 条消息,返回每条的入队 → 文本及 Enter 注入完成耗时(毫秒)。"""
     root = Path(tempfile.mkdtemp(prefix="bus-bench-"))
     try:
+        if deliver is None:
+            # 这条产品指标止于 send-keys 完成，不把随后针对成员 TUI 的
+            # composer 确认时间混进来。临时会话名也是原样使用，不绑工作区。
+            from tmuxctl import KeyInjector, Tmux
+
+            injector = KeyInjector(Tmux())
+
+            def inject_only(message: Message) -> bool:
+                injector.deliver(message.to, format_line(message))
+                return True
+
+            deliver = inject_only
+
         paths = BusPaths.resolve(root).ensure()
         deposit_ns: dict[str, int] = {}
         latencies: list[float] = []
@@ -80,7 +98,7 @@ def run_bench(count: int, interval: float, target: str, deliver=tmux_deliver) ->
             latencies.append((done_ns - deposit_ns[message.id]) / 1e6)
 
         stop = threading.Event()
-        hub = Hub(paths, deliver=deliver, on_result=on_result)
+        hub = Hub(paths, deliver=deliver, on_result=on_result, confirm=None)
         worker = threading.Thread(target=hub.run, kwargs={"stop": stop.is_set}, daemon=True)
         worker.start()
 

@@ -1,6 +1,6 @@
 """端到端冒烟:`uv run python -m qa.smoke`。
 
-流程:起假成员窗格(`cat`) → 消息入队 → hub 投递(TMX-002 KeyInjector) →
+流程:起假成员 shell 窗格 → 消息入队 → hub 投递(TMX-002 KeyInjector) →
 窗格画面出现令牌 → 清理。用临时 bus 根目录和隔离 tmux socket,不碰仓库根
 `bus/` 与真实成员会话。成功时打印入队到窗格可见的延迟。
 """
@@ -58,7 +58,11 @@ def run_smoke() -> SmokeReport:
     worker: threading.Thread | None = None
     try:
         tmux = Tmux(socket_name=socket, timeout=5.0)
-        tmux.new_session(session, command=["cat"])
+        tmux.new_session(
+            session,
+            command=["bash", "--norc", "--noprofile"],
+            env={"PS1": "$ ", "TERM": "dumb"},
+        )
         if not tmux.has_session(session):
             return SmokeReport(False, None, "假成员窗格没有拉起来", token)
 

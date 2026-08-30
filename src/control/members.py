@@ -16,6 +16,7 @@ from roster.schema import RosterError
 from tmuxctl import ActivityMonitor, ActivityTracker, PaneOutputStream, Tmux
 
 MEMBER_STATES = frozenset({"idle", "working", "stuck", "dead", "failed"})
+MEMBER_SOURCES = frozenset({"roster", "adopted"})
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,12 @@ class MemberCardSnapshot:
     silent_for: float | None
     alive: bool
     source: str
+
+
+@dataclass(frozen=True)
+class MemberSnapshotView:
     snapshot_at: float
+    members: tuple[MemberCardSnapshot, ...]
 
 
 def pending_counts(paths: BusPaths) -> Counter[str]:
@@ -72,7 +78,7 @@ class MemberStatusService:
         self._trackers = {name: self._new_tracker() for name in names}
         self._sources = {name: "roster" for name in names}
         if sources is not None:
-            self._sources.update(sources)
+            self._update_sources(sources)
         self._overrides: dict[str, str] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._stopped = False
@@ -96,7 +102,13 @@ class MemberStatusService:
                 self._trackers[name] = self._new_tracker()
             self._sources.setdefault(name, "roster")
         if sources is not None:
-            self._sources.update(sources)
+            self._update_sources(sources)
+
+    def _update_sources(self, sources: Mapping[str, str]) -> None:
+        invalid = {source for source in sources.values() if source not in MEMBER_SOURCES}
+        if invalid:
+            raise ValueError(f"未知成员来源: {', '.join(sorted(invalid))}")
+        self._sources.update(sources)
 
     @property
     def can_monitor(self) -> bool:
@@ -140,7 +152,18 @@ class MemberStatusService:
             ),
             alive=activity.alive,
             source=self._sources.get(name, "roster"),
+        )
+
+    def snapshot_view(
+        self,
+        queued: Mapping[str, int] | None = None,
+    ) -> MemberSnapshotView:
+        counts = queued or {}
+        return MemberSnapshotView(
             snapshot_at=self.wall_clock(),
+            members=tuple(
+                self.snapshot(name, queued=counts.get(name, 0)) for name in self.names
+            ),
         )
 
     async def _watch_member(self, name: str) -> None:

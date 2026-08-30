@@ -11,20 +11,9 @@ from bus.sanitize import sanitize
 from console.theme import tokens
 from console.timeline import format_timestamp
 from control.tasks import task_detail_view, task_list_item_view, task_summary_view
-from work import Task, TaskStatus, WorkSnapshot
-
-TASK_GLYPHS: dict[TaskStatus, str] = {
-    TaskStatus.BACKLOG: "○",
-    TaskStatus.ASSIGNED: "◇",
-    TaskStatus.IN_PROGRESS: "▶",
-    TaskStatus.BLOCKED: "!",
-    TaskStatus.SUBMITTED: "↑",
-    TaskStatus.IN_REVIEW: "◐",
-    TaskStatus.REVIEWED: "✓",
-    TaskStatus.CHANGES_REQUESTED: "↩",
-    TaskStatus.ACCEPTED: "◆",
-    TaskStatus.COMPLETED: "●",
-}
+from control.vocabulary import TASK_GLYPHS
+from work import STATUS_LABELS, EventKind, Task, TaskStatus, WorkSnapshot
+from work.presentation import DETAIL_FIELDS, EVENT_LABELS
 
 
 def _status_style(status: TaskStatus) -> str:
@@ -70,7 +59,7 @@ def render_task_card(task: Task) -> Text:
     text = Text()
     style = _status_style(status)
     text.append(f"{TASK_GLYPHS[status]} {item.id} ", style=f"bold {style}")
-    text.append(item.status_label, style=style)
+    text.append(STATUS_LABELS[status], style=style)
     text.append(f"\n{sanitize(item.title)}", style="bold")
     responsibility = f"执行 {item.assignee or '-'} · 评审 {item.reviewer or '-'}"
     text.append(f"\n{sanitize(responsibility)}", style=tokens().muted)
@@ -119,22 +108,24 @@ class TaskDetail(RichLog):
         )
         self.write(heading)
         self.write(
-            f"状态:{detail.status_label}  Leader:{sanitize(detail.leader)}  "
+            f"状态:{STATUS_LABELS[TaskStatus(detail.status)]}  "
+            f"Leader:{sanitize(detail.leader)}  "
             f"执行:{sanitize(detail.assignee or '-')}  "
             f"评审:{sanitize(detail.reviewer or '-')}"
         )
         times = (
-            f"创建:{format_timestamp(detail.created_at)}  "
-            f"更新:{format_timestamp(detail.updated_at)}"
+            f"创建:{format_timestamp(detail.created_ts)}  "
+            f"更新:{format_timestamp(detail.updated_ts)}"
         )
-        if detail.completed_at:
-            times += f"  完成:{format_timestamp(detail.completed_at)}"
+        if detail.completed:
+            times += f"  完成:{format_timestamp(detail.updated_ts)}"
         self.write(times)
         if detail.parent_id:
             self.write(f"父任务:{detail.parent_id}")
         if detail.children:
             child_labels = ", ".join(
-                f"{child.id}({child.status_label})" for child in detail.children
+                f"{child.id}({STATUS_LABELS[TaskStatus(child.status)]})"
+                for child in detail.children
             )
             self.write("子任务:" + child_labels)
         if detail.description:
@@ -149,19 +140,23 @@ class TaskDetail(RichLog):
         for event in detail.events:
             line = (
                 f"  #{event.seq} {format_timestamp(event.ts)[:16]} "
-                f"{event.kind_label} · "
+                f"{EVENT_LABELS[EventKind(event.kind)]} · "
                 f"{sanitize(event.actor)}"
             )
             self.write(line)
-            for event_detail in event.details:
-                self.write(Text(f"     {sanitize(event_detail)}", style=tokens().muted))
+            for key, label in DETAIL_FIELDS:
+                if key in event.details:
+                    event_detail = f"{label}:{event.details[key]}"
+                    self.write(
+                        Text(f"     {sanitize(event_detail)}", style=tokens().muted)
+                    )
         self.write(Text("关联工作对话", style="bold"))
         if not detail.communications:
             self.write(Text("  （无；用 amux msg --task 关联讨论）", style=tokens().muted))
         for entry in detail.communications:
             sender = sanitize(entry.sender)
             to = sanitize(entry.to)
-            preview = sanitize(entry.preview)
+            preview = sanitize(entry.text)
             image_note = (
                 f" [图片 {entry.attachment_count}]" if entry.attachment_count else ""
             )

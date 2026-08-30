@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
 from bus import BusPaths
+from bus.sanitize import sanitize
 from tmuxctl import PaneInfo, TmuxCommandError
 from workspace.session import session_for
 
@@ -26,10 +27,13 @@ class Fault:
     kind: FaultKind
     target: str
     detail: str
+    key: str = field(init=False)
 
-    @property
-    def key(self) -> str:
-        return f"{self.kind}:{self.target}"
+    def __post_init__(self) -> None:
+        target = sanitize(self.target)
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "detail", sanitize(self.detail))
+        object.__setattr__(self, "key", f"{self.kind}:{target}")
 
 
 @dataclass(frozen=True)

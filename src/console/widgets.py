@@ -34,12 +34,10 @@ def render_member_card(snapshot: MemberCardSnapshot) -> Text:
     # 列宽按显示宽度补:成员名可能是中文,按字符数补会把第二行顶歪
     rendered.append(f"{glyph} {pad(label, 5)} ", style=f"bold {color}")
     rendered.append(snapshot.name, style="bold")
-    last_at = (
-        None
-        if snapshot.silent_for is None
-        else snapshot.snapshot_at - snapshot.silent_for
+    last_activity = relative_activity(
+        None if snapshot.silent_for is None else 0.0,
+        snapshot.silent_for or 0.0,
     )
-    last_activity = relative_activity(last_at, snapshot.snapshot_at)
     rendered.append(f"\n排队{snapshot.queued} · {last_activity}", style=tokens().muted)
     return rendered
 

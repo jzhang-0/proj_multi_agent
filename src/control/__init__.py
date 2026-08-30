@@ -13,20 +13,36 @@ from control.lease import (
 )
 from control.members import (
     MemberCardSnapshot,
+    MemberSnapshotView,
     MemberStatusService,
     member_names,
     pending_counts,
 )
 from control.tasks import (
+    TaskChildView,
+    TaskCommunicationView,
     TaskDetailView,
+    TaskEventView,
     TaskListItemView,
     TaskSummaryView,
+    WorkBoardView,
+    selected_default_task_id,
+    task_board_view,
+    task_communications,
     task_detail_view,
     task_list_item_view,
     task_summary_view,
 )
 from control.terminal import terminal_input_rows
-from control.timeline import TimelineCategory, TimelineEntry, history
+from control.timeline import (
+    TimelineCategory,
+    TimelineEntry,
+    TimelineProjector,
+    TimelineSnapshotView,
+    history,
+    timeline_snapshot_view,
+)
+from control.vocabulary import Vocabulary, vocabulary
 
 __all__ = [
     "ControlFeedback",
@@ -41,19 +57,32 @@ __all__ = [
     "LeaseState",
     "MemberActionController",
     "MemberCardSnapshot",
+    "MemberSnapshotView",
     "MemberStatusService",
     "MemberLeaseManager",
+    "TaskChildView",
+    "TaskCommunicationView",
     "TaskDetailView",
+    "TaskEventView",
     "TaskListItemView",
     "TaskSummaryView",
     "TimelineCategory",
     "TimelineEntry",
+    "TimelineProjector",
+    "TimelineSnapshotView",
+    "Vocabulary",
+    "WorkBoardView",
     "history",
     "leases_root",
     "member_names",
     "pending_counts",
+    "selected_default_task_id",
+    "task_board_view",
+    "task_communications",
     "task_detail_view",
     "task_list_item_view",
     "task_summary_view",
     "terminal_input_rows",
+    "timeline_snapshot_view",
+    "vocabulary",
 ]

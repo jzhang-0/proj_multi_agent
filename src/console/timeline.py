@@ -24,6 +24,7 @@ from rich.text import Text
 from bus.sanitize import sanitize
 from console.theme import tokens
 from control.timeline import TimelineCategory, TimelineEntry, history
+from control.vocabulary import TIMELINE_CATEGORY_LABELS, TIMELINE_OUTCOMES
 
 __all__ = [
     "TimelineCategory",
@@ -38,23 +39,13 @@ __all__ = [
 ]
 
 #: 结局 → (标记, 是否压暗)。拒收/失败都不是正常发言
-OUTCOME_MARKS = {
-    "delivered": ("✓", False),
-    "shown": ("★", False),
-    "deliver-failed": ("✗", True),
-    "rejected": ("⊘", True),
-    "malformed": ("☠", True),
-    "pending": ("·", False),
-}
+OUTCOME_MARKS = TIMELINE_OUTCOMES
 
 #: `@名字`:字母数字下划线连字符,或中文
 MENTION = re.compile(r"@[\w一-鿿-]+")
 
 CATEGORY_LABELS: dict[TimelineCategory, str] = {
-    TimelineCategory.HUMAN: "human往来",
-    TimelineCategory.AI: "AI协作",
-    TimelineCategory.TASK: "任务",
-    TimelineCategory.CONTROL: "终端控制",
+    category: TIMELINE_CATEGORY_LABELS[str(category)] for category in TimelineCategory
 }
 
 

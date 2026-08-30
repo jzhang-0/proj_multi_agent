@@ -25,8 +25,10 @@ classifiers = [
   "Topic :: System :: Shells",
 ]
 dependencies = [
+  "fastapi>=0.115",
   "pillow>=10.0",
   "textual>=1.0",
+  "uvicorn>=0.32",
   "watchfiles>=0.24",
 ]
 
@@ -43,6 +45,7 @@ Issues = "https://github.com/jzhang-0/proj_multi_agent/issues"
 
 [dependency-groups]
 dev = [
+  "httpx>=0.28.1",
   "pytest>=8.3",
   "ruff>=0.9",
 ]
@@ -58,6 +61,7 @@ packages = [
   "src/roster",
   "src/team",
   "src/tmuxctl",
+  "src/web",
   "src/workspace",
   "src/work",
 ]

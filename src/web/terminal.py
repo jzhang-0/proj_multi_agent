@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -25,6 +26,11 @@ from control.lease import DEFAULT_TTL_SECONDS, LeaseDenied, MemberLeaseManager
 from control.mirror import IdleTick, MirrorHub, RawFrame
 from control.terminal import terminal_input_rows
 from tmuxctl import KeyInjector
+
+#: BUG(T-025):镜像通道的票据/未持锁写拒绝此前不落日志，human 实机复现
+#: unauthorized(4401)时无法判断是缺票据、票据被拒还是"未持租约就发写帧"
+#: 触发的(§6.3 白名单只有 scroll，其余一律按写处理)。
+logger = logging.getLogger("web.terminal")
 
 #: §4.2:Web 侧 10Hz 上限(实时)；回滚区内容不变，降到 2Hz 足够(§4.3)。
 MIRROR_MIN_INTERVAL = 0.1
@@ -218,11 +224,20 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
             return
         token = raw.get("direct_token")
         if not isinstance(token, str) or not token or state.authorize is None:
+            logger.warning(
+                "ws_ticket_reject member=%s owner=%s reason=missing-token", member, owner
+            )
             await websocket.close(code=4401, reason="unauthorized")
             raise _UnauthorizedWrite
         try:
             await asyncio.to_thread(state.authorize, token)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "ws_ticket_reject member=%s owner=%s reason=invalid-token detail=%s",
+                member,
+                owner,
+                exc,
+            )
             await websocket.close(code=4401, reason="unauthorized")
             raise _UnauthorizedWrite from None
         force = bool(raw.get("force", False))
@@ -375,6 +390,12 @@ async def run_mirror_connection(websocket: Any, state: ConnectionState) -> None:
             # scroll；除此之外一律按写处理，未持租约就关闭，避免未来新增帧
             # 忘记分类时意外默认放行。lease acquire 自己负责消费一次性票据。
             if not has_lease:
+                logger.warning(
+                    "ws_write_reject member=%s owner=%s reason=no-lease msg_type=%r",
+                    member,
+                    owner,
+                    msg_type,
+                )
                 await websocket.close(code=4401, reason="unauthorized")
                 raise _UnauthorizedWrite
 

@@ -5,11 +5,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from control.lease import DEFAULT_TTL_SECONDS, LeaseDenied, MemberLeaseManager
 from tmuxctl import TmuxAttachProcess
+
+#: BUG(T-025):与 web/terminal.py 同款结构化日志，覆盖完整接管通道的票据/
+#: 首帧拒绝路径。
+logger = logging.getLogger("web.attach")
 
 ATTACH_HEARTBEAT_INTERVAL = DEFAULT_TTL_SECONDS / 3
 ATTACH_AUTH_TIMEOUT = 5.0
@@ -88,21 +93,42 @@ async def run_attach_connection(
         try:
             initial = await asyncio.wait_for(websocket.receive_json(), timeout=auth_timeout)
         except (TimeoutError, ValueError, TypeError):
+            logger.warning(
+                "ws_attach_reject member=%s owner=%s reason=first-frame-timeout", member, owner
+            )
             await websocket.close(code=4401, reason="unauthorized")
             return
         if initial.get("type") != "attach":
+            logger.warning(
+                "ws_attach_reject member=%s owner=%s reason=bad-first-frame-type type=%r",
+                member,
+                owner,
+                initial.get("type"),
+            )
             await websocket.close(code=4401, reason="unauthorized")
             return
         if "actor" in initial:
+            logger.warning(
+                "ws_attach_reject member=%s owner=%s reason=client-reported-actor", member, owner
+            )
             await websocket.close(code=4401, reason="unauthorized")
             return
         attach_token = initial.get("attach_token")
         if not isinstance(attach_token, str) or not attach_token:
+            logger.warning(
+                "ws_ticket_reject member=%s owner=%s reason=missing-token", member, owner
+            )
             await websocket.close(code=4401, reason="unauthorized")
             return
         try:
             await asyncio.to_thread(authorize, attach_token)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "ws_ticket_reject member=%s owner=%s reason=invalid-token detail=%s",
+                member,
+                owner,
+                exc,
+            )
             await websocket.close(code=4401, reason="unauthorized")
             return
         try:

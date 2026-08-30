@@ -848,7 +848,21 @@ function TerminalView({
       termRef.current = term;
 
       const connection = connectTerminalMirror(member, {
-        status: setStatus,
+        status: (next) => {
+          // BUG(T-025):非拒绝码断线后重连是全新服务端连接,没有旧连接的
+          // 租约/直连态记忆(has_lease 从 false 重新算起);客户端如果不跟着
+          // 清零,重连缺口里任何一次 resize/focus_input/按键都会被新连接当
+          // 场按"未持租约写"关闭 4401(§6.3 白名单只有 scroll),表现为无端
+          // 弹出"无法连接成员终端 unauthorized"。"connecting"覆盖首次连接,
+          // "reconnecting"覆盖之后每次重连,两者都要清。
+          if (next === "connecting" || next === "reconnecting") {
+            leaseHeldRef.current = false;
+            liveActiveRef.current = false;
+            setLeaseHeld(false);
+            setLiveActive(false);
+          }
+          setStatus(next);
+        },
         rejected: (code, reason) => setRejection({ code, reason }),
         message: (message) => {
           if (message.type === "frame") {

@@ -83,6 +83,72 @@ test("member terminal renders a mirrored frame and completes click-to-connect", 
     .toBe(true);
 });
 
+// BUG(T-025，human 实机复现):镜像连接非拒绝码断线重连后，前端曾经不清
+// leaseHeldRef/liveActiveRef——重连是全新服务端连接(has_lease 从 false
+// 重新算起)，客户端却还以为自己持有租约，一旦窗口尺寸变化触发 resize
+// 上报，新连接会把它当"未持租约写"直接 4401 关闭，界面就地弹出"无法连接
+// 成员终端 unauthorized"，跟人一开始有没有点过画面完全无关，看起来像随机
+// 触发。这里用假 WS 服务端真实关闭一次连接触发重连，重连成功后立刻改视口
+// 尺寸触发 ResizeObserver，断言新连接没有收到任何非白名单写消息。
+test("reconnect after a transient drop does not resend a stale resize before re-acquiring the lease", async ({
+  page,
+}) => {
+  const connections: Array<Record<string, unknown>[]> = [];
+
+  await page.routeWebSocket(/\/api\/v1\/terminal\/.+\/mirror$/, (ws) => {
+    const received: Record<string, unknown>[] = [];
+    connections.push(received);
+    const isFirst = connections.length === 1;
+    ws.onMessage(async (raw) => {
+      const message = JSON.parse(raw as string) as Record<string, unknown>;
+      received.push(message);
+      if (message.type === "lease" && message.action === "acquire") {
+        ws.send(
+          JSON.stringify({
+            type: "lease_acquired",
+            holder: { owner: "web:test:conn-1", host: "test-host", acquired_at: 0 },
+          }),
+        );
+        if (isFirst) {
+          // 拿到租约、界面稳定显示"已持有"之后再来一次普通断线(非 4000+
+          // 拒绝码)，模拟网络抖动/服务重启，触发客户端自动重连。
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          ws.close();
+        }
+      }
+    });
+    ws.send(
+      JSON.stringify({
+        type: "frame",
+        member: "sol",
+        frame_seq: 1,
+        cols: 80,
+        rows: 24,
+        history_offset: 0,
+        captured_at: 0,
+        cursor_y: 2,
+        input_rows: [2],
+        live_allowed: true,
+        encoding: "ansi",
+        data: "$ echo hello-from-sol\r\nhello-from-sol\r\n",
+      }),
+    );
+  });
+
+  await page.goto("/member/sol/terminal");
+  await page.locator(".terminal-surface").click();
+  await expect(page.getByText("已持有交互租约")).toBeVisible();
+
+  await expect.poll(() => connections.length).toBe(2);
+  // 重连成功后改视口尺寸触发 ResizeObserver;有 bug 时会把 resize 发给
+  // 这条从没 acquire 过租约的新连接。
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.waitForTimeout(300);
+
+  const secondConnection = connections[1];
+  expect(secondConnection).toEqual([]);
+});
+
 test("member card in the sidebar navigates to that member's terminal", async ({ page }) => {
   await page.routeWebSocket(/\/api\/v1\/terminal\/.+\/mirror$/, () => undefined);
   await page.goto("/");

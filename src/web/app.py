@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib.resources
+import logging
 import mimetypes
 import os
 import uuid
@@ -61,6 +62,12 @@ from web.stream import EventHub, StreamSettings, handle_stream
 from web.terminal import HEARTBEAT_INTERVAL, ConnectionState, MirrorHub, run_mirror_connection
 
 API_PREFIX = "/api/v1"
+
+#: BUG(T-025):WS 握手/票据拒绝此前完全不落日志，human 实机复现
+#: unauthorized 时无法判断 Host/Origin/cookie 三道校验哪一道没过。
+#: uvicorn 默认 `log_level="warning"`(见 web/cli.py)，故这里用 WARNING，
+#: 保证不额外调命令行参数也能在终端看到。
+logger = logging.getLogger("web.app")
 
 #: WS 握手拒绝用的私有关闭码(RFC 6455 4000-4999 段)；协议文档未定专门取值，
 #: 这里的编号只是内部约定,与 HTTP 侧 §2.4 错误码同义对照(unauthorized/
@@ -540,17 +547,28 @@ def create_app(
         不产生订阅/租约/进程,不算真正建立连接。
         """
 
-        async def reject(code: int, reason: str) -> None:
+        async def reject(code: int, reason: str, *, check: str) -> None:
+            logger.warning(
+                "ws_reject endpoint=mirror member=%s check=%s code=%d host=%r origin=%r",
+                member,
+                check,
+                code,
+                host,
+                origin,
+            )
             await websocket.accept()
             await websocket.close(code=code, reason=reason)
 
         host = websocket.headers.get("host", "")
         origin = websocket.headers.get("origin", "")
-        if host not in hosts or origin not in origins:
-            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
+        if host not in hosts:
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized", check="host")
+            return
+        if origin not in origins:
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized", check="origin")
             return
         if not session.verify_cookie(websocket.cookies.get(COOKIE_NAME)):
-            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized", check="cookie")
             return
 
         ctx = current_context()
@@ -560,13 +578,13 @@ def create_app(
             or app.state.lease_manager is None
             or app.state.member_admin is None
         ):
-            await reject(WS_CLOSE_UNAVAILABLE, "unavailable")
+            await reject(WS_CLOSE_UNAVAILABLE, "unavailable", check="runtime")
             return
         if member not in ctx.names:
-            await reject(WS_CLOSE_NOT_FOUND, "member-not-found")
+            await reject(WS_CLOSE_NOT_FOUND, "member-not-found", check="member")
             return
         if not await asyncio.to_thread(ctx.tmux.has_session, member):
-            await reject(WS_CLOSE_NOT_FOUND, "session-not-found")
+            await reject(WS_CLOSE_NOT_FOUND, "session-not-found", check="tmux-session")
             return
 
         await websocket.accept()
@@ -590,17 +608,28 @@ def create_app(
 
     @app.websocket(f"{API_PREFIX}/terminal/{{member}}/attach")
     async def terminal_attach(websocket: WebSocket, member: str) -> None:
-        async def reject(code: int, reason: str) -> None:
+        async def reject(code: int, reason: str, *, check: str) -> None:
+            logger.warning(
+                "ws_reject endpoint=attach member=%s check=%s code=%d host=%r origin=%r",
+                member,
+                check,
+                code,
+                host,
+                origin,
+            )
             await websocket.accept()
             await websocket.close(code=code, reason=reason)
 
         host = websocket.headers.get("host", "")
         origin = websocket.headers.get("origin", "")
-        if host not in hosts or origin not in origins:
-            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
+        if host not in hosts:
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized", check="host")
+            return
+        if origin not in origins:
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized", check="origin")
             return
         if not session.verify_cookie(websocket.cookies.get(COOKIE_NAME)):
-            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized")
+            await reject(WS_CLOSE_UNAUTHORIZED, "unauthorized", check="cookie")
             return
         ctx = current_context()
         if (
@@ -610,10 +639,10 @@ def create_app(
             or app.state.lease_manager is None
             or app.state.member_admin is None
         ):
-            await reject(WS_CLOSE_UNAVAILABLE, "unavailable")
+            await reject(WS_CLOSE_UNAVAILABLE, "unavailable", check="runtime")
             return
         if member not in ctx.names:
-            await reject(WS_CLOSE_NOT_FOUND, "member-not-found")
+            await reject(WS_CLOSE_NOT_FOUND, "member-not-found", check="member")
             return
         await websocket.accept()
         owner = f"web-attach:{session.session_id}:{uuid.uuid4().hex}"

@@ -127,7 +127,8 @@ def test_overflow_merges_domain_then_global_then_closes() -> None:
     assert closed == CLOSE_SLOW
 
 
-def test_first_workspace_scan_keeps_epoch() -> None:
+def test_first_workspace_scan_does_not_emit_epoch_changed() -> None:
+    """首扫不得 reset_epoch；订阅客户端队列里不能出现 epoch_changed。"""
     tracker = RevisionTracker()
     epoch = tracker.epoch
     hub = EventHub(
@@ -138,10 +139,13 @@ def test_first_workspace_scan_keeps_epoch() -> None:
         tmux=None,
         settings=FAST,
     )
+    client = hub.add_client()
     hub.scan_files_now()
     assert tracker.epoch == epoch
+    assert all(frame.get("type") != "epoch_changed" for frame in client._pending)
     hub.scan_files_now()
     assert tracker.epoch == epoch
+    assert all(frame.get("type") != "epoch_changed" for frame in client._pending)
 
 
 def test_overflow_third_level_closes_unread_client() -> None:

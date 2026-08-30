@@ -173,7 +173,7 @@ tmux 没有"点击定位到某行"的概念，`row` **不会**被翻译成任何
 
 服务端只采集一次带色帧(不为识别再多打一次 `capture-pane`)，剥离 ANSI 后喂给识别函数。**剥离结果必须与 `Text.from_ansi(...).plain` 逐字符一致**，否则同一画面 TUI 认得出 composer、Web 认不出(或反之)，就成了两套规则。
 
-建议：剥离函数与 `terminal_input_rows` 一起放进控制面(WEB-001 已要求下沉该识别函数)，并用同一份带 ANSI 的样本同时断言"控制面剥离结果 == `Text.from_ansi().plain`"。这条钉子测试比任何文档都管用。
+**剥离函数不放进控制面**(此处更正初稿的建议，T-015 复审时发现)：剥离依赖 `rich.text.Text`，而 WEB-001 的边界测试用 AST 禁止 `src/control` 里 import `rich`，把它下沉会直接撞上那条已验收的约束。正确做法是留在各自调用侧(TUI 在 `console/mirror.py`，Web 在 `web/terminal.py`)，但**必须有一条钉子测试**：用同一份带 ANSI 的样本断言两侧剥离结果与 `Text.from_ansi(..., no_wrap=True, overflow="crop").plain` 逐字符相等。两处各自演化时，这条测试是唯一能拦住它们悄悄分叉的东西。
 
 ## 7. 直连输入
 

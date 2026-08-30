@@ -43,6 +43,7 @@ RING_CAPACITIES = {"timeline": 512, "work": 512, "health": 128}
 CLIENT_FRAME_TYPES = frozenset({"subscribe", "unsubscribe", "pong"})
 DEFAULT_QUEUE_MAX = 256
 FILE_DEBOUNCE_MS = 50
+_UNSET: object = object()
 
 
 def allowed_origins(port: int) -> frozenset[str]:
@@ -257,7 +258,7 @@ class EventHub:
         self._published: dict[str, int] = {}
         self._last_timeline: dict[int, dict[str, Any]] = {}
         self._last_work_seq: int | None = None
-        self._identity: tuple[str, str] | None | object = object()
+        self._identity: tuple[str, str] | None | object = _UNSET
         self._stopped = False
         self._watch_stop = asyncio.Event()
         self._primed = asyncio.Event()
@@ -328,7 +329,7 @@ class EventHub:
 
     def _scan_workspace(self, ctx: SnapshotContext) -> None:
         identity = _workspace_identity(ctx)
-        if self._identity is object():
+        if self._identity is _UNSET:
             self._identity = identity
         elif identity != self._identity:
             self._identity = identity

@@ -122,6 +122,23 @@ def test_overflow_merges_domain_then_global_then_closes() -> None:
     assert closed == CLOSE_SLOW
 
 
+def test_first_workspace_scan_keeps_epoch() -> None:
+    tracker = RevisionTracker()
+    epoch = tracker.epoch
+    hub = EventHub(
+        tracker=tracker,
+        cache=TimelineCache(),
+        member_status=MemberStatusService(()),
+        health=None,
+        tmux=None,
+        settings=FAST,
+    )
+    hub.scan_files_now()
+    assert tracker.epoch == epoch
+    hub.scan_files_now()
+    assert tracker.epoch == epoch
+
+
 def test_overflow_third_level_closes_unread_client() -> None:
     client = StreamClient(queue_max=4)
     epoch = "abc"

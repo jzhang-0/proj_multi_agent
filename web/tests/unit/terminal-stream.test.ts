@@ -43,6 +43,8 @@ describe("terminal mirror WebSocket client", () => {
       type: "frame",
       member: "claude",
       frame_seq: 1,
+      cols: 80,
+      rows: 24,
       history_offset: 0,
       captured_at: 0,
       cursor_y: 0,

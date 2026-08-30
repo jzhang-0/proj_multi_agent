@@ -110,6 +110,7 @@ MirrorBroadcaster(member, start)   ← 每个 (成员, 回滚偏移) 一个
 - 实时观看者(`history_offset == 0`)天然聚在同一组，共享一次 capture——这是绝大多数情况。
 - 回滚是低频手动操作：回滚组的采集频率降到 **2 Hz** 就够，且历史区内容本就不变。
 - 组内订阅者归零 → 该组采集循环退出。
+- **共享是进程内语义**(WEB-011 裁定，2026-08-30)：广播器是单个 Python 进程里的对象。TUI(`amux`)与 `amux web` 是两个独立 OS 进程——`console/cli.py` 识别到 `web` 子命令后转发进 `web/cli.py` 的 `uvicorn.run()` 并阻塞到退出，两边各自 `bind_tmux()`，没有任何共享状态。因此"最后一个观看者退出才停采集"里的观看者，指的是**本进程内**的观看者；跨前端同看同一个成员时会有两条独立采集回路，见 §12.7。
 
 ### 4.4 背压：只保留最新帧
 
@@ -173,7 +174,7 @@ tmux 没有"点击定位到某行"的概念，`row` **不会**被翻译成任何
 
 服务端只采集一次带色帧(不为识别再多打一次 `capture-pane`)，剥离 ANSI 后喂给识别函数。**剥离结果必须与 `Text.from_ansi(...).plain` 逐字符一致**，否则同一画面 TUI 认得出 composer、Web 认不出(或反之)，就成了两套规则。
 
-建议：剥离函数与 `terminal_input_rows` 一起放进控制面(WEB-001 已要求下沉该识别函数)，并用同一份带 ANSI 的样本同时断言"控制面剥离结果 == `Text.from_ansi().plain`"。这条钉子测试比任何文档都管用。
+**剥离函数不放进控制面**(此处更正初稿的建议，T-015 复审时发现)：剥离依赖 `rich.text.Text`，而 WEB-001 的边界测试用 AST 禁止 `src/control` 里 import `rich`，把它下沉会直接撞上那条已验收的约束。正确做法是留在各自调用侧(TUI 在 `console/mirror.py`，Web 在 `web/terminal.py`)，但**必须有一条钉子测试**：用同一份带 ANSI 的样本断言两侧剥离结果与 `Text.from_ansi(..., no_wrap=True, overflow="crop").plain` 逐字符相等。两处各自演化时，这条测试是唯一能拦住它们悄悄分叉的东西。
 
 ## 7. 直连输入
 
@@ -342,6 +343,7 @@ WEB-007/008 是"高"难度项，测试通过不能替代看图([Goal 总索引](
 4. **PTY bridge 的进程回收**。忘记 `waitpid` 会攒僵尸进程，长时间运行的 web 服务端上会累积。§8.4 第 2 步不可省。
 5. **`fit_window` 把 `window-size` 设为 `manual` 是全局副作用**，不会因为 web 进程退出而自动恢复。若 web 崩溃时未走到 `release_window_size`，成员窗口会被永久钉在某个尺寸，TUI 之后看到的画面也不对。建议 WEB-007 在成员采集循环退出与进程退出路径上都调用 `release_window_size`，并在 §11 的验证里加一条"kill -9 web 进程后 TUI 画面尺寸恢复正常"。
 6. **`terminal_input_rows` 只认 Claude 双横线 composer 与 Codex 底部 `›`**。名册里出现第三类 CLI 时，Web 的点击直连会静默失效(返回空元组，点哪都不进直连态)。这不是本文引入的限制，但 Web 上表现为"功能好像坏了"，界面应给出可见提示而不是无反应。
+7. **TUI 与 Web 同看一个成员时是两条独立采集回路**。两者是独立进程(§4.3)，各自按自己的节奏轮询同一个 pane：Web 侧实测约 9.5 Hz(`min_interval=0.1`，差值是每轮 `to_thread` 与处理开销)，TUI 侧是 `console/app.py` 的 `MIRROR_INTERVAL=0.08`，叠加频率是两者之和。**列为已知限制，判定不做**(WEB-011，2026-08-30)：跨进程共享需要 `control/lease.py` 那样的文件级协调，会引入新的失效模式(采集持有者进程崩溃后，另一端停在旧帧直到接管)，而 `capture-pane` 本身廉价，且只有"同一成员同时被 TUI 与浏览器盯着"时才叠加，这个组合并不常见。若将来实测表明它确有代价，再单独立 Goal 做 IPC 协调。
 
 ## 13. 待 WEB-005 / WEB-007 落地后校正
 

@@ -70,7 +70,7 @@ packages = [
 "web/dist" = "web/static"
 
 [tool.hatch.build.targets.sdist.force-include]
-"web/dist" = "src/web/static"
+"web/dist" = "web/dist"
 
 [tool.hatch.build.targets.sdist]
 include = [

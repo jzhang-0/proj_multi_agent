@@ -41,7 +41,7 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     wheel_force = config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
     sdist_force = config["tool"]["hatch"]["build"]["targets"]["sdist"]["force-include"]
     assert wheel_force == {"web/dist": "web/static"}
-    assert sdist_force == {"web/dist": "src/web/static"}
+    assert sdist_force == {"web/dist": "web/dist"}
     license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
     assert "MIT License" in license_text
     assert "Copyright (c) 2026 jzhang-0" in license_text

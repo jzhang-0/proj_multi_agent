@@ -168,6 +168,11 @@ class NamespacedTmux:
     def capture_with_cursor(self, target: str, *, escape: bool = False) -> tuple[str, int]:
         return self._inner.capture_with_cursor(self._map(target), escape=escape)
 
+    def capture_with_geometry(
+        self, target: str, *, escape: bool = False, start: int | str | None = None
+    ) -> tuple[str, int, int, int]:
+        return self._inner.capture_with_geometry(self._map(target), escape=escape, start=start)
+
     def capture_pane(
         self,
         target: str,

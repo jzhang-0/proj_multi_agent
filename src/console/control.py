@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -14,18 +13,10 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from bus.audit import AuditLog
+from control.actions import ControlFeedback, MemberActionController
 from roster.lifecycle import Lifecycle
 from tmuxctl import KeyInjector, ProcessController, Tmux
 from workspace.session import session_for
-
-
-@dataclass(frozen=True)
-class ControlFeedback:
-    action: str
-    target: str
-    changed: bool
-    detail: str
-
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -38,8 +29,8 @@ SUBMIT_GAP_S = 0.15
 LIVE_SUBMIT_GAP_S = 0.01
 
 
-class MemberController:
-    """复用 TMX-005 与 ROS-003，并为每个动作落审计。"""
+class MemberController(MemberActionController):
+    """TUI 成员控制器；共享动作来自控制面，直连输入仅供终端 UI。"""
 
     def __init__(
         self,
@@ -51,33 +42,9 @@ class MemberController:
         runner: Runner = subprocess.run,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
-        self.tmux = tmux
-        self.lifecycle = lifecycle
-        self.audit = audit
-        self.process = process or ProcessController(tmux)
+        super().__init__(tmux, lifecycle, audit, process=process)
         self.runner = runner
         self._sleep = sleeper
-
-    def _record(self, feedback: ControlFeedback) -> ControlFeedback:
-        self.audit.record_control(
-            feedback.action,
-            feedback.target,
-            changed=feedback.changed,
-            detail=feedback.detail,
-        )
-        return feedback
-
-    def _failed(self, action: str, target: str, exc: Exception) -> None:
-        self.audit.record_control(
-            action,
-            target,
-            changed=False,
-            detail=f"{type(exc).__name__}: {exc}",
-        )
-
-    def record_failure(self, action: str, target: str, exc: Exception) -> None:
-        """记录控制动作在进入具体控制器前就失败的情况。"""
-        self._failed(action, target, exc)
 
     def type_text(self, target: str, text: str) -> ControlFeedback:
         """把一行字直接键入成员终端并回车(总控台里的"单独说话")。
@@ -148,36 +115,8 @@ class MemberController:
             self._failed("key", target, exc)
             raise
 
-    def interrupt(self, target: str) -> ControlFeedback:
-        try:
-            result = self.process.interrupt(target)
-            detail = "已发送 Escape + Ctrl-C" if result.changed else "目标已消失,未执行"
-            return self._record(ControlFeedback("interrupt", target, result.changed, detail))
-        except Exception as exc:
-            self._failed("interrupt", target, exc)
-            raise
-
-    def terminate(self, target: str) -> ControlFeedback:
-        try:
-            result = self.process.terminate(target)
-            detail = f"已向 CLI 进程 {result.pid} 发送 SIGTERM" if result.changed else "目标已消失"
-            return self._record(ControlFeedback("terminate", target, result.changed, detail))
-        except Exception as exc:
-            self._failed("terminate", target, exc)
-            raise
-
-    def restart(self, target: str) -> ControlFeedback:
-        try:
-            result = self.lifecycle.restart(target)[0]
-            return self._record(
-                ControlFeedback("restart", target, result.changed, result.detail)
-            )
-        except Exception as exc:
-            self._failed("restart", target, exc)
-            raise
-
     def takeover(self, target: str) -> ControlFeedback:
-        """前台 attach 到成员会话；调用方必须先挂起 Textual。"""
+        """前台 attach 到成员会话；浏览器 PTY 接管由 WEB-008 实现。"""
         try:
             if not self.tmux.has_session(target):
                 return self._record(

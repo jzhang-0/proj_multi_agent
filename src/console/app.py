@@ -52,13 +52,12 @@ from console.help import ShortcutHelpScreen
 from console.mirror import WHEEL_STEP, Mirror
 from console.theme import THEMES, Tokens
 from console.theme import tokens as theme_tokens
-from console.timeline import history
 from console.widgets import ConversationCard, ConversationFilter, MemberCard, Timeline
 from console.workview import TaskCard, TaskDetail, TaskSummaryCard, render_task_card
 from control.health import FaultEvent, FaultKind, HealthMonitor
 from control.members import MemberStatusService, member_names, pending_counts
 from control.tasks import selected_default_task_id
-from control.timeline import TimelineProjector
+from control.timeline import TimelineProjector, timeline_snapshot_view
 from roster import RosterError, load_effective_roster
 from roster.lifecycle import Lifecycle
 from tmuxctl import TmuxError
@@ -463,11 +462,12 @@ class ConsoleApp(App[None]):
         source = "bus/log.jsonl"
         if self.work_snapshot.events:
             source += " + work/events.jsonl"
-        entries = history(
+        timeline_view = timeline_snapshot_view(
             AuditLog(self.paths),
             work_events=self.work_snapshot.events,
             snapshot=self.work_snapshot,
         )
+        entries = list(timeline_view.entries)
         self.timeline_projector.seed(entries)
         timeline.backfill(entries, source=source)
         self._sync_timeline_filter_counts()
@@ -797,11 +797,12 @@ class ConsoleApp(App[None]):
         source = "bus/log.jsonl"
         if self.work_snapshot.events:
             source += " + work/events.jsonl"
-        entries = history(
+        timeline_view = timeline_snapshot_view(
             AuditLog(self.paths),
             work_events=self.work_snapshot.events,
             snapshot=self.work_snapshot,
         )
+        entries = list(timeline_view.entries)
         self.timeline_projector.seed(entries)
         timeline.backfill(entries, source=source)
         self._sync_timeline_filter_counts()

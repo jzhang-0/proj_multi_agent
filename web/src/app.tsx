@@ -1,20 +1,601 @@
-export function App() {
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import {
+  fetchBootstrap,
+  fetchTaskDetail,
+  fetchTimeline,
+  fetchVocabulary,
+  type Fetcher,
+} from "./api";
+import { formatTime, memberColor, minuteGroup, relativeActivity, vocabularyItem } from "./format";
+import type {
+  BootstrapSnapshot,
+  RouteState,
+  TaskDetailSnapshot,
+  TimelineCategory,
+  TimelineEntry,
+  TimelineSnapshot,
+  VocabularySnapshot,
+} from "./model";
+
+const CATEGORY_ORDER: TimelineCategory[] = ["all", "human", "ai", "task", "control"];
+const LAST_SEEN_KEY = "amux.web.last-seen";
+const THEME_KEY = "amux.web.theme";
+
+interface AppProps {
+  initialBootstrap?: BootstrapSnapshot;
+  initialVocabulary?: VocabularySnapshot;
+  initialTaskDetail?: TaskDetailSnapshot;
+  initialRoute?: RouteState;
+  pollMs?: number;
+  fetcher?: Fetcher;
+}
+
+function routeFromPath(pathname = window.location.pathname): RouteState {
+  const taskMatch = pathname.match(/^\/task\/([^/]+)$/);
+  if (taskMatch) return { view: "task", taskId: decodeURIComponent(taskMatch[1]) };
+  if (pathname === "/timeline") return { view: "timeline" };
+  if (pathname === "/workspace") return { view: "workspace" };
+  if (pathname === "/help") return { view: "help" };
+  return { view: "task", taskId: null };
+}
+
+function routePath(route: RouteState): string {
+  if (route.view === "task") return route.taskId ? `/task/${encodeURIComponent(route.taskId)}` : "/";
+  return `/${route.view}`;
+}
+
+function readLastSeen(): { epoch: string; seq: number } | null {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_SEEN_KEY) ?? "null") as {
+      epoch: string;
+      seq: number;
+    } | null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastSeen(epoch: string, seq: number): void {
+  localStorage.setItem(LAST_SEEN_KEY, JSON.stringify({ epoch, seq }));
+}
+
+function Glyph({ value }: { value: string }) {
+  return <span aria-hidden="true">{value}</span>;
+}
+
+function StatusPill({ value, vocabulary }: { value: string; vocabulary?: VocabularySnapshot }) {
+  const item = vocabularyItem(vocabulary?.task_status, value);
+  return (
+    <span class={`status-pill status-pill--${value}`}>
+      {item.glyph ? <Glyph value={item.glyph} /> : null} {item.label}
+    </span>
+  );
+}
+
+function HealthBanner({ snapshot }: { snapshot: BootstrapSnapshot }) {
+  if (!snapshot.health.degraded) return null;
+  return (
+    <aside class="health-banner" role="alert">
+      <span class="health-banner__icon">!</span>
+      <div>
+        <strong>运行状态降级</strong>
+        {snapshot.health.faults.map((fault) => (
+          <p key={fault.key}>{fault.target ? `${fault.target} · ` : ""}{fault.detail}</p>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function Sidebar({
+  snapshot,
+  vocabulary,
+  selectedTask,
+  unread,
+  nowMs,
+  onNavigate,
+}: {
+  snapshot: BootstrapSnapshot;
+  vocabulary?: VocabularySnapshot;
+  selectedTask: string | null;
+  unread: number;
+  nowMs: number;
+  onNavigate: (route: RouteState) => void;
+}) {
+  const summary = snapshot.work.summary;
+  return (
+    <aside class="sidebar" aria-label="工作概览">
+      <section class="sidebar-card summary-card">
+        <div class="section-heading">
+          <span>任务态势</span>
+          <strong>{summary.total}</strong>
+        </div>
+        <div class="summary-grid">
+          <span><strong>{summary.active}</strong> 活跃</span>
+          <span><strong>{summary.waiting}</strong> 待验收</span>
+          <span class={summary.blocked ? "is-alert" : ""}><strong>{summary.blocked}</strong> 阻塞</span>
+        </div>
+      </section>
+
+      <button class="sidebar-card conversation-card" onClick={() => onNavigate({ view: "timeline" })}>
+        <span class="conversation-card__mark">↗</span>
+        <span><small>工作对话</small><strong>团队时间线</strong></span>
+        <span class="unread-badge" aria-label={`${unread} 条未读`}>{unread}</span>
+      </button>
+
+      <section class="sidebar-section">
+        <div class="section-heading"><span>成员</span><small>{snapshot.members.members.length} 人</small></div>
+        <div class="member-list">
+          {snapshot.members.members.map((member) => {
+            const state = vocabularyItem(vocabulary?.member_state, member.state);
+            return (
+              <article class="member-card" key={member.name}>
+                <span class="member-avatar" style={{ background: memberColor(member.name) }}>
+                  {member.name.slice(0, 1).toUpperCase()}
+                </span>
+                <div class="member-card__main">
+                  <strong>{member.name}</strong>
+                  <small>{relativeActivity(member.silent_for, snapshot.members.snapshot_at, nowMs)}</small>
+                </div>
+                <span class={`member-state member-state--${member.state}`}>
+                  {state.glyph ? `${state.glyph} ` : ""}{state.label}
+                </span>
+                {member.queued ? <span class="queue-badge">{member.queued}</span> : null}
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section class="sidebar-section task-list-section">
+        <div class="section-heading"><span>任务</span><small>按最近更新</small></div>
+        <nav class="task-list" aria-label="任务列表">
+          {snapshot.work.tasks.map((task) => (
+            <button
+              class={task.id === selectedTask ? "task-row is-selected" : "task-row"}
+              key={task.id}
+              onClick={() => onNavigate({ view: "task", taskId: task.id })}
+            >
+              <span class="task-row__top"><strong>{task.id}</strong><StatusPill value={task.status} vocabulary={vocabulary} /></span>
+              <span class="task-row__title">{task.title}</span>
+              <small>{task.assignee ?? "未指派"} · {formatTime(task.updated_at)}</small>
+            </button>
+          ))}
+        </nav>
+      </section>
+    </aside>
+  );
+}
+
+function DetailMeta({ detail, vocabulary }: { detail: TaskDetailSnapshot; vocabulary?: VocabularySnapshot }) {
+  const task = detail.task;
+  return (
+    <div class="detail-meta">
+      <span><small>状态</small><StatusPill value={task.status} vocabulary={vocabulary} /></span>
+      <span><small>执行者</small><strong>{task.assignee ?? "未指派"}</strong></span>
+      <span><small>评审者</small><strong>{task.reviewer ?? "未指定"}</strong></span>
+      <span><small>更新</small><strong>{formatTime(task.updated_at)}</strong></span>
+    </div>
+  );
+}
+
+function TaskView({
+  detail,
+  loading,
+  error,
+  vocabulary,
+  onNavigate,
+}: {
+  detail: TaskDetailSnapshot | null;
+  loading: boolean;
+  error: string | null;
+  vocabulary?: VocabularySnapshot;
+  onNavigate: (route: RouteState) => void;
+}) {
+  if (loading && !detail) return <EmptyState mark="···" title="正在读取任务" copy="从不可覆盖账本构建详情。" />;
+  if (error) return <EmptyState mark="!" title="任务暂不可用" copy={error} />;
+  if (!detail) return <EmptyState mark="◎" title="暂无任务" copy="任务账本中还没有可展示的任务。" />;
+  const task = detail.task;
+  return (
+    <div class="task-view">
+      <header class="content-header">
+        <div>
+          <p class="eyebrow">TASK / {task.id}</p>
+          <h2>{task.title}</h2>
+        </div>
+        <span class="ledger-seal">账本只读</span>
+      </header>
+      <DetailMeta detail={detail} vocabulary={vocabulary} />
+      <section class="panel task-brief">
+        <div class="panel-heading"><h3>任务说明</h3><span>Leader · {task.leader}</span></div>
+        <p>{task.description || "未填写说明"}</p>
+        {task.latest ? <p class="latest-note"><span>最新进展</span>{task.latest}</p> : null}
+        {detail.children.length ? (
+          <div class="child-links">
+            <small>子任务</small>
+            {detail.children.map((child) => (
+              <button key={child.id} onClick={() => onNavigate({ view: "task", taskId: child.id })}>
+                {child.id} · {child.title}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      <div class="detail-columns">
+        <section class="panel">
+          <div class="panel-heading"><h3>证据</h3><span>{task.evidence.length}</span></div>
+          {task.evidence.length ? (
+            <ul class="evidence-list">
+              {task.evidence.map((item) => <li key={item}><span>✓</span>{item}</li>)}
+            </ul>
+          ) : <p class="muted">尚未提交证据。</p>}
+        </section>
+        <section class="panel">
+          <div class="panel-heading"><h3>关联沟通</h3><span>{detail.communications.length}</span></div>
+          <div class="communication-list">
+            {detail.communications.map((item) => (
+              <article key={item.timeline_seq}>
+                <span class="mini-avatar" style={{ background: memberColor(item.sender) }} />
+                <div><strong>{item.sender} → {item.to}</strong><p>{item.text}</p></div>
+                <small>#{item.timeline_seq}</small>
+              </article>
+            ))}
+            {!detail.communications.length ? <p class="muted">暂无关联沟通。</p> : null}
+          </div>
+        </section>
+      </div>
+
+      <section class="panel event-panel">
+        <div class="panel-heading"><h3>不可覆盖事件流</h3><span>{detail.events.length} 条</span></div>
+        <ol class="event-stream">
+          {detail.events.map((event) => {
+            const kind = vocabularyItem(vocabulary?.event_kind, event.kind);
+            return (
+              <li key={event.id}>
+                <span class="event-seq">{String(event.seq).padStart(2, "0")}</span>
+                <span class="event-line" />
+                <div>
+                  <p><strong>{kind.label}</strong><span>{event.actor}</span><time>{formatTime(event.at)}</time></p>
+                  {Object.entries(event.details).map(([key, value]) => (
+                    <small key={key}>{vocabularyItem(vocabulary?.event_detail_fields, key).label}: {String(value)}</small>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+    </div>
+  );
+}
+
+function mergeTimeline(current: TimelineEntry[], incoming: TimelineEntry[]): TimelineEntry[] {
+  const byKey = new Map(current.map((entry) => [entry.key, entry]));
+  for (const entry of incoming) byKey.set(entry.key, entry);
+  return [...byKey.values()].sort((left, right) => left.seq - right.seq);
+}
+
+function TimelineView({
+  snapshot,
+  vocabulary,
+  fetcher,
+  onSeen,
+}: {
+  snapshot: TimelineSnapshot;
+  vocabulary?: VocabularySnapshot;
+  fetcher: Fetcher;
+  onSeen: (seq: number) => void;
+}) {
+  const [category, setCategory] = useState<TimelineCategory>("all");
+  const [page, setPage] = useState(snapshot);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setPage((current) => ({ ...snapshot, entries: mergeTimeline(current.entries, snapshot.entries) }));
+    onSeen(snapshot.head_seq);
+  }, [snapshot, onSeen]);
+
+  const filtered = category === "all"
+    ? page.entries
+    : page.entries.filter((entry) => entry.category === category);
+
+  async function loadOlder() {
+    if (page.oldest_seq === null) return;
+    setLoadingOlder(true);
+    try {
+      const older = await fetchTimeline(category, page.oldest_seq, fetcher);
+      setPage((current) => ({
+        ...older,
+        entries: mergeTimeline(older.entries, current.entries),
+        head_seq: current.head_seq,
+      }));
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  return (
+    <div class="timeline-view">
+      <header class="content-header">
+        <div><p class="eyebrow">TEAM / CONVERSATION</p><h2>工作对话时间线</h2></div>
+        <button class="quiet-button" onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })}>回到最新 ↓</button>
+      </header>
+      <div class="filter-bar" role="toolbar" aria-label="时间线分类筛选">
+        {CATEGORY_ORDER.map((value) => {
+          const item = vocabularyItem(vocabulary?.timeline_category, value);
+          return (
+            <button class={category === value ? "is-active" : ""} onClick={() => setCategory(value)} key={value}>
+              {item.label}<span>{page.category_counts[value] ?? 0}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div class="timeline-scroll" ref={scrollRef}>
+        {page.has_more ? <button class="load-older" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? "读取中…" : "载入更早记录"}</button> : null}
+        <div class="timeline-list">
+          {filtered.map((entry, index) => {
+            const group = minuteGroup(entry.ts);
+            const showGroup = index === 0 || group !== minuteGroup(filtered[index - 1].ts);
+            const outcome = vocabularyItem(vocabulary?.timeline_outcome, entry.outcome);
+            return (
+              <div key={entry.key}>
+                {showGroup ? <div class="minute-divider"><span>{group}</span></div> : null}
+                <article class={`timeline-entry timeline-entry--${entry.category}`}>
+                  <span class="member-avatar" style={{ background: memberColor(entry.sender) }}>{entry.sender.slice(0, 1).toUpperCase()}</span>
+                  <div class="timeline-entry__body">
+                    <div><strong>{entry.sender}</strong><span>→ {entry.to}</span>{entry.task_id ? <em>{entry.task_id}</em> : null}</div>
+                    <p>{entry.text}</p>
+                    {entry.reason ? <small>{entry.reason}</small> : null}
+                  </div>
+                  <div class="timeline-entry__meta"><span>#{entry.seq}</span><small class={outcome.dim ? "is-dim" : ""}>{outcome.glyph} {outcome.label}</small></div>
+                </article>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceView({ snapshot }: { snapshot: BootstrapSnapshot }) {
+  return (
+    <div class="workspace-view">
+      <header class="content-header"><div><p class="eyebrow">WORKSPACE</p><h2>{snapshot.workspace.slug ?? "未登记工作区"}</h2></div><span class="ledger-seal">只读视图</span></header>
+      <section class="workspace-hero panel">
+        <small>项目根目录</small><code>{snapshot.workspace.project_root ?? "—"}</code>
+        <div class="workspace-stats">
+          <span><strong>{snapshot.work.summary.total}</strong> 任务</span>
+          <span><strong>{snapshot.team.members?.length ?? 0}</strong> 团队成员</span>
+          <span><strong>{snapshot.timeline.head_seq}</strong> 对话记录</span>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-heading"><h3>{snapshot.team.name ?? snapshot.team.id ?? "未绑定团队"}</h3><span>Leader · {snapshot.team.leader ?? "—"}</span></div>
+        <p>{snapshot.team.description ?? "当前工作区尚未绑定团队。"}</p>
+        <div class="team-grid">
+          {snapshot.team.members?.map((member) => (
+            <article key={member.id}>
+              <span class="member-avatar" style={{ background: memberColor(member.id) }}>{member.id.slice(0, 1).toUpperCase()}</span>
+              <div><strong>{member.id}</strong><small>{member.model} · {member.responsibility}</small></div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function HelpView() {
+  return (
+    <div class="help-view">
+      <header class="content-header"><div><p class="eyebrow">COMMAND PALETTE</p><h2>快捷导航</h2></div></header>
+      <section class="panel help-grid">
+        <div><kbd>F3</kbd><span><strong>任务视图</strong><small>回到当前任务</small></span></div>
+        <div><kbd>?</kbd><span><strong>帮助</strong><small>也可使用 F1</small></span></div>
+        <div><kbd>T</kbd><span><strong>切换主题</strong><small>深色 / 浅色</small></span></div>
+        <div><kbd>Esc</kbd><span><strong>返回</strong><small>关闭帮助视图</small></span></div>
+      </section>
+      <p class="help-note">Web 控制台当前为只读观察端。退出只关闭本页显示，不会终止成员会话。</p>
+    </div>
+  );
+}
+
+function EmptyState({ mark, title, copy }: { mark: string; title: string; copy: string }) {
+  return <section class="empty-state"><p class="empty-state__mark">{mark}</p><h2>{title}</h2><p>{copy}</p></section>;
+}
+
+export function App({
+  initialBootstrap,
+  initialVocabulary,
+  initialTaskDetail,
+  initialRoute,
+  pollMs = 2000,
+  fetcher = fetch,
+}: AppProps) {
+  const [snapshot, setSnapshot] = useState<BootstrapSnapshot | null>(initialBootstrap ?? null);
+  const [vocabulary, setVocabulary] = useState<VocabularySnapshot | undefined>(initialVocabulary);
+  const [route, setRoute] = useState<RouteState>(initialRoute ?? routeFromPath());
+  const [detail, setDetail] = useState<TaskDetailSnapshot | null>(initialTaskDetail ?? null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [exited, setExited] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  });
+
+  const selectedTask = route.view === "task"
+    ? route.taskId ?? snapshot?.work.selected_default ?? null
+    : detail?.task.id ?? snapshot?.work.selected_default ?? null;
+
+  const [lastSeen, setLastSeen] = useState(() => {
+    const stored = readLastSeen();
+    if (!initialBootstrap) return stored?.seq ?? 0;
+    return stored?.epoch === initialBootstrap.epoch ? stored.seq : initialBootstrap.timeline.head_seq;
+  });
+
+  const navigate = (next: RouteState, replace = false) => {
+    setRoute(next);
+    const method = replace ? "replaceState" : "pushState";
+    window.history[method](null, "", routePath(next));
+  };
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
+  useEffect(() => {
+    const onPopState = () => setRoute(routeFromPath());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 10_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === "t" && !(event.target instanceof HTMLInputElement)) {
+        setTheme((current) => current === "dark" ? "light" : "dark");
+      } else if (event.key === "F3") {
+        event.preventDefault();
+        navigate({ view: "task", taskId: selectedTask });
+      } else if (event.key === "F1" || event.key === "?") {
+        event.preventDefault();
+        navigate({ view: "help" });
+      } else if (event.key === "Escape" && route.view === "help") {
+        navigate({ view: "task", taskId: selectedTask });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [route.view, selectedTask]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const next = await fetchBootstrap(fetcher);
+        if (cancelled) return;
+        setSnapshot((current) => {
+          if (current && current.epoch !== next.epoch) {
+            setLastSeen(next.timeline.head_seq);
+            writeLastSeen(next.epoch, next.timeline.head_seq);
+          }
+          return next;
+        });
+        setError(null);
+      } catch (caught) {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
+      }
+    };
+    if (!initialBootstrap) void refresh();
+    const timer = pollMs > 0 ? window.setInterval(refresh, pollMs) : undefined;
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [fetcher, initialBootstrap, pollMs]);
+
+  useEffect(() => {
+    if (initialVocabulary) return;
+    let cancelled = false;
+    fetchVocabulary(fetcher).then((next) => {
+      if (!cancelled) setVocabulary(next);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [fetcher, initialVocabulary]);
+
+  useEffect(() => {
+    if (!selectedTask) {
+      setDetail(null);
+      return;
+    }
+    if (detail?.task.id === selectedTask && (initialTaskDetail || pollMs === 0)) return;
+    let cancelled = false;
+    const refresh = async () => {
+      setLoadingDetail(true);
+      try {
+        const next = await fetchTaskDetail(selectedTask, fetcher);
+        if (!cancelled) {
+          setDetail(next);
+          setError(null);
+        }
+      } catch (caught) {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
+      } finally {
+        if (!cancelled) setLoadingDetail(false);
+      }
+    };
+    void refresh();
+    const timer = pollMs > 0 ? window.setInterval(refresh, pollMs) : undefined;
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [detail?.task.id, fetcher, initialTaskDetail, pollMs, selectedTask]);
+
+  const markSeen = useMemo(() => (seq: number) => {
+    if (!snapshot) return;
+    setLastSeen(seq);
+    writeLastSeen(snapshot.epoch, seq);
+  }, [snapshot]);
+
+  if (exited) {
+    return (
+      <main class="exit-screen">
+        <span class="exit-screen__mark">AMUX</span>
+        <h1>观察会话已退出</h1>
+        <p>成员与任务继续运行。本页没有终止任何后台会话。</p>
+        <button onClick={() => setExited(false)}>返回控制台</button>
+      </main>
+    );
+  }
+
+  if (!snapshot) {
+    return <main class="app-shell"><EmptyState mark={error ? "!" : "◎"} title={error ? "控制台暂不可用" : "正在连接工作区"} copy={error ?? "正在读取一致 snapshot…"} /></main>;
+  }
+
+  const unread = Math.max(0, snapshot.timeline.head_seq - lastSeen);
+  const workspaceTitle = snapshot.workspace.slug ?? "未登记工作区";
+
   return (
     <main class="app-shell">
       <header class="app-header">
-        <div>
-          <p class="eyebrow">AMUX WEB</p>
-          <h1>控制台骨架</h1>
+        <button class="brand" onClick={() => navigate({ view: "task", taskId: selectedTask })}>
+          <span class="brand__mark">A</span>
+          <span><strong>amux</strong><small>{workspaceTitle} · {snapshot.workspace.project_root ?? "路径不可用"}</small></span>
+        </button>
+        <nav class="top-nav" aria-label="主导航">
+          <button class={route.view === "task" ? "is-active" : ""} onClick={() => navigate({ view: "task", taskId: selectedTask })}>任务</button>
+          <button class={route.view === "timeline" ? "is-active" : ""} onClick={() => navigate({ view: "timeline" })}>对话</button>
+          <button class={route.view === "workspace" ? "is-active" : ""} onClick={() => navigate({ view: "workspace" })}>工作区</button>
+        </nav>
+        <div class="header-actions">
+          <span class="live-indicator"><i /> snapshot · r{snapshot.revisions.work ?? 0}</span>
+          <button aria-label="切换深浅主题" title="切换主题 (T)" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>{theme === "dark" ? "☼" : "◐"}</button>
+          <button aria-label="打开帮助" title="帮助 (?)" onClick={() => navigate({ view: "help" })}>?</button>
+          <button class="exit-button" onClick={() => setExited(true)}>退出</button>
         </div>
-        <span class="status" data-testid="status">
-          本地静态资源已加载
-        </span>
       </header>
-      <section class="empty-state" aria-labelledby="next-step">
-        <p class="empty-state__mark" aria-hidden="true">◎</p>
-        <h2 id="next-step">等待工作区数据</h2>
-        <p>WEB-005 将在这里接入 snapshot、任务、成员和工作对话视图。</p>
-      </section>
+      <HealthBanner snapshot={snapshot} />
+      <div class="workspace-shell">
+        <Sidebar snapshot={snapshot} vocabulary={vocabulary} selectedTask={selectedTask} unread={unread} nowMs={nowMs} onNavigate={navigate} />
+        <section class="content-surface">
+          {route.view === "task" ? <TaskView detail={detail} loading={loadingDetail} error={error} vocabulary={vocabulary} onNavigate={navigate} /> : null}
+          {route.view === "timeline" ? <TimelineView snapshot={snapshot.timeline} vocabulary={vocabulary} fetcher={fetcher} onSeen={markSeen} /> : null}
+          {route.view === "workspace" ? <WorkspaceView snapshot={snapshot} /> : null}
+          {route.view === "help" ? <HelpView /> : null}
+        </section>
+      </div>
     </main>
   );
 }

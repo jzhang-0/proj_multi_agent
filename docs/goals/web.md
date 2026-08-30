@@ -5,7 +5,7 @@
 ## 已定的设计(2026-08-30 human 拍板)
 
 1. Web 视图目标是对齐 TUI 现有全部功能；TUI 保留并与 Web 并列。手机 UI 暂缓，现有 gateway 手机群聊页继续承担低权限远程群聊，不升级为控制台。
-2. 技术路线 B：同仓库、同 wheel 的 FastAPI/ASGI 后端 + TypeScript SPA。TypeScript/Node 只作构建依赖，编译产物打进 wheel；运行时不依赖 Node、源码路径或 CDN。前端框架在 WEB-005 从 Preact 或轻量原生组件中选一项。
+2. 技术路线 B：同仓库、同 wheel 的 FastAPI/ASGI 后端 + TypeScript SPA。TypeScript/Node 只作构建依赖，编译产物打进 wheel；运行时不依赖 Node、源码路径或 CDN。WEB-005 定案 **Preact + TypeScript + esbuild**（沿用 WEB-011 已锁定的轻量脚手架）。
 3. FastAPI/ASGI server 等 Web 依赖**默认随 `amux-team` 安装**，不做 extra。
 4. 首版只监听 `127.0.0.1`；局域网/公网访问、TLS、登录另立 Goal。
 5. 多端控制：多人可看；每成员同一时间仅一个交互租约(resize/直连/接管)，显式抢占；每工作区仅一个 Hub 投递者。
@@ -41,7 +41,7 @@
 - [ ] **WEB-004** — versioned 实时事件流：WebSocket 推送 work/bus/team/roster/member 的 invalidation 或 delta(watchfiles 或领域动作触发)；`epoch/revision` 断档时客户端全量 resync；每客户端有界队列，慢客户端不积压。实时验收针对「左栏工作对话记录卡」未读数、「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。以测试客户端验证，不依赖 SPA。
   - 前置:WEB-003。
 
-- [ ] **WEB-005** — 桌面 SPA 只读与导航闭环：TypeScript SPA(Preact 或轻量原生组件，此处定案)，构建产物进 Python 包。实现「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「时间线分类筛选」「时间线滚动」「`/workspace`」「`/task [ID]` / F3」「`/help` / ? / F1」「深浅主题 / T」「健康告警」「成员状态实时更新」「退出」。`/workspace` 与 `/task` 可用等价 Web 导航。组件测试 + Playwright 截图视觉自验证。
+- [ ] **WEB-005** — 桌面 SPA 只读与导航闭环：TypeScript SPA 定案 Preact + TypeScript + esbuild（沿用 T-011 脚手架），构建产物进 Python 包。实现「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「时间线分类筛选」「时间线滚动」「`/workspace`」「`/task [ID]` / F3」「`/help` / ? / F1」「深浅主题 / T」「健康告警」「成员状态实时更新」「退出」。`/workspace` 与 `/task` 可用等价 Web 导航。组件测试 + Playwright 截图视觉自验证。
   - 处理登记:Sol，2026-08-30 18:46 +0800，分支 `web-005-sol`(T-014；先实现 snapshot 视图，等待 T-013/WEB-004 后接 WebSocket 再合 main)。
   - 前置:WEB-004。
 

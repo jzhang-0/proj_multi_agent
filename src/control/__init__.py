@@ -1,15 +1,7 @@
-"""Web/TUI 共用控制面。
+"""TUI、Web 与 CLI 共用的控制面、读模型、租约和纯文本识别。"""
 
-对外入口(WEB-002):
-
-- `Lease`:文件锁 + 持有者 pid/心跳的单持有者租约原语,持有者崩溃或心跳
-  超时后可被其他调用方自动回收,也支持显式抢占(`force=True`)。
-- `HubDeliveryLease`:每工作区单一 Hub 投递租约,接入 `bus.Hub` /
-  `console.buspump.BusPump` 的 `lease_gate`,非持有者只观察不投递。
-- `MemberLeaseManager`:每成员单一交互租约(resize/直连/接管共用)。
-- `leases_root`:租约文件的落盘位置约定。
-"""
-
+from control.actions import ControlFeedback, MemberActionController
+from control.health import Fault, FaultEvent, FaultKind, HealthMonitor
 from control.lease import (
     DEFAULT_TTL_SECONDS,
     HubDeliveryLease,
@@ -19,13 +11,78 @@ from control.lease import (
     MemberLeaseManager,
     leases_root,
 )
+from control.members import (
+    MemberCardSnapshot,
+    MemberSnapshotView,
+    MemberStatusService,
+    member_names,
+    pending_counts,
+)
+from control.tasks import (
+    TaskChildView,
+    TaskCommunicationView,
+    TaskDetailView,
+    TaskEventView,
+    TaskListItemView,
+    TaskSummaryView,
+    WorkBoardView,
+    selected_default_task_id,
+    task_board_view,
+    task_communications,
+    task_detail_view,
+    task_list_item_view,
+    task_summary_view,
+)
+from control.terminal import terminal_input_rows
+from control.timeline import (
+    TimelineCategory,
+    TimelineEntry,
+    TimelineProjector,
+    TimelineSnapshotView,
+    history,
+    timeline_snapshot_view,
+)
+from control.vocabulary import Vocabulary, vocabulary
 
 __all__ = [
+    "ControlFeedback",
     "DEFAULT_TTL_SECONDS",
+    "Fault",
+    "FaultEvent",
+    "FaultKind",
+    "HealthMonitor",
     "HubDeliveryLease",
     "Lease",
     "LeaseDenied",
     "LeaseState",
+    "MemberActionController",
+    "MemberCardSnapshot",
+    "MemberSnapshotView",
+    "MemberStatusService",
     "MemberLeaseManager",
+    "TaskChildView",
+    "TaskCommunicationView",
+    "TaskDetailView",
+    "TaskEventView",
+    "TaskListItemView",
+    "TaskSummaryView",
+    "TimelineCategory",
+    "TimelineEntry",
+    "TimelineProjector",
+    "TimelineSnapshotView",
+    "Vocabulary",
+    "WorkBoardView",
+    "history",
     "leases_root",
+    "member_names",
+    "pending_counts",
+    "selected_default_task_id",
+    "task_board_view",
+    "task_communications",
+    "task_detail_view",
+    "task_list_item_view",
+    "task_summary_view",
+    "terminal_input_rows",
+    "timeline_snapshot_view",
+    "vocabulary",
 ]

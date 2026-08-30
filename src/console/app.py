@@ -48,15 +48,17 @@ from console.clipboard import ClipboardImageError, ClipboardImageStore, attachme
 from console.commands import CommandRunner, is_command
 from console.compose import ComposeInput, split_address
 from console.control import ConfirmControlScreen, ControlFeedback, MemberController
-from console.health import ConsoleHealthMonitor, FaultEvent, FaultKind
 from console.help import ShortcutHelpScreen
-from console.members import MemberStatusService, member_names, pending_counts
 from console.mirror import WHEEL_STEP, Mirror
 from console.theme import THEMES, Tokens
 from console.theme import tokens as theme_tokens
-from console.timeline import TimelineEntry, history
+from console.timeline import history
 from console.widgets import ConversationCard, ConversationFilter, MemberCard, Timeline
 from console.workview import TaskCard, TaskDetail, TaskSummaryCard, render_task_card
+from control.health import FaultEvent, FaultKind, HealthMonitor
+from control.members import MemberStatusService, member_names, pending_counts
+from control.tasks import selected_default_task_id
+from control.timeline import TimelineProjector
 from roster import RosterError, load_effective_roster
 from roster.lifecycle import Lifecycle
 from tmuxctl import TmuxError
@@ -236,7 +238,7 @@ class ConsoleApp(App[None]):
         member_status: MemberStatusService | None = None,
         pump_enabled: bool = True,
         controller: MemberController | None = None,
-        health_monitor: ConsoleHealthMonitor | None = None,
+        health_monitor: HealthMonitor | None = None,
         fit_windows: bool = True,
         workspace: Workspace | None = None,
         work_service: WorkService | None = None,
@@ -268,6 +270,7 @@ class ConsoleApp(App[None]):
         self._work_digest = self._snapshot_digest(self.work_snapshot)
         self._work_bus_stamp = self._audit_stamp()
         self.selected_task_id = self._initial_task_id(self.work_snapshot)
+        self.timeline_projector = TimelineProjector()
         self.active_view = "work" if self.work_service is not None else "timeline"
         #: 被 /mute 静音的成员;策略在投递前据此拒收
         self.muted: set[str] = set()
@@ -301,7 +304,7 @@ class ConsoleApp(App[None]):
                 controller = None
         self.controller = controller
         if health_monitor is None and deliver is tmux_deliver:
-            health_monitor = ConsoleHealthMonitor(
+            health_monitor = HealthMonitor(
                 self.paths,
                 self.members,
                 member_status.tmux,
@@ -460,14 +463,13 @@ class ConsoleApp(App[None]):
         source = "bus/log.jsonl"
         if self.work_snapshot.events:
             source += " + work/events.jsonl"
-        timeline.backfill(
-            history(
-                AuditLog(self.paths),
-                work_events=self.work_snapshot.events,
-                snapshot=self.work_snapshot,
-            ),
-            source=source,
+        entries = history(
+            AuditLog(self.paths),
+            work_events=self.work_snapshot.events,
+            snapshot=self.work_snapshot,
         )
+        self.timeline_projector.seed(entries)
+        timeline.backfill(entries, source=source)
         self._sync_timeline_filter_counts()
         timeline.note(
             "[总控台] ↑↓ 选任务/工作对话/成员,F3 任务,Esc 回工作对话,"
@@ -507,10 +509,13 @@ class ConsoleApp(App[None]):
     def refresh_member_cards(self) -> None:
         """每 0.5 秒刷新，保证状态变化 1 秒内出现在界面。"""
         counts = pending_counts(self.paths)
+        member_view = self.member_status.snapshot_view(counts)
+        snapshots = {snapshot.name: snapshot for snapshot in member_view.members}
         # 定时器与卸载或 `/adopt` 重建列表可能擦肩；只刷新仍挂在 DOM 上的卡片。
         for card in self.query(MemberCard):
             name = card.snapshot.name
-            card.apply(self.member_status.snapshot(name, queued=counts[name]))
+            if name in snapshots:
+                card.apply(snapshots[name])
         self._sync_unread()
 
     def _sync_unread(self) -> None:
@@ -545,9 +550,7 @@ class ConsoleApp(App[None]):
 
     @staticmethod
     def _initial_task_id(snapshot: WorkSnapshot) -> str | None:
-        active = [task for task in snapshot.tasks if not task.completed]
-        chosen = active[0] if active else (snapshot.tasks[0] if snapshot.tasks else None)
-        return None if chosen is None else chosen.id
+        return selected_default_task_id(snapshot)
 
     def _sync_work_summary(self) -> None:
         if self.work_service is None:
@@ -581,7 +584,7 @@ class ConsoleApp(App[None]):
             timeline = self.query_one("#timeline", Timeline)
             for event in snapshot.events:
                 if event.id not in old_event_ids:
-                    timeline.add(TimelineEntry.from_work_event(event, snapshot))
+                    timeline.add(self.timeline_projector.from_work_event(event, snapshot))
             self._sync_timeline_filter_counts()
             await self._rebuild_task_list()
             self._sync_work_summary()
@@ -615,11 +618,7 @@ class ConsoleApp(App[None]):
         except (WorkspaceError, OSError) as exc:
             detail.show_error(str(exc))
             return
-        communications = [
-            entry
-            for entry in AuditLog(self.paths).entries()
-            if entry.get("event") == "deposit" and entry.get("task") == task.id
-        ]
+        communications = AuditLog(self.paths).entries()
         detail.show_task(self.work_snapshot, task, communications)
 
     def _request_task(self, task_id: str | None) -> list[str]:
@@ -666,12 +665,16 @@ class ConsoleApp(App[None]):
         """
         if reconnect:
             self._connect_roster()
-        names = member_names(cwd=self._roster_cwd())
+        roster_names = member_names(cwd=self._roster_cwd())
+        names = roster_names
         adopter = self.commands.adopter
         if adopter is not None:
             names = tuple(adopter.member_names())
         self.members = names
-        self.member_status.track(self.members)
+        sources = {
+            name: "roster" if name in roster_names else "adopted" for name in names
+        }
+        self.member_status.track(self.members, sources=sources)
         if self.health_monitor is not None:
             self.health_monitor.track(self.members)
         listing = self.query_one("#members", ListView)
@@ -794,14 +797,13 @@ class ConsoleApp(App[None]):
         source = "bus/log.jsonl"
         if self.work_snapshot.events:
             source += " + work/events.jsonl"
-        timeline.backfill(
-            history(
-                AuditLog(self.paths),
-                work_events=self.work_snapshot.events,
-                snapshot=self.work_snapshot,
-            ),
-            source=source,
+        entries = history(
+            AuditLog(self.paths),
+            work_events=self.work_snapshot.events,
+            snapshot=self.work_snapshot,
         )
+        self.timeline_projector.seed(entries)
+        timeline.backfill(entries, source=source)
         self._sync_timeline_filter_counts()
         self._connect_roster()
         self.refresh_member_cards()
@@ -1346,7 +1348,7 @@ class ConsoleApp(App[None]):
         changed: bool = True,
     ) -> None:
         self.query_one("#timeline", Timeline).add(
-            TimelineEntry.control(member, text, changed=changed)
+            self.timeline_projector.control(member, text, changed=changed)
         )
         self._sync_timeline_filter_counts()
 
@@ -1413,7 +1415,9 @@ class ConsoleApp(App[None]):
             and result.message.to in self.members
         ):
             self.member_status.mark_working(result.message.to)
-        self.query_one("#timeline", Timeline).add(TimelineEntry.from_result(result))
+        self.query_one("#timeline", Timeline).add(
+            self.timeline_projector.from_result(result)
+        )
         self._sync_timeline_filter_counts()
         # 人在别的会话里时,工作对话那张卡上记未读数
         if self.active_view != "timeline":

@@ -50,7 +50,9 @@ def test_five_states_have_distinct_shape_label_and_color() -> None:
     assert len(glyphs) == len(labels) == len(colors) == 5
 
     for state, (glyph, label, color) in STATUS_PRESENTATION.items():
-        rendered = render_member_card(MemberCardSnapshot("codex", state, 3, "5秒前"))
+        rendered = render_member_card(
+            MemberCardSnapshot("codex", state, 3, 5.0, True, "roster")
+        )
         assert plain(rendered).splitlines() == [f"{glyph} {label:<5} codex", "排队3 · 5秒前"]
         badge_styles = [
             str(segment.style) for segment in rendered.render(RICH) if glyph in segment.text
@@ -96,7 +98,7 @@ def test_status_service_is_driven_by_activity_tracker_and_failed_override() -> N
 
     service.record_output("codex", "任意输出")
     assert service.snapshot("codex").state == "working"
-    assert service.snapshot("codex").last_activity == "刚刚"
+    assert service.snapshot("codex").silent_for == 0
 
     clock.advance(1)
     assert service.snapshot("codex").state == "idle"

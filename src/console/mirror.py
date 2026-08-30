@@ -12,13 +12,13 @@
 
 from __future__ import annotations
 
-import re
-
 from rich.text import Text
 from textual import events
 from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import Static
+
+from control.terminal import terminal_input_rows
 
 #: 往回翻一次跨多少行(PgUp/PgDn)
 HISTORY_STEP = 10
@@ -28,34 +28,6 @@ WHEEL_STEP = 3
 
 #: 最多往回翻多少行(tmux 默认回滚区通常 2000 行)
 HISTORY_LIMIT = 2000
-
-# Claude 的输入区位于靠近底部的最后两条横线之间；Codex 的输入行以 `›`
-# 开头。这里只认底部结构，不能因为历史正文里碰巧出现一个 `›` 就抢走鼠标。
-_HORIZONTAL_RULE = re.compile(r"^\s*[─━═-]{8,}\s*$")
-_CODEX_PROMPT = re.compile(r"^\s*›(?:\s|$)")
-_INPUT_TAIL_LINES = 8
-
-
-def terminal_input_rows(screen_text: str) -> tuple[int, ...]:
-    """返回成员画面中可安全点击直连的输入区行号。
-
-    支持当前名册里的两类 CLI：Claude 的双横线 composer 和 Codex 的底部
-    `›` prompt。无法确认结构时宁可返回空，不把普通输出区误当输入框。
-    """
-    lines = screen_text.splitlines()
-    rules = [index for index, line in enumerate(lines) if _HORIZONTAL_RULE.fullmatch(line)]
-    if len(rules) >= 2:
-        lower = rules[-1]
-        upper = rules[-2]
-        if len(lines) - lower - 1 <= _INPUT_TAIL_LINES and upper + 1 < lower:
-            return tuple(range(upper + 1, lower))
-
-    start = max(0, len(lines) - _INPUT_TAIL_LINES)
-    for index in range(len(lines) - 1, start - 1, -1):
-        if _CODEX_PROMPT.match(lines[index]):
-            return (index,)
-    return ()
-
 
 class Mirror(Static):
     """成员终端画面。聚焦后 PgUp/PgDn 在成员自己的回滚区里翻。"""

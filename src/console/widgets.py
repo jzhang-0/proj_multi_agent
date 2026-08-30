@@ -14,15 +14,17 @@ from textual.message import Message
 from textual.widgets import RichLog, Static
 
 from console.layout import pad
-from console.members import STATUS_PRESENTATION, MemberCardSnapshot
+from console.members import STATUS_PRESENTATION, relative_activity
 from console.theme import tokens
 from console.timeline import (
     TimelineCategory,
     TimelineEntry,
     divider,
+    format_timestamp,
     group_header,
     render_entry,
 )
+from control.members import MemberCardSnapshot
 
 
 def render_member_card(snapshot: MemberCardSnapshot) -> Text:
@@ -32,7 +34,11 @@ def render_member_card(snapshot: MemberCardSnapshot) -> Text:
     # 列宽按显示宽度补:成员名可能是中文,按字符数补会把第二行顶歪
     rendered.append(f"{glyph} {pad(label, 5)} ", style=f"bold {color}")
     rendered.append(snapshot.name, style="bold")
-    rendered.append(f"\n排队{snapshot.queued} · {snapshot.last_activity}", style=tokens().muted)
+    last_activity = relative_activity(
+        None if snapshot.silent_for is None else 0.0,
+        snapshot.silent_for or 0.0,
+    )
+    rendered.append(f"\n排队{snapshot.queued} · {last_activity}", style=tokens().muted)
     return rendered
 
 
@@ -260,9 +266,10 @@ class Timeline(RichLog):
         if not self._matches(entry):
             return
         stick = self.sticking_to_bottom
-        if entry.group and entry.group != self._group:
-            self._group = entry.group
-            self._emit(group_header(entry.group), stick=stick)
+        group = format_timestamp(entry.ts)[:16]
+        if group and group != self._group:
+            self._group = group
+            self._emit(group_header(group), stick=stick)
         self._emit(render_entry(entry), stick=stick)
 
     def _draw_divider(self, text: str) -> None:

@@ -428,10 +428,10 @@ WEB-004 要求"以测试客户端验证，不依赖 SPA"：上述全部形态都
 
 以下字段按当前 `console` / 领域层现状起草，控制面落地后需逐项对齐，以控制面输出为准：
 
-- [ ] `MemberCardDTO`：确认控制面是否输出 `silent_for` 与 `source`，而非 `relative_activity()` 字符串与 `last_output_at`
-- [ ] `TimelineEntryDTO`：确认控制面是否分配 `seq`、是否输出 `key` 与 `has_body`，是否已剥离 `member_color()`
-- [ ] `TaskSummaryDTO`：确认 active/waiting/blocked 分组口径由控制面给出而非各前端重算
-- [ ] `WorkEventDTO.details`：确认为结构化 key→值，而非 `event_details()` 的拼接串
-- [ ] `selected_default`：确认 `_initial_task_id()` 已下沉
-- [ ] `communications`：确认按 task 过滤审计日志的逻辑已下沉，不在 Web 层重写
-- [ ] 词表(`STATUS_LABELS` / `EVENT_LABELS` / `STATUS_GLYPHS` / `CATEGORY_LABELS` / `OUTCOME_MARKS` / `DETAIL_FIELDS`)的归属层：应在控制面或领域层，`console` 与 Web 均只读取
+- [x] `MemberCardSnapshot` 输出 `silent_for`、`alive` 与 `source`，聚合 `MemberSnapshotView` 输出 `snapshot_at`；不含 `relative_activity()` 字符串或 `last_output_at`
+- [x] `TimelineEntry` 输出归一化 `at`、原串 `ts`、`seq`、`key` 与 `has_body`；`TimelineProjector` 统一分配实时序号，不含 `member_color()`
+- [x] `TaskSummaryView` 直接给出 active/waiting/blocked/total 与完整 `by_status`
+- [x] `TaskEventView.details` 只按 `DETAIL_FIELDS` 白名单输出结构化 key→value
+- [x] `selected_default_task_id()` 与 `task_board_view().selected_default` 已下沉
+- [x] `task_communications()` 在控制面按 task + deposit 过滤并截取最近 20 条
+- [x] 词表归属：任务状态/事件标签/详情字段留在 `work` 领域层；任务/成员图形、时间线分类与结局语义位于 `control.vocabulary`；颜色仍只在前端主题层

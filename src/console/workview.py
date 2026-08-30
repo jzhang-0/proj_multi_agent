@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Iterable
 
 from rich.text import Text
@@ -11,21 +10,10 @@ from textual.widgets import RichLog, Static
 from bus.sanitize import sanitize
 from console.theme import tokens
 from console.timeline import format_timestamp
-from work import STATUS_LABELS, Task, TaskStatus, WorkSnapshot
-from work.presentation import EVENT_LABELS, event_details
-
-TASK_GLYPHS: dict[TaskStatus, str] = {
-    TaskStatus.BACKLOG: "○",
-    TaskStatus.ASSIGNED: "◇",
-    TaskStatus.IN_PROGRESS: "▶",
-    TaskStatus.BLOCKED: "!",
-    TaskStatus.SUBMITTED: "↑",
-    TaskStatus.IN_REVIEW: "◐",
-    TaskStatus.REVIEWED: "✓",
-    TaskStatus.CHANGES_REQUESTED: "↩",
-    TaskStatus.ACCEPTED: "◆",
-    TaskStatus.COMPLETED: "●",
-}
+from control.tasks import task_detail_view, task_list_item_view, task_summary_view
+from control.vocabulary import TASK_GLYPHS
+from work import STATUS_LABELS, EventKind, Task, TaskStatus, WorkSnapshot
+from work.presentation import DETAIL_FIELDS, EVENT_LABELS
 
 
 def _status_style(status: TaskStatus) -> str:
@@ -42,28 +30,15 @@ def _status_style(status: TaskStatus) -> str:
 
 
 def render_task_summary(snapshot: WorkSnapshot, leader: str) -> Text:
-    counts = Counter(task.status for task in snapshot.tasks)
-    active_states = (
-        TaskStatus.BACKLOG,
-        TaskStatus.ASSIGNED,
-        TaskStatus.IN_PROGRESS,
-        TaskStatus.BLOCKED,
-        TaskStatus.CHANGES_REQUESTED,
-    )
-    waiting_states = (
-        TaskStatus.SUBMITTED,
-        TaskStatus.IN_REVIEW,
-        TaskStatus.REVIEWED,
-        TaskStatus.ACCEPTED,
-    )
-    active = sum(counts[state] for state in active_states)
-    waiting = sum(counts[state] for state in waiting_states)
-    blocked = counts[TaskStatus.BLOCKED] + counts[TaskStatus.CHANGES_REQUESTED]
+    summary = task_summary_view(snapshot, leader)
     text = Text()
     text.append("◆ 任务与证据", style=f"bold {tokens().accent}")
-    text.append(f"\nLeader {sanitize(leader)}", style="bold")
-    text.append(f"\n进行中 {active} · 待验收 {waiting}", style=tokens().muted)
-    text.append(f"\n阻塞/退回 {blocked}", style=tokens().muted)
+    text.append(f"\nLeader {sanitize(summary.leader)}", style="bold")
+    text.append(
+        f"\n进行中 {summary.active} · 待验收 {summary.waiting}",
+        style=tokens().muted,
+    )
+    text.append(f"\n阻塞/退回 {summary.blocked}", style=tokens().muted)
     return text
 
 
@@ -79,12 +54,14 @@ class TaskSummaryCard(Static):
 
 
 def render_task_card(task: Task) -> Text:
+    item = task_list_item_view(task)
+    status = TaskStatus(item.status)
     text = Text()
-    style = _status_style(task.status)
-    text.append(f"{TASK_GLYPHS[task.status]} {task.id} ", style=f"bold {style}")
-    text.append(STATUS_LABELS[task.status], style=style)
-    text.append(f"\n{sanitize(task.title)}", style="bold")
-    responsibility = f"执行 {task.assignee or '-'} · 评审 {task.reviewer or '-'}"
+    style = _status_style(status)
+    text.append(f"{TASK_GLYPHS[status]} {item.id} ", style=f"bold {style}")
+    text.append(STATUS_LABELS[status], style=style)
+    text.append(f"\n{sanitize(item.title)}", style="bold")
+    responsibility = f"执行 {item.assignee or '-'} · 评审 {item.reviewer or '-'}"
     text.append(f"\n{sanitize(responsibility)}", style=tokens().muted)
     return text
 
@@ -123,55 +100,64 @@ class TaskDetail(RichLog):
         task: Task,
         communications: Iterable[dict[str, object]],
     ) -> None:
+        detail = task_detail_view(snapshot, task, communications)
         self.clear()
-        heading = Text(f"{task.id}  {sanitize(task.title)}", style=f"bold {tokens().accent}")
+        heading = Text(
+            f"{detail.id}  {sanitize(detail.title)}",
+            style=f"bold {tokens().accent}",
+        )
         self.write(heading)
         self.write(
-            f"状态:{STATUS_LABELS[task.status]}  Leader:{sanitize(task.leader)}  "
-            f"执行:{sanitize(task.assignee or '-')}  评审:{sanitize(task.reviewer or '-')}"
+            f"状态:{STATUS_LABELS[TaskStatus(detail.status)]}  "
+            f"Leader:{sanitize(detail.leader)}  "
+            f"执行:{sanitize(detail.assignee or '-')}  "
+            f"评审:{sanitize(detail.reviewer or '-')}"
         )
         times = (
-            f"创建:{format_timestamp(task.created_at)}  "
-            f"更新:{format_timestamp(task.updated_at)}"
+            f"创建:{format_timestamp(detail.created_ts)}  "
+            f"更新:{format_timestamp(detail.updated_ts)}"
         )
-        if task.completed:
-            times += f"  完成:{format_timestamp(task.updated_at)}"
+        if detail.completed:
+            times += f"  完成:{format_timestamp(detail.updated_ts)}"
         self.write(times)
-        if task.parent_id:
-            self.write(f"父任务:{task.parent_id}")
-        children = snapshot.children(task.id)
-        if children:
+        if detail.parent_id:
+            self.write(f"父任务:{detail.parent_id}")
+        if detail.children:
             child_labels = ", ".join(
-                f"{child.id}({STATUS_LABELS[child.status]})" for child in children
+                f"{child.id}({STATUS_LABELS[TaskStatus(child.status)]})"
+                for child in detail.children
             )
             self.write("子任务:" + child_labels)
-        if task.description:
-            self.write(f"说明:{sanitize(task.description)}")
+        if detail.description:
+            self.write(f"说明:{sanitize(detail.description)}")
         self.write(Text("证据", style="bold"))
-        if task.evidence:
-            for reference in task.evidence:
+        if detail.evidence:
+            for reference in detail.evidence:
                 self.write(f"  • {sanitize(reference)}")
         else:
             self.write(Text("  （尚无证据）", style=tokens().muted))
         self.write(Text("不可覆盖事件流", style="bold"))
-        for event in snapshot.events_for(task.id):
+        for event in detail.events:
             line = (
                 f"  #{event.seq} {format_timestamp(event.ts)[:16]} "
-                f"{EVENT_LABELS[event.kind]} · "
+                f"{EVENT_LABELS[EventKind(event.kind)]} · "
                 f"{sanitize(event.actor)}"
             )
             self.write(line)
-            for detail in event_details(event):
-                self.write(Text(f"     {sanitize(detail)}", style=tokens().muted))
+            for key, label in DETAIL_FIELDS:
+                if key in event.details:
+                    event_detail = f"{label}:{event.details[key]}"
+                    self.write(
+                        Text(f"     {sanitize(event_detail)}", style=tokens().muted)
+                    )
         self.write(Text("关联工作对话", style="bold"))
-        linked = list(communications)
-        if not linked:
+        if not detail.communications:
             self.write(Text("  （无；用 amux msg --task 关联讨论）", style=tokens().muted))
-        for entry in linked[-20:]:
-            sender = sanitize(str(entry.get("from") or "?"))
-            to = sanitize(str(entry.get("to") or "?"))
-            preview = sanitize(str(entry.get("preview") or ""))
-            attachments = entry.get("attachments")
-            has_images = isinstance(attachments, list) and bool(attachments)
-            image_note = f" [图片 {len(attachments)}]" if has_images else ""
+        for entry in detail.communications:
+            sender = sanitize(entry.sender)
+            to = sanitize(entry.to)
+            preview = sanitize(entry.text)
+            image_note = (
+                f" [图片 {entry.attachment_count}]" if entry.attachment_count else ""
+            )
             self.write(f"  {sender} → {to}: {preview}{image_note}")

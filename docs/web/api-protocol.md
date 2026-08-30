@@ -359,6 +359,23 @@ epoch 的存在正是为了让 revision 可以是**进程内内存计数器，�
 
 WEB-007 的终端帧**不走这条连接**：完整帧体积大、频率高(≤10 Hz)，与控制面事件混在一个有界队列里会互相饿死。另开专用 WS，背压策略独立(只保留最新帧)。
 
+### 5.7 握手拒绝与关闭码
+
+WS 握手校验(会话 cookie、`Host`、`Origin`，见 §6.3)失败时，**必须先 `accept()` 再 `close(code, reason)`**，不得在 `accept()` 之前 `close()`。
+
+实测(Sonnet，2026-08-30，真实 uvicorn + `websockets` 客户端，非 `TestClient`)：`accept()` 之前 `close(code=4401)` 会退化成握手阶段的 HTTP 403，浏览器 `WebSocket` API 不把失败握手的状态暴露给 JS，前端只看得到 `error` 后跟 `close(1006, "")`；`accept()` 之后 `close(code=4401, reason="unauthorized")` 客户端精确收到 code 与 reason。
+
+| code | 场景 | `reason` |
+|---|---|---|
+| `4401` | 无有效会话 cookie、`Host` 或 `Origin` 校验失败 | `unauthorized` |
+| `4404` | 目标不存在：`member` 不在名册、tmux 会话不存在 | `member-not-found` / `session-not-found` |
+| `4503` | 暂不可用：工作区未登记、tmux 不可用、运行时未就绪 | `unavailable` |
+| `1013` | 慢客户端降级到第三级(§5.6)；此时连接早已 `accept()`，照常送达 | — |
+
+取 RFC6455 私有段 `4000-4999` 而不是笼统一个 `1008`：前端要按三种处置分流(跳重新认证 / 提示成员已消失 / 退避重连)，一个码分不出来。**控制面流(§5)与 WEB-007 的终端通道用同一套码**，前端只写一套判别。
+
+**部署前提**：裸 `uvicorn` 没有 WebSocket 实现，握手直接返回 404、服务端日志打印 `No supported WebSocket library detected`,本节的一切都不会发生。默认依赖取 `uvicorn[standard]`,并且必须有一条**不经 `TestClient`** 的用例守住——Starlette `TestClient` 在进程内自实现 WS，绕开服务端 WS 库，测不出这个问题。
+
 ## 6. 认证会话与本机安全
 
 ### 6.1 为什么 loopback 还要凭证

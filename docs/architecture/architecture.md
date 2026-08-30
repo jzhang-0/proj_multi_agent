@@ -30,7 +30,7 @@ web (HTTP + SPA) ───────┘      │
 | 语言 | Python ≥ 3.11 | 与现有总线同语言;四个协作 AI 都熟练 |
 | 运行环境 | `uv` 管理的项目 venv(`uv sync` / `uv run`) | 系统 python 是 3.8(miniconda),不满足要求;不污染系统环境 |
 | TUI | Textual | 满足"漂亮 + 低延迟"且纯 Python;富组件、深浅色、CSS 式主题 |
-| Web 控制台 | FastAPI/ASGI 后端 + TypeScript SPA(2026-08-30 human 拍板，路线 B)；同仓库同 wheel，Web 依赖默认安装；Node 仅构建期，产物打进 wheel，运行不依赖 Node/CDN；首版只监听 `127.0.0.1`；TUI 与 Web 共用不依赖 UI 的控制面层，每工作区单一 Hub 投递租约、每成员单一交互租约 | 任务/消息适合 snapshot+WebSocket delta，终端镜像需有界高频流，完整接管需 PTY 双向流；详见 [方案比较](../web/architecture-options.md) |
+| Web 控制台 | FastAPI/ASGI 后端 + TypeScript SPA(2026-08-30 human 拍板，路线 B)；同仓库同 wheel，Web 依赖默认安装；Node 仅构建期，产物打进 wheel，运行不依赖 Node/CDN；首版只监听 `127.0.0.1`；TUI 与 Web 共用不依赖 UI 的控制面层，每工作区单一 Hub 投递租约、每成员单一交互租约；只读 snapshot + `/api/v1/stream` versioned WebSocket(invalidation/delta，epoch/revision 断档 resync，每连接有界队列) | 任务/消息适合 snapshot+WebSocket delta，终端镜像需有界高频流，完整接管需 PTY 双向流；详见 [方案比较](../web/architecture-options.md) 与 [API 协议](../web/api-protocol.md) |
 | 剪贴板图片 | Pillow `ImageGrab` + PNG 内容寻址文件 | `Ctrl+V` 由总控台统一读取系统剪贴板；不依赖不同成员 CLI 的粘贴按键实现 |
 | 消息存储 | 文件队列(`bus/queue/` 一消息一文件,原子改名)+ `bus/processed/` 归档 + `bus/dead/` 死信 + `bus/log.jsonl` 审计(80 字符预览,全文另存 `bus/bodies/`,10MB 轮转);成员消息只有在终端确认提交后才从 queue 归档并记录 `deliver`;根目录可注入(`BUS_ROOT` 或显式参数,优先级最高)。已登记工作区的默认根是 `~/.amux/workspaces/<slug>/bus/`,互不串台;未登记时回落仓库根 `bus/` | 语言无关、可 tail、崩溃可恢复;规模(单机、几个成员)远够 |
 | 文件事件 | `watchfiles`,不可用时回退 0.2s 轮询 | 达成投递延迟预算 |

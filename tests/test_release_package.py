@@ -33,7 +33,12 @@ def test_distribution_name_scripts_and_build_packages_are_release_ready() -> Non
     packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/amux_runtime" in packages
     assert "src/control" in packages
+    assert "src/web" in packages
     assert "src/work" in packages
+    wheel_force = config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    sdist_force = config["tool"]["hatch"]["build"]["targets"]["sdist"]["force-include"]
+    assert wheel_force == {"web/dist": "web/static"}
+    assert sdist_force == {"web/dist": "src/web/static"}
     license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
     assert "MIT License" in license_text
     assert "Copyright (c) 2026 jzhang-0" in license_text
@@ -43,6 +48,10 @@ def test_release_workflow_has_version_guard_and_trusted_publishers() -> None:
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     assert 'test "$GITHUB_REF_NAME" = "v$(uv version --short)"' in workflow
     assert "uv run python -m qa.release --out-dir dist" in workflow
+    assert "actions/setup-node@v6" in workflow
+    assert 'node-version: "24"' in workflow
+    assert "npm ci --prefix web" in workflow
+    assert "npm --prefix web run verify" in workflow
     assert "--offline-smoke" not in workflow
     assert "repository-url: https://test.pypi.org/legacy/" in workflow
     assert workflow.count("id-token: write") == 2
@@ -126,6 +135,10 @@ def test_strict_release_smoke_installs_and_imports_dependencies(
             "-c",
             "import PIL, textual, watchfiles; print('release dependencies ok')",
         ]
+        for argv, _ in calls
+    )
+    assert any(
+        argv[-2] == "-c" and "packaged web assets ok" in argv[-1]
         for argv, _ in calls
     )
 

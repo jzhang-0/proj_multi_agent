@@ -35,6 +35,28 @@ def _work_fingerprint(snapshot: WorkSnapshot | None) -> str | None:
     return snapshot.events[-1].digest
 
 
+def timeline_revision_fingerprint(
+    paths: BusPaths | None,
+    snapshot: WorkSnapshot | None,
+    projected: list[TimelineEntry],
+) -> tuple[Any, ...]:
+    """timeline 域 revision 的内容指纹。
+
+    WEB-003 曾只用 ``(审计条数, 末条 key, 末条 outcome)``。任务事件按 ``at``
+    插入时间线中间、末条仍是总线消息时，这三项都不变，revision 不 bump，
+    实时 delta 会静默丢事件（opus T-013 陷阱 4）。协议 §3.2 要求账本追加
+    同时 bump ``work`` 与 ``timeline``，故并入日志指纹、work 哈希链末端和
+    全量投影长度。
+    """
+    return (
+        _log_fingerprint(paths),
+        _work_fingerprint(snapshot),
+        len(projected),
+        projected[-1].key if projected else "",
+        projected[-1].outcome if projected else "",
+    )
+
+
 class RevisionTracker:
     """每域一个内存计数器；只比较指纹是否变化，不关心指纹本身的意义。"""
 

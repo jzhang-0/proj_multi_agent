@@ -29,6 +29,8 @@
 - 帧封装：镜像与控制帧用 JSON 文本帧；PTY 字节流用**二进制帧**，不做 base64(省 33% 体积，且 xterm 能直接吃 `Uint8Array`)。
 - `member` 是名册短名；服务端一律经 `workspace.session.session_for()` 翻译成会话名，**浏览器送来的 tmux target 一律不可信、不接受**(api-protocol §6.4)。
 - 会话与鉴权同 api-protocol §6：WS 握手校验会话 cookie、`Host` 与 `Origin`。
+- 握手校验失败时**必须先 `accept()` 再 `close(code, reason)`**；在 `accept()` 之前 `close()` 会退化成 HTTP 403，浏览器只看得到 `close(1006, "")`，拿不到码与原因(实测见 api-protocol §5.7)。关闭码与控制面流**同一套**：`4401` 未授权(cookie/`Host`/`Origin`)、`4404` 目标不存在(`member` 不在名册、tmux 会话不存在)、`4503` 暂不可用(工作区未登记、tmux 不可用、运行时未就绪)，前端只写一套判别。
+- 服务端必须装有 WebSocket 实现(默认依赖取 `uvicorn[standard]`)：裸 `uvicorn` 下握手直接 404，本文件描述的所有通道都不成立；守住它的用例不能只用 `TestClient`(它在进程内自实现 WS，绕开服务端 WS 库)。
 - 所有控制动作(按键、打断、终止、重启、接管)落 `AuditLog.record_control(action, target, changed=, detail=)`，与 TUI 同一套动作名：`type` / `key` / `interrupt` / `terminate` / `restart` / `takeover`。新增动作名要同步 `console.timeline` 的控制事件标签表，否则时间线上会显示成裸动作名。
 
 ## 3. 交互租约(对齐 WEB-002 已合入实现)

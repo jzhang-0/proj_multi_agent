@@ -19,7 +19,7 @@ from team.model import TeamValidationError
 from team.store import TeamNotFound
 from web.context import SnapshotContext, load_bound_team, require_paths, require_workspace
 from web.errors import ApiError
-from web.state import RevisionTracker, TimelineCache
+from web.state import RevisionTracker, TimelineCache, timeline_revision_fingerprint
 from work import WorkError, WorkSnapshot, WorkValidationError
 from work.model import validate_task_id
 from work.service import WorkService
@@ -174,7 +174,20 @@ def task_detail_dto(
     }
 
 
-def _timeline_entry_payload(entry: TimelineEntry) -> dict[str, Any]:
+def _projected_timeline(
+    ctx: SnapshotContext, cache: TimelineCache
+) -> tuple[list[dict[str, Any]], list[TimelineEntry], tuple[Any, ...]]:
+    """全量投影 + 与 snapshot 相同的 timeline 指纹，供 HTTP 与 WS delta 共用。"""
+    workspace = require_workspace(ctx)
+    paths = require_paths(ctx)
+    snapshot = _optional_work_snapshot(workspace)
+    work_events = snapshot.events if snapshot is not None else ()
+    raw_entries, projected = cache.get(paths, work_events=work_events, snapshot=snapshot)
+    fingerprint = timeline_revision_fingerprint(paths, snapshot, projected)
+    return raw_entries, projected, fingerprint
+
+
+def timeline_entry_payload(entry: TimelineEntry) -> dict[str, Any]:
     return {
         "seq": entry.seq,
         "key": entry.key,
@@ -201,17 +214,7 @@ def timeline_dto(
     limit: int = HISTORY_LIMIT,
     before_seq: int | None = None,
 ) -> dict[str, Any]:
-    workspace = require_workspace(ctx)
-    paths = require_paths(ctx)
-    snapshot = _optional_work_snapshot(workspace)
-    work_events = snapshot.events if snapshot is not None else ()
-    raw_entries, projected = cache.get(paths, work_events=work_events, snapshot=snapshot)
-
-    fingerprint = (
-        len(raw_entries),
-        projected[-1].key if projected else "",
-        projected[-1].outcome if projected else "",
-    )
+    raw_entries, projected, fingerprint = _projected_timeline(ctx, cache)
     revision = tracker.observe("timeline", fingerprint)
 
     counts: dict[str, int] = {"all": len(projected)}
@@ -238,7 +241,7 @@ def timeline_dto(
     return {
         "epoch": tracker.epoch,
         "revision": revision,
-        "entries": [_timeline_entry_payload(entry) for entry in page],
+        "entries": [timeline_entry_payload(entry) for entry in page],
         "category_counts": counts,
         "head_seq": projected[-1].seq if projected else 0,
         "oldest_seq": page[0].seq if page else None,
@@ -289,15 +292,10 @@ def members_dto(
             member_status.set_alive(name, False)
     view = member_status.snapshot_view(queued=pending_counts(paths))
     members = [asdict(member) for member in view.members]
+    # silent_for 随墙钟漂移，前端用 snapshot_at 自行校正(§4.10)；放进指纹会
+    # 让 0.5s 轮询每次都 bump，变成空推送。
     fingerprint = tuple(
-        (
-            item["name"],
-            item["state"],
-            item["queued"],
-            item["alive"],
-            item["source"],
-            item["silent_for"],
-        )
+        (item["name"], item["state"], item["queued"], item["alive"], item["source"])
         for item in members
     )
     revision = tracker.observe("member", fingerprint)
@@ -309,11 +307,19 @@ def members_dto(
     }
 
 
-def health_dto(ctx: SnapshotContext, tracker: RevisionTracker) -> dict[str, Any]:
+def health_dto(
+    ctx: SnapshotContext,
+    tracker: RevisionTracker,
+    monitor: HealthMonitor | None = None,
+) -> dict[str, Any]:
     require_workspace(ctx)
     paths = require_paths(ctx)
-    monitor = HealthMonitor(paths, ctx.names, ctx.tmux)
-    faults = monitor.probe()
+    # 有常驻监视器时也只 probe、不 update：边沿归 EventHub，避免 HTTP 读快照
+    # 把 raise/clear 吃掉导致 WS 丢 delta。
+    probe = monitor if monitor is not None else HealthMonitor(paths, ctx.names, ctx.tmux)
+    if monitor is not None:
+        monitor.track(ctx.names)
+    faults = probe.probe()
     fingerprint = tuple(sorted(faults.keys()))
     revision = tracker.observe("health", fingerprint)
     return {
@@ -339,7 +345,7 @@ def session_dto(tracker: RevisionTracker) -> dict[str, Any]:
         "epoch_started_at": tracker.epoch_started_at,
         "server_time_at": time.time(),
         "revisions": tracker.revisions(),
-        "capabilities": {"stream": False, "mirror": False, "compose": False, "control": False},
+        "capabilities": {"stream": True, "mirror": False, "compose": False, "control": False},
     }
 
 
@@ -348,13 +354,14 @@ def bootstrap_dto(
     tracker: RevisionTracker,
     cache: TimelineCache,
     member_status: MemberStatusService,
+    health_monitor: HealthMonitor | None = None,
 ) -> dict[str, Any]:
     payload = {
         "workspace": workspace_dto(ctx, tracker),
         "team": team_dto(ctx, tracker),
         "work": work_dto(ctx, tracker),
         "members": members_dto(ctx, tracker, member_status),
-        "health": health_dto(ctx, tracker),
+        "health": health_dto(ctx, tracker, health_monitor),
         "timeline": timeline_dto(ctx, tracker, cache),
         "session": session_dto(tracker),
     }

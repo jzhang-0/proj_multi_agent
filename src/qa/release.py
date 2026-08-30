@@ -52,6 +52,10 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "amux_runtime/prompts/leader.md",
         "amux_runtime/prompts/member.md",
         "amux_runtime/roster.toml",
+        "web/static/THIRD_PARTY_LICENSES.json",
+        "web/static/assets/app.css",
+        "web/static/assets/app.js",
+        "web/static/index.html",
         "work/__init__.py",
         f"{dist_info}/licenses/LICENSE",
         f"{dist_info}/METADATA",
@@ -86,6 +90,10 @@ def _assert_artifacts(dist_dir: Path, version: str) -> tuple[Path, Path]:
         "/src/amux_runtime/prompts/member.md",
         "/src/amux_runtime/prompts/README.md",
         "/src/amux_runtime/roster.toml",
+        "/src/web/static/THIRD_PARTY_LICENSES.json",
+        "/src/web/static/assets/app.css",
+        "/src/web/static/assets/app.js",
+        "/src/web/static/index.html",
         "/src/work/__init__.py",
     )
     missing_sdist = [
@@ -138,6 +146,23 @@ def _isolated_smoke(wheel: Path, version: str, *, offline: bool = False) -> None
                 cwd=project,
                 env=env,
             )
+        _run(
+            [
+                str(venv / "bin" / "python"),
+                "-c",
+                (
+                    "from importlib.resources import files; "
+                    "root=files('web').joinpath('static'); "
+                    "html=root.joinpath('index.html').read_text(encoding='utf-8'); "
+                    "assert root.joinpath('assets','app.js').is_file(); "
+                    "assert root.joinpath('assets','app.css').is_file(); "
+                    "assert './assets/app.js' in html and 'http://' not in html "
+                    "and 'https://' not in html; print('packaged web assets ok')"
+                ),
+            ],
+            cwd=project,
+            env=env,
+        )
         amux = venv / "bin" / "amux"
         version_out = _run([str(amux), "--version"], cwd=project, env=env).stdout
         if f"amux {version}" not in version_out:

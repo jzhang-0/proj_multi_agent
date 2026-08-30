@@ -55,6 +55,18 @@ def test_cookie_from_valid_token_grants_access_to_health_page():
     assert "amux web" in response.text
 
 
+def test_spa_routes_keep_session_auth_and_support_direct_navigation():
+    client, session = make_client()
+
+    assert client.get("/task/T-014").status_code == 401
+    client.get(f"/?token={session.token}")
+
+    for path in ("/task/T-014", "/timeline", "/workspace", "/help"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/html")
+
+
 def test_forged_cookie_is_rejected():
     client, _session = make_client()
     client.cookies.set(COOKIE_NAME, "guessed-session-id")

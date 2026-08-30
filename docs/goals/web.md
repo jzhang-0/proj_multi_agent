@@ -5,7 +5,7 @@
 ## 已定的设计(2026-08-30 human 拍板)
 
 1. Web 视图目标是对齐 TUI 现有全部功能；TUI 保留并与 Web 并列。手机 UI 暂缓，现有 gateway 手机群聊页继续承担低权限远程群聊，不升级为控制台。
-2. 技术路线 B：同仓库、同 wheel 的 FastAPI/ASGI 后端 + TypeScript SPA。TypeScript/Node 只作构建依赖，编译产物打进 wheel；运行时不依赖 Node、源码路径或 CDN。前端框架在 WEB-005 从 Preact 或轻量原生组件中选一项。
+2. 技术路线 B：同仓库、同 wheel 的 FastAPI/ASGI 后端 + TypeScript SPA。TypeScript/Node 只作构建依赖，编译产物打进 wheel；运行时不依赖 Node、源码路径或 CDN。WEB-005 定案 **Preact + TypeScript + esbuild**（沿用 T-011 已锁定的轻量脚手架）。
 3. FastAPI/ASGI server 等 Web 依赖**默认随 `amux-team` 安装**，不做 extra。
 4. 首版只监听 `127.0.0.1`；局域网/公网访问、TLS、登录另立 Goal。
 5. 多端控制：多人可看；每成员同一时间仅一个交互租约(resize/直连/接管)，显式抢占；每工作区仅一个 Hub 投递者。
@@ -38,10 +38,14 @@
   - 后续复审(opus)退回两点，均已修:①tmux 不可用时没有后台监视任务纠正 `ActivityTracker` 的默认 alive——lifespan 初始化及 `members_dto.track()` 新增成员后均显式 `set_alive(False)`，`/members` 对所有成员返回 `state=dead/alive=false`；②未运行 lifespan 时 `app.state.tmux/member_status` 未初始化——API router 在认证后统一通过运行时依赖返回 §2.4 `work-unavailable/503`，不再冒 `AttributeError` 500。`tests/test_web_snapshots.py` 同时钉住初始/新增成员 dead 状态、认证优先级及 workspace/members 两类未就绪端点；实现提交 `30af5c2`，main 合入 `65bed37`。
   - 前置:WEB-001。
 
-- [ ] **WEB-004** — versioned 实时事件流：WebSocket 推送 work/bus/team/roster/member 的 invalidation 或 delta(watchfiles 或领域动作触发)；`epoch/revision` 断档时客户端全量 resync；每客户端有界队列，慢客户端不积压。实时验收针对「左栏工作对话记录卡」未读数、「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。以测试客户端验证，不依赖 SPA。
+- [x] **WEB-004** — versioned 实时事件流：WebSocket 推送 work/bus/team/roster/member 的 invalidation 或 delta(watchfiles 或领域动作触发)；`epoch/revision` 断档时客户端全量 resync；每客户端有界队列，慢客户端不积压。实时验收针对「左栏工作对话记录卡」未读数、「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「健康告警」「成员状态实时更新」。以测试客户端验证，不依赖 SPA。
+  - 验证(Grok，2026-08-30):`uv run ruff check .` 通过；`uv run pytest tests/test_web_stream.py tests/test_web_snapshots.py tests/test_web_auth.py tests/test_control_plane.py tests/test_console_members.py tests/test_console_health.py -q` 为 65 passed；`tests/test_web_stream.py` 连续三次复跑均 20 passed。
+  - 证据:`src/web/stream.py` 实现 `/api/v1/stream`：hello / invalidation / delta / resync / epoch_changed / ping；`EventHub` 用 watchfiles(debounce 50ms，失败回退轮询) 盯 work/bus/team/roster，成员 0.5s 指纹变化才 bump，`HealthMonitor` 边沿走 health delta；每连接有界队列满则域 overflow resync → 全域 resync → close 1013。握手失败先 `accept` 再 `close`：4401 未授权 / 4404 不存在 / 4503 暂不可用（与 WEB-007 一致）。`src/web/app.py` lifespan 常驻 EventHub+HealthMonitor；`capabilities.stream=true`。T-009 遗留：`MemberStatusService.track()` 会为运行中新增成员补 `_watch_member`。实现合入 `197d6c7`。评审续作：timeline 指纹含日志+work 哈希链+投影长度；`_timeline_ops` 用 key→seq 映射重排则 resync gap；`_UNSET` 哨兵避免首扫误 `reset_epoch`；`wait_primed` 上限 1s，超时仍发 hello；delta/resync 入环；全域 overflow 后再入队 1013。未改 `control/timeline.py`。
   - 前置:WEB-003。
 
-- [ ] **WEB-005** — 桌面 SPA 只读与导航闭环：TypeScript SPA(Preact 或轻量原生组件，此处定案)，构建产物进 Python 包。实现「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「时间线分类筛选」「时间线滚动」「`/workspace`」「`/task [ID]` / F3」「`/help` / ? / F1」「深浅主题 / T」「健康告警」「成员状态实时更新」「退出」。`/workspace` 与 `/task` 可用等价 Web 导航。组件测试 + Playwright 截图视觉自验证。
+- [x] **WEB-005** — 桌面 SPA 只读与导航闭环：TypeScript SPA 定案 Preact + TypeScript + esbuild（沿用 T-011 脚手架），构建产物进 Python 包。实现「顶部 Header / 工作区副标题」「左栏任务摘要」「左栏工作对话记录卡」「左栏成员卡片」「左栏任务列表」「中栏任务详情」「任务证据」「不可覆盖任务事件流」「任务关联工作对话」「工作对话记录时间线」「时间线分类筛选」「时间线滚动」「`/workspace`」「`/task [ID]` / F3」「`/help` / ? / F1」「深浅主题 / T」「健康告警」「成员状态实时更新」「退出」。`/workspace` 与 `/task` 可用等价 Web 导航。组件测试 + Playwright 截图视觉自验证。
+  - 验证(Sol，2026-08-30):`npm --prefix web run verify` 通过 TypeScript 类型检查、9 个 Vitest 单测、生产依赖许可证生成与 esbuild 生产构建；`npm --prefix web run test:e2e` 使用本机 Playwright Chromium 实跑为 3 passed；`uv run ruff check .` 通过；`uv run pytest tests/test_web_stream.py tests/test_web_snapshots.py tests/test_web_auth.py tests/test_release_package.py -q` 为 43 passed。`uv build --wheel` 成功，展开归档确认 `web/static/{index.html,assets/app.js,assets/app.css,THIRD_PARTY_LICENSES.json}` 均存在。实际打开并检查两张 1440x1000 截图：任务总览/详情/证据/沟通/不可覆盖事件流与时间线筛选/分钟分组/结果状态均可辨认，无重叠或视口截断；视觉检查曾发现健康横幅导致画布超高，修正布局后重新截取并复核。
+  - 证据:`web/src/app.tsx` 完成 snapshot 启动、完整只读视图与导航/快捷键闭环；`web/src/stream.ts` 接入 hello/subscribe、delta/invalidation、断档/epoch/overflow 全量 resync、指数退避重连，epoch 改变时把本地 `last_seen_seq` 重置到新 `head_seq`；`web/src/format.ts` 以 `crc32(name)%色池` 稳定着色、`ts[:16]` 分钟分组，并仅用 `silent_for + (now - snapshot_at)` 计算成员相对时间；时间线展示始终按 `at` 排序，`seq` 只作未读游标与定位。组件/协议用例在 `web/tests/unit/`，端到端用例在 `web/tests/e2e/console.spec.ts`；视觉基线 `tests/baseline/web-005-task-board-1440x1000.png`、`tests/baseline/web-005-timeline-1440x1000.png`。实现提交 `0271c3c`、`fe58a06`、`8b6d65c`、`55295ec`。
   - 前置:WEB-004。
 
 - [ ] **WEB-006** — 消息、ask/reply 与浏览器附件：实现「工作对话输入框」「@ 成员补全」「发送 ask/reply」「图片粘贴/发送」「待发图片撤销」。浏览器上传写入现有内容寻址附件存储，响应/下载不泄露绝对路径；消息走 `Message.create()` + `deposit()`；默认 Leader、选中 task、上次对象、ask/task 互斥语义与 TUI 一致；actor 来自认证上下文，不接受客户端自报。
@@ -53,6 +57,12 @@
   - 前置:WEB-002、WEB-005。
 
 - [ ] **WEB-008** — 成员管理、生命周期与完整接管：实现「成员打断」「成员终止」「成员重启」「全屏接管 / attach」「`/up`」「`/down`」「`/restart`」「`/adopt`」「`/mute`」「`/member add/rm/list`」。危险动作二次确认与审计；完整接管为 PTY bridge 固定 `tmux attach-session -t =<会话>`，收口在 `tmuxctl`，断线 detach+关 PTY+释放租约+审计；`/adopt` 明示进程级临时状态；`/mute` 走 Hub 策略。真实 tmux + 浏览器验证。
+  - 前置:WEB-007。
+
+- [ ] **WEB-010** — 时间线 seq 按到达顺序分配：当前 `control/timeline.py` 按 `at` 排序后位置赋 seq，与 api-protocol §4.8「按进入顺序分配的单调整数」不等价；bus 审计 ts 为秒粒度，同秒内消息与任务事件重排是常态，导致 WEB-004 delta 产出 update+append 错位、只能靠 resync 兜底。改为按到达顺序分配单调 seq(不落盘：进程启动时按账本+审计到达顺序重建，每个 epoch 内自洽即可，不建第二套状态库)，保持单一 seq 空间、窗口不重编号(T-003 已验收语义)，TUI 展示顺序不变；定死两条并写进 api-protocol.md §4.8(现 :241)与 §5.4：(1) seq 一经分配对该 key 永久不变，只按记录进入服务端的顺序递增，不随重排改变；(2) seq 不再等于时间顺序，前端排序一律用 `at`，不得拿 seq 当时序；并说明 §4.9 未读数(head_seq − last_seen_seq)以此为前提。WEB-004 的 seq 重排 resync 路径保留为防御。以 test_control_plane/test_console_timeline/test_web_stream 回归。
+  - 前置:WEB-004。
+
+- [ ] **WEB-011** — 跨前端共享终端采集：TUI(`console/mirror.py`，MIRROR_INTERVAL=0.08)与 Web 镜像通道(≈10 Hz)同看一个成员时是两条互不感知的 tmux 采集回路，叠加负载；terminal-protocol §4.3「多观看者共享单一订阅」未覆盖跨前端。把采集下沉到 `src/control`（或 tmuxctl 侧）的单一订阅源，TUI 与 Web 都作为观看者接入，帧率/背压语义不变；§4.2「无观看者停采集」判据改为跨前端总观看者计数，最后一个观看者(不论 TUI 还是 Web)退出才停采集；TUI 视觉基线与 test_console_mirror 不变。
   - 前置:WEB-007。
 
 - [ ] **WEB-009** — 全功能矩阵与发布收口：逐行勾验 inventory §2 全部条目(未完成项如实保留)；更新产品、架构、README、CLI 帮助与安全说明；前端产物进 sdist/wheel；`qa.release` 源码外联网安装并启动 Web，验证不依赖 Node/源码路径/CDN；复查「退出」只关 Web 会话不关成员。

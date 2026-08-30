@@ -1,14 +1,11 @@
-"""FastAPI 应用工厂(WEB-003):本机认证会话 + 只读 snapshot API + 最小静态健康页。
+"""FastAPI 应用工厂:本机认证会话 + 只读 snapshot API + versioned 实时流。
 
 `/api/v1/*` 只读、无副作用，只经控制面(`control/`)调用领域层；不建立第二套
 状态库，不触发 tmux resize/send_keys(架构 §1)。鉴权、Host 校验、
-Cache-Control 头统一在这里处理，DTO 组装在 `web.snapshots`。
+Cache-Control 头统一在这里处理，DTO 组装在 `web.snapshots`；WS 在
+`web.stream`(WEB-004)。
 
-`lifespan` 起一个常驻 `MemberStatusService` 并调度它的 `run()`(对齐
-`console.app` 的接线，见 `ConsoleApp.on_mount`/`on_unmount`):`/api/v1/members`
-的 `state`/`silent_for` 依赖持续喂 `ActivityTracker` 的后台 pane 输出监听，
-每请求现建一个从未被喂过样本的 `MemberStatusService` 只会看到恒定的
-idle/None(评审 opus 实测发现)。
+`lifespan` 起常驻 `MemberStatusService`、`HealthMonitor` 与 `EventHub`。
 """
 
 from __future__ import annotations
@@ -16,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib.resources
+import mimetypes
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -24,6 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.websockets import WebSocketDisconnect
 
 from bus.audit import AuditLog
+from control.health import HealthMonitor
 from control.lease import MemberLeaseManager, leases_root
 from control.members import MemberStatusService
 from web.auth import COOKIE_NAME, WebSession
@@ -43,6 +42,7 @@ from web.snapshots import (
     workspace_dto,
 )
 from web.state import RevisionTracker, TimelineCache
+from web.stream import EventHub, StreamSettings, handle_stream
 from web.terminal import HEARTBEAT_INTERVAL, ConnectionState, MirrorHub, run_mirror_connection
 
 API_PREFIX = "/api/v1"
@@ -78,9 +78,25 @@ def _health_page() -> str:
     return resource.read_text(encoding="utf-8")
 
 
+def _static_response(*parts: str) -> Response | None:
+    """从 wheel 内 `web/static` 读取资源；拒绝路径跳转，不依赖源码目录。"""
+    if not parts or any(not part or part in {".", ".."} or "/" in part for part in parts):
+        return None
+    resource = importlib.resources.files("web").joinpath("static", *parts)
+    if not resource.is_file():
+        return None
+    media_type = mimetypes.guess_type(parts[-1])[0] or "application/octet-stream"
+    return Response(content=resource.read_bytes(), media_type=media_type)
+
+
+def _spa_index() -> Response:
+    packaged = _static_response("index.html")
+    return packaged if packaged is not None else HTMLResponse(_health_page())
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """进程启动时解析一次工作区，起常驻成员状态监视；退出时干净收尾。
+    """进程启动时解析一次工作区，起常驻成员/健康监视与事件流；退出时干净收尾。
 
     tmux 不可用(或工作区未登记)时 `member_status.can_monitor` 为假，
     `MemberStatusService.run()` 直接返回(`control/members.py`)——应用照常
@@ -89,6 +105,7 @@ async def _lifespan(app: FastAPI):
     (`tmuxctl/activity.py:69`)，对齐 `console/app.py:303-305` 的做法，
     在这里显式 `set_alive(False)`。
     """
+    settings: StreamSettings = app.state.stream_settings
     ctx = build_context()
     app.state.tmux = ctx.tmux
     app.state.lease_manager = (
@@ -96,23 +113,46 @@ async def _lifespan(app: FastAPI):
     )
     member_status = MemberStatusService(ctx.names, ctx.tmux)
     app.state.member_status = member_status
-    monitor_task: asyncio.Task[None] | None = None
+    health: HealthMonitor | None = None
+    if ctx.paths is not None:
+        health = HealthMonitor(ctx.paths, ctx.names, ctx.tmux, interval=settings.health_interval_s)
+    app.state.health_monitor = health
+    hub = EventHub(
+        tracker=app.state.revisions,
+        cache=app.state.timeline_cache,
+        member_status=member_status,
+        health=health,
+        tmux=ctx.tmux,
+        settings=settings,
+    )
+    app.state.stream = hub
+    tasks: list[asyncio.Task[None]] = []
     if member_status.can_monitor:
-        monitor_task = asyncio.create_task(member_status.run())
+        tasks.append(asyncio.create_task(member_status.run(), name="web-member-status"))
     else:
         for name in ctx.names:
             member_status.set_alive(name, False)
+    tasks.append(asyncio.create_task(hub.run(), name="web-event-hub"))
     try:
         yield
     finally:
+        hub.stop()
         member_status.stop()
-        if monitor_task is not None:
-            monitor_task.cancel()
+        if health is not None:
+            health.stop()
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
-                await monitor_task
+                await task
 
 
-def create_app(*, session: WebSession, port: int) -> FastAPI:
+def create_app(
+    *,
+    session: WebSession,
+    port: int,
+    stream_settings: StreamSettings | None = None,
+) -> FastAPI:
     """构造应用;`session` 与 `port` 由 `web.cli.main` 每次启动时生成/确定。
 
     不注册 `CORSMiddleware`(架构 §6.3 明确要求不设任何 CORS 响应头);
@@ -128,14 +168,18 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
     )
     hosts = allowed_hosts(port)
     origins = allowed_origins(port)
+    app.state.stream_settings = stream_settings or StreamSettings()
     app.state.revisions = RevisionTracker()
     app.state.timeline_cache = TimelineCache()
-    # lifespan 填 tmux/member_status；这里先占位默认值，ASGI 服务器(uvicorn)
-    # 总会先跑 lifespan 再派发请求，但没有它们（比如构造 TestClient 时忘了
-    # `with`）不该让 app.state.member_status 缺失属性冒 AttributeError→500，
-    # 而是走 §2.4 的 503(见 API router 的 require_runtime 依赖)。
+    # lifespan 填 tmux/member_status/health_monitor/stream/lease_manager；这里
+    # 先占位默认值，ASGI 服务器总会先跑 lifespan 再派发请求，但没有它们
+    # （比如构造 TestClient 时忘了 `with`）不该让 app.state 缺失属性冒
+    # AttributeError→500，而是走 §2.4 的 503(见 API router 的 require_runtime
+    # 依赖)。
     app.state.tmux = None
     app.state.member_status = None
+    app.state.health_monitor = None
+    app.state.stream = None
     app.state.lease_manager = None
     app.state.mirror_hub = MirrorHub()
     # 测试可收窄以避免等一个真实心跳周期(默认 5s)；生产不改。
@@ -179,7 +223,7 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
                 "缺少有效会话，请用启动时终端打印的地址访问",
                 status_code=401,
             )
-        return HTMLResponse(_health_page())
+        return _spa_index()
 
     def require_session(request: Request) -> None:
         if not session.verify_cookie(request.cookies.get(COOKIE_NAME)):
@@ -213,7 +257,11 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
     async def get_bootstrap() -> dict:
         ctx = build_context(tmux=app.state.tmux)
         return bootstrap_dto(
-            ctx, app.state.revisions, app.state.timeline_cache, app.state.member_status
+            ctx,
+            app.state.revisions,
+            app.state.timeline_cache,
+            app.state.member_status,
+            app.state.health_monitor,
         )
 
     @api.get("/vocabulary")
@@ -278,7 +326,7 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
     @api.get("/health")
     async def get_health() -> dict:
         ctx = build_context(tmux=app.state.tmux)
-        return health_dto(ctx, app.state.revisions)
+        return health_dto(ctx, app.state.revisions, app.state.health_monitor)
 
     @app.websocket(f"{API_PREFIX}/terminal/{{member}}/mirror")
     async def terminal_mirror(websocket: WebSocket, member: str) -> None:
@@ -335,5 +383,38 @@ def create_app(*, session: WebSession, port: int) -> FastAPI:
             await run_mirror_connection(websocket, state)
 
     app.include_router(api)
+
+    @app.get("/assets/{asset_path:path}")
+    async def static_asset(request: Request, asset_path: str) -> Response:
+        require_session(request)
+        response = _static_response("assets", *asset_path.split("/"))
+        if response is None:
+            return _error("not-found", "静态资源不存在", status_code=404)
+        return response
+
+    @app.get("/THIRD_PARTY_LICENSES.json")
+    async def third_party_licenses(request: Request) -> Response:
+        require_session(request)
+        response = _static_response("THIRD_PARTY_LICENSES.json")
+        if response is None:
+            return _error("not-found", "第三方许可证清单不存在", status_code=404)
+        return response
+
+    @app.get("/{spa_path:path}")
+    async def spa_fallback(request: Request, spa_path: str) -> Response:
+        """支持刷新 `/workspace`、`/task/<id>`、`/help` 等前端路由。"""
+        require_session(request)
+        if spa_path in {"workspace", "timeline", "help"} or spa_path.startswith("task/"):
+            return _spa_index()
+        return _error("not-found", "页面不存在", status_code=404)
+
+    @app.websocket(f"{API_PREFIX}/stream")
+    async def stream_endpoint(websocket: WebSocket) -> None:
+        await handle_stream(
+            websocket,
+            session=session,
+            port=port,
+            hub=app.state.stream,
+        )
 
     return app

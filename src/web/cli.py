@@ -1,8 +1,7 @@
-"""`amux web` 入口(WEB-003):起本机 Web 控制台后端。
+"""`amux web` 入口:起本机 Web 控制台后端。
 
-首版只做地基:本机认证会话 + 最小静态健康页,只监听 `127.0.0.1`。
-workspace/team/work/timeline/member 的 snapshot 接口依赖 WEB-001 下沉的
-控制面,尚未接入。
+本机认证会话 + snapshot API + `/api/v1/stream` 实时事件流,只监听
+`127.0.0.1`。
 """
 
 from __future__ import annotations

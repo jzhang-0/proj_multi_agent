@@ -218,6 +218,82 @@ def test_rejects_bad_origin_with_explicit_close_code(
         assert exc_info.value.reason == "unauthorized"
 
 
+def test_ws_handshake_rejections_log_which_check_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_tmux: Tmux,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """BUG(T-025，human 实机复现):`unauthorized` 此前无从判断是 Host/Origin/
+    cookie 哪一道校验没过——server 日志完全没有拒绝记录，human 与 opus 都
+    定位不了。真实 uvicorn 场景已用真实 `websockets` 客户端手动验证过三条
+    各自独立(见 T-025 证据)；这里用 TestClient 钉住"每种失败原因各自可从
+    `caplog` 分辨"这条契约，防止以后又退化成一句笼统的 `unauthorized`。
+    """
+    _bound_project(tmp_path, monkeypatch)
+    isolated_tmux.new_session(SESSION_NAME, command="cat")
+    app, session = _make_app(monkeypatch, isolated_tmux)
+    good_headers = {
+        "host": f"127.0.0.1:{PORT}",
+        "origin": f"http://127.0.0.1:{PORT}",
+        "cookie": f"{COOKIE_NAME}={session.session_id}",
+    }
+
+    with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client, caplog.at_level("WARNING"):
+        client.get(f"/?token={session.token}")
+
+        caplog.clear()
+        with client.websocket_connect(
+            f"/api/v1/terminal/{MEMBER}/mirror",
+            headers={**good_headers, "host": "evil.example.com:9999"},
+        ) as conn, pytest.raises(WebSocketDisconnect):
+            conn.receive_json()
+        assert "check=host" in caplog.text
+
+        caplog.clear()
+        with client.websocket_connect(
+            f"/api/v1/terminal/{MEMBER}/mirror",
+            headers={**good_headers, "origin": "http://evil.example.com"},
+        ) as conn, pytest.raises(WebSocketDisconnect):
+            conn.receive_json()
+        assert "check=origin" in caplog.text
+
+        caplog.clear()
+        with client.websocket_connect(
+            f"/api/v1/terminal/{MEMBER}/mirror",
+            headers={k: v for k, v in good_headers.items() if k != "cookie"},
+        ) as conn, pytest.raises(WebSocketDisconnect):
+            conn.receive_json()
+        assert "check=cookie" in caplog.text
+
+
+def test_ws_write_before_lease_acquire_logs_the_offending_message_type(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_tmux: Tmux,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """BUG(T-025，根因):前端断线重连后曾经不清 `leaseHeldRef`，把
+    `resize` 发给一条从没 acquire 过租约的新连接，被 §6.3"未持租约就关闭"
+    的分支 4401——这里直接钉住服务端这半的契约(收到非白名单写消息且未持
+    租约就关闭，并且日志里能看到具体是哪个 `msg_type`)，前端半的回归见
+    `web/tests/e2e/terminal.spec.ts` 的重连用例。
+    """
+    _bound_project(tmp_path, monkeypatch)
+    isolated_tmux.new_session(SESSION_NAME, command="cat")
+    app, session = _make_app(monkeypatch, isolated_tmux)
+
+    with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as client, caplog.at_level("WARNING"):
+        client.get(f"/?token={session.token}")
+        with _ws(client, session) as conn, pytest.raises(WebSocketDisconnect) as exc_info:
+            conn.send_json({"type": "resize", "cols": 100, "rows": 30})
+            conn.receive_json()
+        assert exc_info.value.code == 4401
+        assert "ws_write_reject" in caplog.text
+        assert "reason=no-lease" in caplog.text
+        assert "msg_type='resize'" in caplog.text
+
+
 def test_mirror_write_upgrade_requires_fresh_direct_ticket_and_defaults_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_tmux: Tmux
 ) -> None:

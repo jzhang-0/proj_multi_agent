@@ -140,12 +140,19 @@ test("reconnect after a transient drop does not resend a stale resize before re-
   await page.goto("/member/sol/terminal");
   await page.locator(".terminal-surface").click();
   await expect(page.getByText("已持有交互租约")).toBeVisible();
+  await page.screenshot({ path: baseline("web-007-bugfix-reconnect-1-before-drop.png") });
 
   await expect.poll(() => connections.length).toBe(2);
   // 重连成功后改视口尺寸触发 ResizeObserver;有 bug 时会把 resize 发给
   // 这条从没 acquire 过租约的新连接。
   await page.setViewportSize({ width: 1200, height: 900 });
   await page.waitForTimeout(300);
+
+  // 全流程证据(T-025):重连+改尺寸之后画面仍是正常只读镜像,不是
+  // "无法连接成员终端 unauthorized"的拒绝页。
+  await expect(page.getByText("无法连接成员终端")).toHaveCount(0);
+  await expect(page.locator(".terminal-surface")).toContainText("hello-from-sol");
+  await page.screenshot({ path: baseline("web-007-bugfix-reconnect-2-after-reconnect-resize.png") });
 
   const secondConnection = connections[1];
   expect(secondConnection).toEqual([]);

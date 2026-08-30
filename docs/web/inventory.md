@@ -15,48 +15,50 @@
 
 “只读”表示 Web 只展示状态；“操作”表示会写队列、账本、名册、审计或控制 tmux；“只读 + 操作”表示同一面板同时有两类能力。来源列中的接口均为当前实现中的可复用入口。
 
-| TUI 面板/能力 | 当前行为 | 交互类型 | Web 对齐所需来源 | 难度 |
-|---|---|---|---|---|
-| 顶部 Header / 工作区副标题 | 显示“总控台”、工作区 slug 和项目根；未登记时显示未登记提示 | 只读 | `workspace.resolve`、`Workspace`；`ConsoleApp._workspace_subtitle()` / `_workspace_banner()` | 低 |
-| 左栏任务摘要 | 绑定团队后显示 Leader、进行中、待验收、阻塞/退回计数 | 只读 | `WorkService.snapshot()`、`Team.leader`；`render_task_summary()` | 低 |
-| 左栏工作对话记录卡 | 显示入口、未读数、当前是否正在查看 | 只读 | `ConsoleApp.unseen_traffic`、`ConversationCard` | 低 |
-| 左栏成员卡片 | 显示 `idle/working/stuck/dead/failed` 图形与颜色、排队数、最后活动相对时间 | 只读 | `MemberStatusService.snapshot()`、`pending_counts()`；下层 `ActivityTracker` / `HealthSupervisor` | 中 |
-| 左栏任务列表 | 每个任务显示 ID、状态、标题、执行者、评审者；点击/键盘选择 | 只读 + 操作（选择） | `WorkSnapshot.tasks`、`TaskStatus`、`STATUS_LABELS`；`TaskCard` | 低 |
-| 中栏任务详情 | 显示状态、唯一 Leader、执行/评审、创建/更新时间/完成时间、父子任务、说明 | 只读 | `WorkSnapshot.get()`、`Task`、`children()`；`TaskDetail.show_task()` | 低 |
-| 任务证据 | 逐条显示成员追加的证据引用 | 只读 | `Task.evidence`、`WorkEvent(EVIDENCE)` | 低 |
-| 不可覆盖任务事件流 | 显示建立、拆分、派工、进展、阻塞、证据、提交、评审、退回、改派、接管、验收、汇报及详情 | 只读 | `WorkLedger.load()` 重放 `work/events.jsonl`；`WorkSnapshot.events_for()`；`event_details()` / `EVENT_LABELS` | 低 |
-| 任务关联工作对话 | 任务详情中显示同一 task ID 的总线沟通及图片数量 | 只读 | `AuditLog.entries()`，筛选 `event=deposit` 和 `task`；`Message.task` / `attachments` | 低 |
-| 工作对话记录时间线 | 实时追加总线流量；启动时从 `bus/log.jsonl` 回填；显示结局、原因、@ 高亮、分钟分组 | 只读 | `AuditLog.entries()`、`AuditLog.read_body()`、`DeliveryResult`；`TimelineEntry` / `history()` | 中 |
-| 时间线分类筛选 | `全部 / human / AI / 任务 / 控制`，显示各分类计数；点击或左右键切换；不靠正文猜分类 | 只读 + 操作（筛选） | `TimelineEntry.resolved_category`（收发端/审计事件/WorkEvent 类型）`；`ConversationFilter` / `Timeline.set_category()` | 低 |
-| 时间线滚动 | PgUp/PgDn、Home/End、Ctrl+↑/↓；不在底部时新消息不强行拉回 | 只读 + 操作（视图滚动） | 前端滚动状态；历史来自 `AuditLog` 与 `WorkLedger` | 低 |
-| 工作对话输入框 | 回车发送；绑定团队时默认发 Leader 并自动关联选中任务；无 @ 时发上一个对话对象 | 操作 | `Message.create()`、`deposit()`、`BusPaths`；`WorkService.team.leader`；`ComposeInput` | 中 |
-| @ 成员补全 | 输入 @ 展示全体成员，Tab/↑↓ 选择，回车落定；支持中文成员名 | 操作（本地 UI，最终可发送） | `member_names()` / `Roster.enabled_members()`、`ComposeInput` 的 `matching_members()` | 低 |
-| 发送 ask/reply | 总线支持 ask id、关联回复和阻塞等待；成员收到回复指引 | 操作 | `bus.ask.store_ask()` / `store_reply()` / `wait_for_reply()`；`Message.kind/reply_to` | 中 |
-| 图片粘贴/发送 | Ctrl+V 读取系统剪贴板图片；PNG 内容寻址落盘；支持纯图片或图文；最多 8 张 | 操作 | `ClipboardImageStore`、`Attachment`、`Message.attachments`、工作区 `attachments/` | 中（浏览器上传协议需设计） |
-| 待发图片撤销 | 文字为空时 Backspace/Delete 逐张撤销引用；不删除内容寻址文件 | 操作（本地 UI） | `ComposeInput.remove_last_attachment()`；附件文件由 `ClipboardImageStore` 管理 | 低 |
-| 成员终端镜像 | 选中成员后显示带 ANSI 颜色的 tmux 当前画面；活跃刷新 ≤100ms；不可见时停止拉取 | 只读 | `PaneSnapshotter.capture(member, color=True)`、`PaneSnapshot.text`；`Mirror.show_screen()` | **高** |
-| 成员终端回滚 | PgUp/PgDn、Home/End、滚轮、Ctrl+↑/↓ 读取成员自身 `capture-pane -S` 历史；回滚时禁用实时输入 | 只读 + 操作（视图滚动） | `PaneSnapshotter.capture(..., start=...)`、`Mirror.history_offset` | **高** |
-| 终端窗口适配 | 镜像可见时按 Web 主画面尺寸 `fit_window`；离开/attach 前释放尺寸；小尺寸不调节 | 操作（后台副作用） | `Tmux.fit_window()` / `release_window_size()`；`ConsoleApp._fit_member_window()` | **高** |
-| 成员画面点击直连 | 仅识别当前 Claude 双横线 composer 或 Codex 底部 `›` 输入行；点击输入区才进入实时态，点击历史/输出区无效 | 操作 | `terminal_input_rows()`、`Mirror.click_hits_input()`；需要浏览器坐标和终端网格映射 | **高** |
-| 直连文本输入 | 直连态普通字符按顺序进入成员终端，相邻字符可合并；Enter 单独提交并确认 | 操作 | `MemberController.insert_text()` / `submit_live_text()`；`Tmux.send_keys(literal=True)`、`KeyInjector.ensure_submitted()` | **高** |
-| 直连编辑/方向键 | Tab/Shift+Tab、↑↓←→、Backspace/Delete/Forward Delete、空 Enter 按白名单透传；每个控制动作进入审计 | 操作 | `MemberController.press_key()`；白名单 `Enter/Tab/BTab/BSpace/DC/Up/Down/Left/Right`；`AuditLog.record_control()` | **高** |
-| 成员打断 | F5 或对应 Web 按钮发送 Escape + Ctrl-C | 操作 | `MemberController.interrupt()` → `ProcessController.interrupt()`；审计 `control` | 中 |
-| 成员终止 | F6；二次确认后向 CLI 进程发送 SIGTERM | 操作（危险，需确认） | `ConfirmControlScreen` 语义；`MemberController.terminate()` → `ProcessController.terminate()`；审计 | 中 |
-| 成员重启 | F7；二次确认后 `Lifecycle.restart()` | 操作（危险，需确认） | `MemberController.restart()` → `Lifecycle.restart()`；`Roster`、`Tmux`、审计 | 中 |
-| 全屏接管 / attach | F8 挂起 TUI，执行 `tmux attach-session`，退出后返回；先释放 fit 尺寸 | 操作（高风险/桌面专属） | `MemberController.takeover()`、`Tmux.command_argv()`、`session_for()` | **高/需 Web 方案** |
-| `/up` | 拉起指定成员，已运行则跳过 | 操作 | `Lifecycle.up(name)`；`Roster` + `start_member()` + `Tmux` | 中 |
-| `/down` | 关闭指定成员 tmux 会话 | 操作（危险） | `Lifecycle.down(name)` → `stop_member()`；`Tmux.kill_session()` | 中 |
-| `/restart` | 关闭并重新拉起指定成员 | 操作（危险） | `Lifecycle.restart(name)`；`Roster` / `Tmux` | 中 |
-| `/adopt` | 将名册外、已有且名称合法的 tmux 会话收编为本进程临时成员；重启不保留 | 操作 | `SessionAdopter.discover/adopt/member_names()`、`Tmux.list_panes()` | 中 |
-| `/mute` | 策略层拒收指定成员消息，再执行一次取消；拒收和回执进入审计/时间线 | 操作 | `MutePolicy`、`OutboundPolicy`、`Hub`、`receipt_for()`、`AuditLog` | 中 |
-| `/workspace` | 切换绑定工作区；总线、成员、任务、时间线、附件目录和 tmux 命名空间一起切换 | 操作 | `require_slug()`、`BusPaths.for_workspace()`、`WorkService.for_workspace()`、`SessionNames`、`load_effective_roster()` | 中 |
-| `/member add/rm/list` | 增减或列出当前工作区成员；更新 `members.toml`，重建成员栏和补全 | 操作 | `workspace.members.add_member/remove_member`、`load_effective_roster()`、`Roster` | 中 |
-| `/task [ID]` / F3 | 打开任务看板或指定任务详情；当前任务决定输入框关联 task ID | 操作（切换视图） | `WorkService.snapshot()`、`ConsoleApp.select_work()`、`TaskDetail` | 低 |
-| `/help` / ? / F1 | 显示命令、快捷键和安全语义；可滚动关闭 | 只读 + 操作（打开/滚动） | `COMMANDS`、`SHORTCUT_GROUPS`、`ShortcutHelpScreen` | 低 |
-| 深浅主题 / T | 深色和浅色主题切换；历史内容按 token 重绘 | 操作（本地 UI） | `console.theme.THEMES`、`Timeline.rerender()` | 低 |
-| 健康告警 | tmux server、成员会话、bus 可写性故障/恢复边沿提示；恢复后总线继续投递 | 只读 + 操作（自动恢复） | `ConsoleHealthMonitor`、`FaultEvent`、`HealthSupervisor`、`BusPump.start()` | 中 |
-| 成员状态实时更新 | 0.5s 刷新卡片；成员输出/成功投递/死亡/failed 更新状态；自动拉起可配置且三次失败熔断 | 只读 + 操作（自动恢复） | `MemberStatusService`、`ActivityTracker`、`HealthSupervisor` | 中 |
-| 退出 | Q/Ctrl-C 只停 bus pump 和 UI，不关闭成员会话 | 操作 | `BusPump.stop()`、`ConsoleApp.on_unmount()`；Web 只应断开会话，不触发 down | 低 |
+下表是 2026-08-30 `main` 的 WEB-009 前半逐行核对结果。`已实现`表示已有 Web 实现和对应 Goal 证据；`进行中`表示能力仍属于尚未结项的 WEB-006/WEB-008；`部分实现/待验证`表示页面已有行为，但 WEB-009 的后半仍需验证其最终安全语义。发布制品验证不在本表本次范围内。
+
+| TUI 面板/能力 | 当前行为 | 交互类型 | Web 对齐所需来源 | 难度 | 当前状态 |
+|---|---|---|---|---|---|
+| 顶部 Header / 工作区副标题 | 显示“总控台”、工作区 slug 和项目根；未登记时显示未登记提示 | 只读 | `workspace.resolve`、`Workspace`；`ConsoleApp._workspace_subtitle()` / `_workspace_banner()` | 低 | 已实现（WEB-003/005） |
+| 左栏任务摘要 | 绑定团队后显示 Leader、进行中、待验收、阻塞/退回计数 | 只读 | `WorkService.snapshot()`、`Team.leader`；`render_task_summary()` | 低 | 已实现（WEB-003/005） |
+| 左栏工作对话记录卡 | 显示入口、未读数、当前是否正在查看 | 只读 | `ConsoleApp.unseen_traffic`、`ConversationCard` | 低 | 已实现（WEB-004/005） |
+| 左栏成员卡片 | 显示 `idle/working/stuck/dead/failed` 图形与颜色、排队数、最后活动相对时间 | 只读 | `MemberStatusService.snapshot()`、`pending_counts()`；下层 `ActivityTracker` / `HealthSupervisor` | 中 | 已实现（WEB-003/004） |
+| 左栏任务列表 | 每个任务显示 ID、状态、标题、执行者、评审者；点击/键盘选择 | 只读 + 操作（选择） | `WorkSnapshot.tasks`、`TaskStatus`、`STATUS_LABELS`；`TaskCard` | 低 | 已实现（WEB-003/005） |
+| 中栏任务详情 | 显示状态、唯一 Leader、执行/评审、创建/更新时间/完成时间、父子任务、说明 | 只读 | `WorkSnapshot.get()`、`Task`、`children()`；`TaskDetail.show_task()` | 低 | 已实现（WEB-003/005） |
+| 任务证据 | 逐条显示成员追加的证据引用 | 只读 | `Task.evidence`、`WorkEvent(EVIDENCE)` | 低 | 已实现（WEB-003/005） |
+| 不可覆盖任务事件流 | 显示建立、拆分、派工、进展、阻塞、证据、提交、评审、退回、改派、接管、验收、汇报及详情 | 只读 | `WorkLedger.load()` 重放 `work/events.jsonl`；`WorkSnapshot.events_for()`；`event_details()` / `EVENT_LABELS` | 低 | 已实现（WEB-003/005） |
+| 任务关联工作对话 | 任务详情中显示同一 task ID 的总线沟通及图片数量 | 只读 | `AuditLog.entries()`，筛选 `event=deposit` 和 `task`；`Message.task` / `attachments` | 低 | 已实现（WEB-003/005） |
+| 工作对话记录时间线 | 实时追加总线流量；启动时从 `bus/log.jsonl` 回填；显示结局、原因、@ 高亮、分钟分组 | 只读 | `AuditLog.entries()`、`AuditLog.read_body()`、`DeliveryResult`；`TimelineEntry` / `history()` | 中 | 已实现（WEB-004/005） |
+| 时间线分类筛选 | `全部 / human / AI / 任务 / 控制`，显示各分类计数；点击或左右键切换；不靠正文猜分类 | 只读 + 操作（筛选） | `TimelineEntry.resolved_category`（收发端/审计事件/WorkEvent 类型）`；`ConversationFilter` / `Timeline.set_category()` | 低 | 已实现（WEB-005） |
+| 时间线滚动 | PgUp/PgDn、Home/End、Ctrl+↑/↓；不在底部时新消息不强行拉回 | 只读 + 操作（视图滚动） | 前端滚动状态；历史来自 `AuditLog` 与 `WorkLedger` | 低 | 已实现（WEB-005） |
+| 工作对话输入框 | 回车发送；绑定团队时默认发 Leader 并自动关联选中任务；无 @ 时发上一个对话对象 | 操作 | `Message.create()`、`deposit()`、`BusPaths`；`WorkService.team.leader`；`ComposeInput` | 中 | 进行中（WEB-006） |
+| @ 成员补全 | 输入 @ 展示全体成员，Tab/↑↓ 选择，回车落定；支持中文成员名 | 操作（本地 UI，最终可发送） | `member_names()` / `Roster.enabled_members()`、`ComposeInput` 的 `matching_members()` | 低 | 进行中（WEB-006） |
+| 发送 ask/reply | 总线支持 ask id、关联回复和阻塞等待；成员收到回复指引 | 操作 | `bus.ask.store_ask()` / `store_reply()` / `wait_for_reply()`；`Message.kind/reply_to` | 中 | 进行中（WEB-006） |
+| 图片粘贴/发送 | Ctrl+V 读取系统剪贴板图片；PNG 内容寻址落盘；支持纯图片或图文；最多 8 张 | 操作 | `ClipboardImageStore`、`Attachment`、`Message.attachments`、工作区 `attachments/` | 中（浏览器上传协议需设计） | 进行中（WEB-006） |
+| 待发图片撤销 | 文字为空时 Backspace/Delete 逐张撤销引用；不删除内容寻址文件 | 操作（本地 UI） | `ComposeInput.remove_last_attachment()`；附件文件由 `ClipboardImageStore` 管理 | 低 | 进行中（WEB-006） |
+| 成员终端镜像 | 选中成员后显示带 ANSI 颜色的 tmux 当前画面；活跃刷新 ≤100ms；不可见时停止拉取 | 只读 | `PaneSnapshotter.capture(member, color=True)`、`PaneSnapshot.text`；`Mirror.show_screen()` | **高** | 已实现（WEB-007） |
+| 成员终端回滚 | PgUp/PgDn、Home/End、滚轮、Ctrl+↑/↓ 读取成员自身 `capture-pane -S` 历史；回滚时禁用实时输入 | 只读 + 操作（视图滚动） | `PaneSnapshotter.capture(..., start=...)`、`Mirror.history_offset` | **高** | 已实现（WEB-007） |
+| 终端窗口适配 | 镜像可见时按 Web 主画面尺寸 `fit_window`；离开/attach 前释放尺寸；小尺寸不调节 | 操作（后台副作用） | `Tmux.fit_window()` / `release_window_size()`；`ConsoleApp._fit_member_window()` | **高** | 已实现（WEB-007） |
+| 成员画面点击直连 | 仅识别当前 Claude 双横线 composer 或 Codex 底部 `›` 输入行；点击输入区才进入实时态，点击历史/输出区无效 | 操作 | `terminal_input_rows()`、`Mirror.click_hits_input()`；需要浏览器坐标和终端网格映射 | **高** | 已实现（WEB-007） |
+| 直连文本输入 | 直连态普通字符按顺序进入成员终端，相邻字符可合并；Enter 单独提交并确认 | 操作 | `MemberController.insert_text()` / `submit_live_text()`；`Tmux.send_keys(literal=True)`、`KeyInjector.ensure_submitted()` | **高** | 已实现（WEB-007） |
+| 直连编辑/方向键 | Tab/Shift+Tab、↑↓←→、Backspace/Delete/Forward Delete、空 Enter 按白名单透传；每个控制动作进入审计 | 操作 | `MemberController.press_key()`；白名单 `Enter/Tab/BTab/BSpace/DC/Up/Down/Left/Right`；`AuditLog.record_control()` | **高** | 已实现（WEB-007） |
+| 成员打断 | F5 或对应 Web 按钮发送 Escape + Ctrl-C | 操作 | `MemberController.interrupt()` → `ProcessController.interrupt()`；审计 `control` | 中 | 进行中（WEB-008） |
+| 成员终止 | F6；二次确认后向 CLI 进程发送 SIGTERM | 操作（危险，需确认） | `ConfirmControlScreen` 语义；`MemberController.terminate()` → `ProcessController.terminate()`；审计 | 中 | 进行中（WEB-008） |
+| 成员重启 | F7；二次确认后 `Lifecycle.restart()` | 操作（危险，需确认） | `MemberController.restart()` → `Lifecycle.restart()`；`Roster`、`Tmux`、审计 | 中 | 进行中（WEB-008） |
+| 全屏接管 / attach | F8 挂起 TUI，执行 `tmux attach-session`，退出后返回；先释放 fit 尺寸 | 操作（高风险/桌面专属） | `MemberController.takeover()`、`Tmux.command_argv()`、`session_for()` | **高/需 Web 方案** | 进行中（WEB-008） |
+| `/up` | 拉起指定成员，已运行则跳过 | 操作 | `Lifecycle.up(name)`；`Roster` + `start_member()` + `Tmux` | 中 | 进行中（WEB-008） |
+| `/down` | 关闭指定成员 tmux 会话 | 操作（危险） | `Lifecycle.down(name)` → `stop_member()`；`Tmux.kill_session()` | 中 | 进行中（WEB-008） |
+| `/restart` | 关闭并重新拉起指定成员 | 操作（危险） | `Lifecycle.restart(name)`；`Roster` / `Tmux` | 中 | 进行中（WEB-008） |
+| `/adopt` | 将名册外、已有且名称合法的 tmux 会话收编为本进程临时成员；重启不保留 | 操作 | `SessionAdopter.discover/adopt/member_names()`、`Tmux.list_panes()` | 中 | 进行中（WEB-008） |
+| `/mute` | 策略层拒收指定成员消息，再执行一次取消；拒收和回执进入审计/时间线 | 操作 | `MutePolicy`、`OutboundPolicy`、`Hub`、`receipt_for()`、`AuditLog` | 中 | 进行中（WEB-008） |
+| `/workspace` | 切换绑定工作区；总线、成员、任务、时间线、附件目录和 tmux 命名空间一起切换 | 操作 | `require_slug()`、`BusPaths.for_workspace()`、`WorkService.for_workspace()`、`SessionNames`、`load_effective_roster()` | 中 | 已实现（WEB-005） |
+| `/member add/rm/list` | 增减或列出当前工作区成员；更新 `members.toml`，重建成员栏和补全 | 操作 | `workspace.members.add_member/remove_member`、`load_effective_roster()`、`Roster` | 中 | 进行中（WEB-008） |
+| `/task [ID]` / F3 | 打开任务看板或指定任务详情；当前任务决定输入框关联 task ID | 操作（切换视图） | `WorkService.snapshot()`、`ConsoleApp.select_work()`、`TaskDetail` | 低 | 已实现（WEB-005） |
+| `/help` / ? / F1 | 显示命令、快捷键和安全语义；可滚动关闭 | 只读 + 操作（打开/滚动） | `COMMANDS`、`SHORTCUT_GROUPS`、`ShortcutHelpScreen` | 低 | 已实现（WEB-005） |
+| 深浅主题 / T | 深色和浅色主题切换；历史内容按 token 重绘 | 操作（本地 UI） | `console.theme.THEMES`、`Timeline.rerender()` | 低 | 已实现（WEB-005） |
+| 健康告警 | tmux server、成员会话、bus 可写性故障/恢复边沿提示；恢复后总线继续投递 | 只读 + 操作（自动恢复） | `ConsoleHealthMonitor`、`FaultEvent`、`HealthSupervisor`、`BusPump.start()` | 中 | 已实现（WEB-003/004） |
+| 成员状态实时更新 | 0.5s 刷新卡片；成员输出/成功投递/死亡/failed 更新状态；自动拉起可配置且三次失败熔断 | 只读 + 操作（自动恢复） | `MemberStatusService`、`ActivityTracker`、`HealthSupervisor` | 中 | 已实现（WEB-003/004） |
+| 退出 | Q/Ctrl-C 只停 bus pump 和 UI，不关闭成员会话 | 操作 | `BusPump.stop()`、`ConsoleApp.on_unmount()`；Web 只应断开会话，不触发 down | 低 | 部分实现/待验证（WEB-005；WEB-009 后半） |
 
 ## 3. 当前 `gateway/page.py` / LocalChat 能力
 
@@ -191,6 +193,13 @@ Web 层可以把现有接口投影成以下几类资源；名称是建议，不�
 4. **多工作区和多浏览器 actor**：读写隔离、同成员并发操作、控制权冲突、断线后的操作幂等和审计 actor 归属。
 5. **高影响任务操作**：Web 表单需完整覆盖接管四字段、Leader-only 验收/汇报、评审冲突、状态转换错误和账本损坏提示，不能用一个自由文本“完成”按钮替代 `WorkService`。
 
+### 5.4 WEB-009 后半收口清单
+
+以下两项不在本次前半实现范围内，等 WEB-006/008 合入后由后半任务处理：
+
+1. **T-017：`control.timeline_snapshot_view`**。先确认它是否应直接复用 `TimelineCache`/delta 流的 projector；若保留独立投影，必须在 docstring 和 API 文档明确其 `seq` 可能与实时流不一致，不能把两个序列当成同一游标。
+2. **T-013：显式 `websockets` 依赖**。评估从 `uvicorn[standard]` 拆出显式 `websockets` 是否能在不破坏真实握手的前提下缩小安装体积；若调整，必须重跑真实 WebSocket 握手冒烟并同步 `tests/test_release_package.py` 的依赖断言。本次只记录建议，不改依赖。
+
 ## 6. 调研依据与验证
 
 本清单基于以下仓库内权威/实现文件阅读整理：
@@ -209,4 +218,4 @@ rg -n '^class |^def |^    (async )?def |BINDINGS|key=|action_|on_|/up|/down|/res
 rg -n '^class |^def |^    (async )?def ' src/bus src/roster src/team src/work src/tmuxctl --glob '*.py'
 ```
 
-未运行全量测试；本任务是只读调研，未修改源码、测试或现有产品实现。
+本次只修改文档与 `src/console/cli.py` 的 CLI 帮助文案，未修改 Web/TUI 运行时实现或测试；验证命令和结果记录在 WEB-009 前半的 Goal 证据中。

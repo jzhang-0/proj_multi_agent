@@ -72,4 +72,5 @@
   - 前置:WEB-007。
 
 - [ ] **WEB-009** — 全功能矩阵与发布收口：逐行勾验 inventory §2 全部条目(未完成项如实保留)；更新产品、架构、README、CLI 帮助与安全说明；前端产物进 sdist/wheel；`qa.release` 源码外联网安装并启动 Web，验证不依赖 Node/源码路径/CDN；复查「退出」只关 Web 会话不关成员。 收口清单追加：(a) `control.timeline_snapshot_view` 自建 projector，seq 可能与 TimelineCache/delta 流不一致——接 projector 或 docstring 注明限制(T-017 遗留)；(b) 评估依赖由 `uvicorn[standard]` 改显式 `websockets` 以减小安装体积，若改需重跑真实握手冒烟并同步 test_release_package 断言(T-013 遗留)。
+  - 进行中(Luna，2026-08-30)：WEB-009 前半，仅处理 inventory §2 功能矩阵与产品/架构/README/CLI 帮助/安全说明同步；发布验证及 WEB-006/008 尚未完成部分留待后半。
   - 前置:WEB-006、WEB-008。
